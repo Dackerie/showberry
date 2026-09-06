@@ -24,11 +24,16 @@ flowboxchild:focus {
     transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-.movie-card:hover {
+.movie-card:hover,
+.movie-card:focus,
+.movie-card:focus-visible,
+flowboxchild:focus .movie-card {
     transform: translateY(-4px);
     background-color: alpha(@card_bg_color, 0.85);
-    border-color: alpha(@accent_color, 0.6);
-    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+    border-color: @accent_color;
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 0 3px alpha(@accent_color, 0.3);
 }
 
 .movie-card:active {

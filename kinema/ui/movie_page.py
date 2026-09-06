@@ -137,10 +137,47 @@ class MoviePage(Adw.NavigationPage):
         self._episodes_data: List[Dict[str, Any]] = []
 
         self._setup_ui()
+        self._setup_keybindings()
+        self.connect('map', self._on_page_mapped)
         # Pre-populate images immediately from card data (0ms — already cached from grid).
         # The network detail call (_load_details_async) may update them later if needed.
         self._load_images_async()
         self._load_details_async()
+
+    def _setup_keybindings(self):
+        key_controller = Gtk.EventControllerKey.new()
+        key_controller.connect('key-pressed', self._on_key_pressed)
+        self.add_controller(key_controller)
+
+    def _on_page_mapped(self, widget):
+        def _focus_play():
+            if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                self._resume_button.grab_focus()
+            elif hasattr(self, '_play_button') and self._play_button.get_visible():
+                self._play_button.grab_focus()
+            return False
+        GLib.idle_add(_focus_play)
+
+    def _on_key_pressed(self, controller, keyval, keycode, state):
+        root = self.get_root()
+        focus = root.get_focus() if root else None
+        if focus and isinstance(focus, (Gtk.Editable, Gtk.Entry)):
+            return False
+
+        if keyval in (Gdk.KEY_space, Gdk.KEY_p, Gdk.KEY_P):
+            if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                self._on_resume_clicked(None)
+            else:
+                self._on_play_clicked(None)
+            return True
+        elif keyval in (Gdk.KEY_w, Gdk.KEY_W):
+            self._on_watchlist_toggled(None)
+            return True
+        elif keyval in (Gdk.KEY_Escape, Gdk.KEY_BackSpace):
+            if root and hasattr(root, '_nav_view'):
+                root._nav_view.pop()
+                return True
+        return False
 
 
     def _setup_ui(self):

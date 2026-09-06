@@ -7,7 +7,7 @@ from typing import Dict, Any, List
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib, GObject
+from gi.repository import Gtk, Adw, GLib, GObject, Gdk
 
 from kinema.services.tmdb import TMDBClient
 from kinema.services.settings import SettingsService
@@ -49,6 +49,11 @@ class MoviesPage(Gtk.Box):
         self._search_entry.set_placeholder_text("Search movies by title...")
         self._search_entry.connect('search-changed', self._on_search_changed)
         self._search_entry.connect('activate', self._on_search_activate)
+
+        search_key_ctrl = Gtk.EventControllerKey.new()
+        search_key_ctrl.connect('key-pressed', self._on_search_key_pressed)
+        self._search_entry.add_controller(search_key_ctrl)
+
         search_clamp.set_child(self._search_entry)
         self.append(search_clamp)
 
@@ -126,10 +131,29 @@ class MoviesPage(Gtk.Box):
             GLib.source_remove(self._search_timeout)
         self._search_timeout = GLib.timeout_add(300, self._do_search)
 
+    def _focus_first_card(self):
+        first_child = self._flowbox.get_child_at_index(0)
+        if first_child:
+            first_child.grab_focus()
+            card = first_child.get_child()
+            if card and hasattr(card, 'grab_focus'):
+                card.grab_focus()
+
+    def _on_search_key_pressed(self, controller, keyval, keycode, state):
+        if keyval == Gdk.KEY_Down:
+            self._focus_first_card()
+            return True
+        elif keyval == Gdk.KEY_Escape:
+            self._search_entry.set_text("")
+            self._focus_first_card()
+            return True
+        return False
+
     def _on_search_activate(self, entry):
         if self._search_timeout:
             GLib.source_remove(self._search_timeout)
         self._do_search()
+        GLib.idle_add(self._focus_first_card)
 
     def _do_search(self):
         self._search_timeout = None

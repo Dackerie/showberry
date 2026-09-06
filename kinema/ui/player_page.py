@@ -426,10 +426,17 @@ class MpvWidget(Gtk.GLArea):
         self._mpv.seek(seconds, reference=reference)
 
     def set_volume(self, volume):
-        self._mpv.volume = max(0, min(100, volume))
+        v = max(0.0, min(100.0, float(volume)))
+        self._mpv.volume = v
+        if v > 0 and self.is_muted():
+            self._mpv.mute = False
 
     def get_volume(self):
-        return self._mpv.volume or 100
+        try:
+            val = self._mpv.volume
+            return 100.0 if val is None else float(val)
+        except Exception:
+            return 100.0
 
     def toggle_mute(self):
         self._mpv.mute = not self._mpv.mute
@@ -699,6 +706,8 @@ class PlayerControls(Gtk.Box):
         self._player: Optional[MpvWidget] = None
         self._is_dragging = False
         self._last_progress_save = 0.0
+        self._pre_mute_volume = 100.0
+        self._updating_volume_scale = False
 
         # Seek bar row with time
         seek_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -931,16 +940,33 @@ class PlayerControls(Gtk.Box):
                 self._curr_time_label.set_text(self._format_time(target))
 
     def _on_mute_clicked(self, button):
-        if self._player:
-            muted = self._player.toggle_mute()
-            if muted:
-                self._volume_btn.set_icon_name('audio-volume-muted-symbolic')
-                self.emit('timing-notification', "Muted")
+        if not self._player:
+            return
+        muted = self._player.toggle_mute()
+        if muted:
+            curr_vol = self._volume_scale.get_value()
+            if curr_vol > 0:
+                self._pre_mute_volume = curr_vol
+            self._updating_volume_scale = True
+            self._volume_scale.set_value(0.0)
+            self._updating_volume_scale = False
+            self._volume_btn.set_icon_name('audio-volume-muted-symbolic')
+            self.emit('timing-notification', "Muted")
+        else:
+            restore_vol = getattr(self, '_pre_mute_volume', 100.0) or 100.0
+            self._player.set_volume(restore_vol)
+            self._updating_volume_scale = True
+            self._volume_scale.set_value(restore_vol)
+            self._updating_volume_scale = False
+            if restore_vol < 50:
+                self._volume_btn.set_icon_name('audio-volume-low-symbolic')
             else:
                 self._volume_btn.set_icon_name('audio-volume-high-symbolic')
-                self.emit('timing-notification', f"Volume: {int(self._player.get_volume())}%")
+            self.emit('timing-notification', f"Volume: {int(restore_vol)}%")
 
     def _on_volume_changed(self, scale):
+        if getattr(self, '_updating_volume_scale', False):
+            return
         if self._player:
             val = scale.get_value()
             self._player.set_volume(val)
@@ -950,6 +976,10 @@ class PlayerControls(Gtk.Box):
                 self._volume_btn.set_icon_name('audio-volume-low-symbolic')
             else:
                 self._volume_btn.set_icon_name('audio-volume-high-symbolic')
+            if val > 0:
+                self._pre_mute_volume = val
+                if self._player.is_muted():
+                    self._player.toggle_mute()
 
 
 class PlayerPage(Adw.NavigationPage):
@@ -1130,15 +1160,22 @@ class PlayerPage(Adw.NavigationPage):
             self._show_controls_briefly()
             return True
         elif keyname == 'Up':
-            vol = min(100, self._mpv_widget.get_volume() + 5)
+            if self._mpv_widget.is_muted():
+                self._mpv_widget.toggle_mute()
+            curr = self._mpv_widget.get_volume()
+            vol = min(100.0, curr + 5.0)
             self._controls._volume_scale.set_value(vol)
             self.show_osd_notification(f"Volume: {int(vol)}%")
             self._show_controls_briefly()
             return True
         elif keyname == 'Down':
-            vol = max(0, self._mpv_widget.get_volume() - 5)
+            curr = self._mpv_widget.get_volume()
+            vol = max(0.0, curr - 5.0)
             self._controls._volume_scale.set_value(vol)
-            self.show_osd_notification(f"Volume: {int(vol)}%")
+            if vol <= 0.0:
+                self.show_osd_notification("Volume: 0% (Muted)")
+            else:
+                self.show_osd_notification(f"Volume: {int(vol)}%")
             self._show_controls_briefly()
             return True
         elif keyname in ['m', 'M']:
@@ -1148,12 +1185,15 @@ class PlayerPage(Adw.NavigationPage):
         elif keyname in ['f', 'F', 'F11']:
             self._on_fullscreen_toggle(None)
             return True
-        elif keyname == 'Escape':
+        elif keyname in ['Escape', 'BackSpace']:
             window = self.get_root()
             if window and window.is_fullscreen():
                 window.unfullscreen()
             else:
                 self._on_close(None)
+            return True
+        elif keyname in ['s', 'S']:
+            self._controls._sub_btn.activate()
             return True
         elif keyname in ['z', 'Z']:
             delta = -0.5 if shift else -0.1
@@ -1560,13 +1600,18 @@ class PlayerPage(Adw.NavigationPage):
             self._on_fullscreen_toggle(None)
 
     def _on_video_scroll(self, controller, dx, dy):
+        if self._mpv_widget.is_muted() and dy < 0:
+            self._mpv_widget.toggle_mute()
         current_vol = self._mpv_widget.get_volume()
         delta = -5 if dy > 0 else 5
         new_vol = max(0, min(100, current_vol + delta))
         self._mpv_widget.set_volume(new_vol)
         if hasattr(self._controls, '_volume_scale'):
             self._controls._volume_scale.set_value(new_vol)
-        self.show_osd_notification(f"Volume: {int(new_vol)}%")
+        if new_vol == 0:
+            self.show_osd_notification("Volume: 0% (Muted)")
+        else:
+            self.show_osd_notification(f"Volume: {int(new_vol)}%")
         self._show_controls_briefly()
         return True
 
