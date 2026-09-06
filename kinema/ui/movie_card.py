@@ -126,6 +126,7 @@ class MovieCard(Gtk.Box):
         self.set_hexpand(False)
         self.set_halign(Gtk.Align.START)
         self.set_valign(Gtk.Align.START)
+        self.set_focusable(True)
 
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         inner.set_margin_top(4)
@@ -275,6 +276,17 @@ class MovieCard(Gtk.Box):
         motion.connect('leave', self._on_hover_leave)
         self.add_controller(motion)
 
+        # ── Focus controller → reveal play circle when focused ────────────
+        focus_controller = Gtk.EventControllerFocus.new()
+        focus_controller.connect('enter', self._on_focus_enter)
+        focus_controller.connect('leave', self._on_focus_leave)
+        self.add_controller(focus_controller)
+
+        # ── Key controller → keyboard navigation & activation ─────────────
+        key_controller = Gtk.EventControllerKey.new()
+        key_controller.connect('key-pressed', self._on_key_pressed)
+        self.add_controller(key_controller)
+
         # ── Load poster and enrich metadata asynchronously ────────────────
         self._load_card_data()
 
@@ -284,21 +296,43 @@ class MovieCard(Gtk.Box):
         self._play_overlay.set_visible(True)
 
     def _on_hover_leave(self, controller):
+        if not self.is_focus():
+            self._play_overlay.set_visible(False)
+
+    def _on_focus_enter(self, controller):
+        self._play_overlay.set_visible(True)
+
+    def _on_focus_leave(self, controller):
         self._play_overlay.set_visible(False)
+
+    def _on_key_pressed(self, controller, keyval, keycode, state):
+        if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            self.emit('clicked-movie', self._movie)
+            return True
+        elif keyval in (Gdk.KEY_space, Gdk.KEY_p, Gdk.KEY_P):
+            self._start_play()
+            return True
+        elif keyval in (Gdk.KEY_Delete, Gdk.KEY_BackSpace, Gdk.KEY_r, Gdk.KEY_R) and self._show_remove_button:
+            self._on_remove_released(None, 1, 0, 0)
+            return True
+        return False
 
     def _on_body_released(self, gesture, n_press, x, y):
         """Card body click → navigate to detail page."""
-        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        if gesture:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         self.emit('clicked-movie', self._movie)
 
     def _on_play_released(self, gesture, n_press, x, y):
         """Play circle click → start or resume stream directly."""
-        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        if gesture:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         self._start_play()
 
     def _on_remove_released(self, gesture, n_press, x, y):
         """Delete button → remove from continue-watching."""
-        gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        if gesture:
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         tmdb_id = self._movie.get('id') or self._movie.get('tmdb_id')
         if tmdb_id:
             self.emit('remove-item', int(tmdb_id))

@@ -41,6 +41,19 @@ class KinemaApplication(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         self._load_css()
+        self._setup_accelerators()
+
+    def _setup_accelerators(self):
+        self.set_accels_for_action("win.shortcuts", ["<Ctrl>question", "<Ctrl>slash"])
+        self.set_accels_for_action("win.preferences", ["<Ctrl>comma"])
+        self.set_accels_for_action("win.fullscreen", ["F11"])
+        self.set_accels_for_action("win.back", ["<Alt>Left"])
+        self.set_accels_for_action("win.search", ["<Ctrl>f"])
+        self.set_accels_for_action("win.tab_library", ["<Ctrl>1"])
+        self.set_accels_for_action("win.tab_movies", ["<Ctrl>2"])
+        self.set_accels_for_action("win.tab_series", ["<Ctrl>3"])
+        self.set_accels_for_action("win.tab_next", ["<Ctrl>Page_Down", "<Ctrl>Tab"])
+        self.set_accels_for_action("win.tab_prev", ["<Ctrl>Page_Up", "<Ctrl><Shift>Tab"])
 
     def _load_css(self):
         """Load application CSS stylesheet."""

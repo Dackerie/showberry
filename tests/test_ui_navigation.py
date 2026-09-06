@@ -590,6 +590,88 @@ class TestUINavigation(unittest.TestCase):
             # New render context created and callback assigned
             self.assertEqual(widget._ctx, mock_new_ctx)
 
+    def test_volume_zero_clamping_and_mute_slider(self):
+        """Volume cleanly clamps at 0% without wrapping to 100%, and mute slider updates correctly."""
+        from kinema.ui.player_page import MpvWidget, PlayerControls
+
+        widget = MpvWidget()
+        widget.set_volume(0)
+        self.assertEqual(widget.get_volume(), 0.0)
+
+        # Decrementing below 0 clamps at 0.0
+        v_below = max(0.0, widget.get_volume() - 5.0)
+        widget.set_volume(v_below)
+        self.assertEqual(widget.get_volume(), 0.0)
+
+        # PlayerControls mute synchronization
+        controls = PlayerControls()
+        controls.set_player(widget)
+        controls._volume_scale.set_value(75.0)
+        self.assertEqual(controls._pre_mute_volume, 75.0)
+
+        # Trigger mute
+        controls._on_mute_clicked(None)
+        self.assertTrue(widget.is_muted())
+        self.assertEqual(controls._volume_scale.get_value(), 0.0)
+
+        # Trigger unmute -> restores 75%
+        controls._on_mute_clicked(None)
+        self.assertFalse(widget.is_muted())
+        self.assertEqual(controls._volume_scale.get_value(), 75.0)
+        self.assertEqual(widget.get_volume(), 75.0)
+
+    def test_movie_card_focusability_and_keyboard_activation(self):
+        """MovieCard is focusable and handles Return (details), Space/P (play), and Delete (remove)."""
+        from gi.repository import Gdk
+        from kinema.ui.movie_card import MovieCard
+
+        card = MovieCard({'id': 999, 'title': 'Test Movie'}, show_remove_button=True)
+        self.assertTrue(card.get_focusable())
+
+        clicked = []
+        played = []
+        removed = []
+        card.connect('clicked-movie', lambda c, m: clicked.append(m))
+        card.connect('play-movie', lambda c, s: played.append(s))
+        card.connect('remove-item', lambda c, tid: removed.append(tid))
+
+        # Enter key triggers clicked-movie
+        self.assertTrue(card._on_key_pressed(None, Gdk.KEY_Return, 0, 0))
+        self.assertEqual(len(clicked), 1)
+
+        # Space key triggers play-movie
+        self.assertTrue(card._on_key_pressed(None, Gdk.KEY_space, 0, 0))
+        self.assertEqual(len(played), 1)
+
+        # P key triggers play-movie
+        self.assertTrue(card._on_key_pressed(None, Gdk.KEY_p, 0, 0))
+        self.assertEqual(len(played), 2)
+
+        # Delete key triggers remove-item
+        self.assertTrue(card._on_key_pressed(None, Gdk.KEY_Delete, 0, 0))
+        self.assertEqual(removed, [999])
+
+    def test_window_shortcuts_and_menu_items(self):
+        """KinemaWindow includes shortcuts and tab navigation actions, and hamburger menu has Keyboard Shortcuts."""
+        from kinema.window import KinemaWindow
+
+        win = KinemaWindow()
+        self.assertTrue(win.has_action('shortcuts'))
+        self.assertTrue(win.has_action('search'))
+        self.assertTrue(win.has_action('tab_library'))
+        self.assertTrue(win.has_action('tab_movies'))
+        self.assertTrue(win.has_action('tab_series'))
+        self.assertTrue(win.has_action('tab_next'))
+        self.assertTrue(win.has_action('tab_prev'))
+
+        # Test tab switching
+        win._switch_tab('movies')
+        self.assertEqual(win._view_stack.get_visible_child_name(), 'movies')
+        win._cycle_tab(1)
+        self.assertEqual(win._view_stack.get_visible_child_name(), 'series')
+        win._cycle_tab(-1)
+        self.assertEqual(win._view_stack.get_visible_child_name(), 'movies')
+
 
     def test_movie_page_backdrop_dimensions(self):
         """MoviePage backdrop has responsive height scaling, can_shrink True, and START alignment."""

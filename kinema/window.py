@@ -107,6 +107,7 @@ class KinemaWindow(Adw.ApplicationWindow):
 
         menu = Gio.Menu()
         menu.append("Preferences", "win.preferences")
+        menu.append("Keyboard Shortcuts", "win.shortcuts")
         menu.append("Clear Watch History", "win.clear_history")
         menu.append("About Kinema", "win.about")
         menu_button.set_menu_model(menu)
@@ -186,6 +187,115 @@ class KinemaWindow(Adw.ApplicationWindow):
         about_action = Gio.SimpleAction.new('about', None)
         about_action.connect('activate', self._on_about_action)
         self.add_action(about_action)
+
+        shortcuts_action = Gio.SimpleAction.new('shortcuts', None)
+        shortcuts_action.connect('activate', self._on_shortcuts_action)
+        self.add_action(shortcuts_action)
+
+        search_action = Gio.SimpleAction.new('search', None)
+        search_action.connect('activate', self._on_search_action)
+        self.add_action(search_action)
+
+        tab_lib_action = Gio.SimpleAction.new('tab_library', None)
+        tab_lib_action.connect('activate', lambda a, p: self._switch_tab('library'))
+        self.add_action(tab_lib_action)
+
+        tab_mov_action = Gio.SimpleAction.new('tab_movies', None)
+        tab_mov_action.connect('activate', lambda a, p: self._switch_tab('movies'))
+        self.add_action(tab_mov_action)
+
+        tab_ser_action = Gio.SimpleAction.new('tab_series', None)
+        tab_ser_action.connect('activate', lambda a, p: self._switch_tab('series'))
+        self.add_action(tab_ser_action)
+
+        tab_next_action = Gio.SimpleAction.new('tab_next', None)
+        tab_next_action.connect('activate', lambda a, p: self._cycle_tab(1))
+        self.add_action(tab_next_action)
+
+        tab_prev_action = Gio.SimpleAction.new('tab_prev', None)
+        tab_prev_action.connect('activate', lambda a, p: self._cycle_tab(-1))
+        self.add_action(tab_prev_action)
+
+    def _switch_tab(self, tab_name: str):
+        visible = self._nav_view.get_visible_page()
+        if visible and visible.get_tag() == 'player':
+            return
+        while self._nav_view.get_visible_page() and self._nav_view.get_visible_page().get_tag() != 'main':
+            self._nav_view.pop()
+        self._view_stack.set_visible_child_name(tab_name)
+
+    def _cycle_tab(self, step: int):
+        visible = self._nav_view.get_visible_page()
+        if visible and visible.get_tag() == 'player':
+            return
+        tabs = ['library', 'movies', 'series']
+        curr = self._view_stack.get_visible_child_name()
+        if curr in tabs:
+            idx = (tabs.index(curr) + step) % len(tabs)
+            self._switch_tab(tabs[idx])
+
+    def _on_search_action(self, action, param):
+        visible = self._nav_view.get_visible_page()
+        if visible and visible.get_tag() == 'player':
+            return
+        curr = self._view_stack.get_visible_child_name()
+        if curr == 'movies':
+            self._movies_page._search_entry.grab_focus()
+        elif curr == 'series':
+            self._series_page._search_entry.grab_focus()
+        else:
+            self._switch_tab('movies')
+            self._movies_page._search_entry.grab_focus()
+
+    def _on_shortcuts_action(self, action, param):
+        self._show_shortcuts_window()
+
+    def _show_shortcuts_window(self):
+        win = Gtk.ShortcutsWindow()
+        win.set_transient_for(self)
+        win.set_modal(True)
+
+        section = Gtk.ShortcutsSection()
+        win.set_child(section)
+
+        # ── General ────────────────────────────────────────────────────────
+        g_gen = Gtk.ShortcutsGroup(title="General")
+        g_gen.append(Gtk.ShortcutsShortcut(title="Search", accelerator="<Ctrl>F"))
+        g_gen.append(Gtk.ShortcutsShortcut(title="Keyboard Shortcuts", accelerator="<Ctrl>question"))
+        g_gen.append(Gtk.ShortcutsShortcut(title="Preferences", accelerator="<Ctrl>comma"))
+        g_gen.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="F11"))
+        g_gen.append(Gtk.ShortcutsShortcut(title="Go Back / Exit Player", accelerator="Escape"))
+        section.append(g_gen)
+
+        # ── Navigation ─────────────────────────────────────────────────────
+        g_nav = Gtk.ShortcutsGroup(title="Navigation")
+        g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Library", accelerator="<Ctrl>1"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Movies", accelerator="<Ctrl>2"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Series", accelerator="<Ctrl>3"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Next Tab", accelerator="<Ctrl>Tab"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Previous Tab", accelerator="<Ctrl><Shift>Tab"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Open Details", accelerator="Return"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Play Directly", accelerator="space"))
+        g_nav.append(Gtk.ShortcutsShortcut(title="Toggle Watchlist", accelerator="w"))
+        section.append(g_nav)
+
+        # ── Playback ───────────────────────────────────────────────────────
+        g_play = Gtk.ShortcutsGroup(title="Playback")
+        g_play.append(Gtk.ShortcutsShortcut(title="Play / Pause", accelerator="space"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Seek Backward 10s", accelerator="Left"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Seek Forward 10s", accelerator="Right"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Seek Backward 1m", accelerator="<Shift>Left"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Seek Forward 1m", accelerator="<Shift>Right"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Volume Up", accelerator="Up"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Volume Down", accelerator="Down"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Mute / Unmute", accelerator="m"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Decrease Subtitle Delay", accelerator="z"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Increase Subtitle Delay", accelerator="x"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Subtitles Menu", accelerator="s"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="f"))
+        section.append(g_play)
+
+        win.present()
 
     def _on_preferences_action(self, action, param):
         """Open settings page within the navigation view."""
