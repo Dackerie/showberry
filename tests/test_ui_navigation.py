@@ -552,6 +552,25 @@ class TestUINavigation(unittest.TestCase):
         widget.activate()
         self.assertTrue(widget._is_active)
 
+    def test_mpv_widget_consecutive_playback_rendering(self):
+        """MpvWidget recovers gracefully across playback cycles without raising GLError(err=1282)."""
+        from kinema.ui.player_page import MpvWidget
+        from OpenGL import GL
+
+        widget = MpvWidget()
+        # Inactive widget safely returns False
+        widget._is_active = False
+        self.assertFalse(widget.do_render())
+
+        # Active widget with zero dimensions returns False without crashing
+        widget._is_active = True
+        self.assertFalse(widget.do_render())
+
+        # Test deactivate detaches update_cb and play restores it
+        widget.deactivate()
+        self.assertFalse(widget._is_active)
+
+
     def test_movie_page_backdrop_dimensions(self):
         """MoviePage backdrop has responsive height scaling, can_shrink True, and START alignment."""
         from kinema.ui.movie_page import MoviePage

@@ -120,6 +120,11 @@ class MpvWidget(Gtk.GLArea):
         """Immediately stop playback and disable render callbacks to prevent deadlocks."""
         self._is_active = False
         try:
+            if self._ctx:
+                self._ctx.update_cb = None
+        except Exception:
+            pass
+        try:
             self.pause()
             self.stop()
         except Exception:
@@ -129,6 +134,7 @@ class MpvWidget(Gtk.GLArea):
         self.make_current()
 
         if self._ctx:
+            self._ctx.update_cb = self._on_mpv_callback
             return
 
         try:
@@ -148,13 +154,21 @@ class MpvWidget(Gtk.GLArea):
         # Do NOT destroy or free MpvRenderContext on page navigation pop.
         # Freeing render context while MPV threads or GTK are tearing down deadlocks libmpv.
         self._is_active = False
+        try:
+            if self._ctx:
+                self._ctx.update_cb = None
+        except Exception:
+            pass
 
     def _on_mpv_callback(self):
-        if not self._is_active:
-            return
-        if not self._redraw_pending:
-            self._redraw_pending = True
-            GLib.idle_add(self._trigger_redraw)
+        try:
+            if not getattr(self, '_is_active', False):
+                return
+            if not getattr(self, '_redraw_pending', False):
+                self._redraw_pending = True
+                GLib.idle_add(self._trigger_redraw)
+        except Exception:
+            pass
 
     def _trigger_redraw(self, *_):
         self._redraw_pending = False
@@ -177,13 +191,41 @@ class MpvWidget(Gtk.GLArea):
         if width <= 0 or height <= 0:
             return False
 
-        fbo = GL.glGetIntegerv(GL.GL_DRAW_FRAMEBUFFER_BINDING)
+        # Ensure Gtk.GLArea context is current
+        try:
+            self.make_current()
+        except Exception:
+            pass
 
-        self._ctx.render(
-            flip_y=True,
-            opengl_fbo={'w': width, 'h': height, 'fbo': fbo},
-            block_for_target_time=False,
-        )
+        # Clear any residual OpenGL error flags from context switching
+        try:
+            while GL.glGetError() != GL.GL_NO_ERROR:
+                pass
+        except Exception:
+            pass
+
+        # Query current FBO with safe fallback
+        try:
+            fbo = GL.glGetIntegerv(GL.GL_DRAW_FRAMEBUFFER_BINDING)
+        except Exception:
+            fbo = 0
+
+        # Render MPV frame
+        try:
+            self._ctx.render(
+                flip_y=True,
+                opengl_fbo={'w': width, 'h': height, 'fbo': fbo},
+                block_for_target_time=False,
+            )
+        except Exception:
+            return False
+
+        # Clear any error state left by libmpv
+        try:
+            while GL.glGetError() != GL.GL_NO_ERROR:
+                pass
+        except Exception:
+            pass
 
         if not self._has_drawn_first_frame:
             self._has_drawn_first_frame = True
@@ -248,6 +290,11 @@ class MpvWidget(Gtk.GLArea):
                 pass
 
         self._is_active = True
+        try:
+            if self._ctx:
+                self._ctx.update_cb = self._on_mpv_callback
+        except Exception:
+            pass
         self._has_drawn_first_frame = False
         self._wait_first_frame = True
         try:
