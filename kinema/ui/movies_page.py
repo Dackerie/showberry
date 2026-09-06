@@ -67,14 +67,16 @@ class MoviesPage(Gtk.Box):
         grid_clamp.set_tightening_threshold(800)
 
         self._flowbox = Gtk.FlowBox()
-        self._flowbox.set_homogeneous(True)
+        self._flowbox.set_homogeneous(False)
         self._flowbox.set_column_spacing(14)
         self._flowbox.set_row_spacing(14)
         self._flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._flowbox.set_halign(Gtk.Align.FILL)
         self._flowbox.set_margin_start(16)
         self._flowbox.set_margin_end(16)
         self._flowbox.set_margin_top(14)
         self._flowbox.set_margin_bottom(24)
+
 
         grid_clamp.set_child(self._flowbox)
         self._scroll.set_child(grid_clamp)

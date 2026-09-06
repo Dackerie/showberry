@@ -57,7 +57,11 @@ class MoviePage(Adw.NavigationPage):
         self._episodes_data: List[Dict[str, Any]] = []
 
         self._setup_ui()
+        # Pre-populate images immediately from card data (0ms — already cached from grid).
+        # The network detail call (_load_details_async) may update them later if needed.
+        self._load_images_async()
         self._load_details_async()
+
 
     def _setup_ui(self):
         toolbar_view = Adw.ToolbarView()
@@ -98,9 +102,11 @@ class MoviePage(Adw.NavigationPage):
         # Poster
         self._poster = Gtk.Picture()
         self._poster.set_size_request(200, 300)
-        self._poster.set_content_fit(Gtk.ContentFit.COVER)
+        self._poster.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self._poster.set_valign(Gtk.Align.START)
         self._poster.add_css_class('card-poster')
         info_box.append(self._poster)
+
 
         # Details
         details = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -350,10 +356,19 @@ class MoviePage(Adw.NavigationPage):
         self._update_watchlist_btn_state()
 
     def _load_images_async(self):
-        """Load poster and backdrop asynchronously."""
+        """Load poster and backdrop asynchronously from cache (instant if already in disk cache)."""
         cache = ImageCache()
-        poster_url = self._movie.get('poster_url')
-        backdrop_url = self._movie.get('backdrop_url')
+        movie = self._movie
+
+        poster_url = (
+            movie.get('poster_url')
+            or movie.get('poster_url_small')
+            or (f"https://image.tmdb.org/t/p/w500{movie['poster_path']}" if movie.get('poster_path') else None)
+        )
+        backdrop_url = (
+            movie.get('backdrop_url')
+            or (f"https://image.tmdb.org/t/p/w1280{movie['backdrop_path']}" if movie.get('backdrop_path') else None)
+        )
 
         def worker():
             if poster_url:
@@ -366,6 +381,7 @@ class MoviePage(Adw.NavigationPage):
                     GLib.idle_add(self._backdrop.set_paintable, tex)
 
         threading.Thread(target=worker, daemon=True).start()
+
 
     def _setup_providers(self):
         providers = get_all_providers()

@@ -225,14 +225,7 @@ class MpvWidget(Gtk.GLArea):
             except Exception:
                 pass
 
-        # Start paused; do_render will unpause on the first video frame so
-        # audio never runs ahead of visible frames (A/V sync).
-        self._wait_first_frame = True
-        try:
-            self._mpv.pause = True
-        except Exception:
-            pass
-
+        self._wait_first_frame = False  # reset flag
         self._mpv.play(url)
 
         self._pending_subtitles = list(subtitles or [])
@@ -250,12 +243,17 @@ class MpvWidget(Gtk.GLArea):
         return False
 
     def add_subtitle(self, url: str, label: str = 'Subtitle', lang: str = 'eng'):
-        """Add external subtitle to playback."""
+        """Add external subtitle to playback (only when MPV has a file loaded)."""
         try:
+            # MPV error -12 (MPV_ERROR_COMMAND) occurs when no file is loaded.
+            # Guard by checking that mpv is in a playing state.
+            if not self._mpv.filename:
+                return
             self._mpv.command('sub-add', url, 'auto', label, lang)
             logger.info(f"Added subtitle track: {label} ({url[:40]}...)")
         except Exception as e:
-            logger.warning(f"Could not load subtitle {url}: {e}")
+            logger.debug(f"Could not load subtitle {url}: {e}")
+
 
     def get_sub_tracks(self) -> List[Dict[str, Any]]:
         """Get list of all available subtitle tracks."""

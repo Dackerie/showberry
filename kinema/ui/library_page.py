@@ -68,14 +68,16 @@ class LibraryPage(Gtk.Box):
         self._wl_section.append(wl_header)
 
         self._wl_flowbox = Gtk.FlowBox()
-        self._wl_flowbox.set_homogeneous(True)
+        self._wl_flowbox.set_homogeneous(False)
         self._wl_flowbox.set_column_spacing(14)
         self._wl_flowbox.set_row_spacing(14)
         self._wl_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._wl_flowbox.set_halign(Gtk.Align.FILL)
         self._wl_flowbox.set_margin_start(4)
         self._wl_flowbox.set_margin_end(4)
         self._wl_flowbox.set_margin_top(4)
         self._wl_flowbox.set_margin_bottom(12)
+
         self._wl_section.append(self._wl_flowbox)
         self._content_box.append(self._wl_section)
 
