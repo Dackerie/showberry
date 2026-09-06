@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3584e4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a5fb4;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="20" fill="url(#bg)"/>
+  <g transform="translate(64,64)">
+    <!-- Film reel -->
+    <circle cx="0" cy="0" r="40" fill="none" stroke="white" stroke-width="3"/>
+    <circle cx="0" cy="0" r="10" fill="white"/>
+    <!-- Film holes -->
+    <circle cx="0" cy="-30" r="5" fill="white" opacity="0.8"/>
+    <circle cx="26" cy="-15" r="5" fill="white" opacity="0.8"/>
+    <circle cx="26" cy="15" r="5" fill="white" opacity="0.8"/>
+    <circle cx="0" cy="30" r="5" fill="white" opacity="0.8"/>
+    <circle cx="-26" cy="15" r="5" fill="white" opacity="0.8"/>
+    <circle cx="-26" cy="-15" r="5" fill="white" opacity="0.8"/>
+    <!-- Play triangle -->
+    <polygon points="-8,-12 -8,12 14,0" fill="#3584e4"/>
+  </g>
+</svg>

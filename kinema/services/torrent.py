@@ -1,0 +1,353 @@
+"""Sequential torrent streaming service with built-in HTTP Range server."""
+
+import os
+import re
+import sys
+import time
+import socket
+import logging
+import threading
+import mimetypes
+from pathlib import Path
+from typing import Optional, Dict, Any
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
+
+from gi.repository import GLib
+
+logger = logging.getLogger(__name__)
+
+try:
+    import libtorrent as lt
+    HAS_LIBTORRENT = True
+except ImportError:
+    HAS_LIBTORRENT = False
+    logger.warning("libtorrent not found. Torrent streaming will be unavailable.")
+
+TRACKERS = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.openbittorrent.com:6969/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://explodie.org:6969/announce",
+]
+
+VIDEO_EXTS = ('.mp4', '.mkv', '.avi', '.webm', '.mov', '.ts', '.m4v')
+
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    """Multi-threaded HTTP server so multiple ranges / requests can be served concurrently."""
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+class TorrentStreamRequestHandler(BaseHTTPRequestHandler):
+    """HTTP Request Handler supporting Byte Range (HTTP 206 Partial Content) requests."""
+
+    def log_message(self, format, *args):
+        # Suppress noisy HTTP access logs
+        pass
+
+    def do_HEAD(self):
+        self._serve(head_only=True)
+
+    def do_GET(self):
+        self._serve(head_only=False)
+
+    def _serve(self, head_only=False):
+        streamer: TorrentStreamer = self.server.streamer
+        file_path = streamer.video_file_path
+        total_size = streamer.video_file_size
+
+        if not file_path or total_size <= 0:
+            self.send_error(503, "Torrent metadata or video file not yet ready")
+            return
+
+        range_header = self.headers.get('Range')
+        start = 0
+        end = total_size - 1
+
+        if range_header:
+            match = re.match(r'bytes=(\d+)-(\d*)', range_header)
+            if match:
+                start = int(match.group(1))
+                if match.group(2):
+                    end = int(match.group(2))
+
+        if start >= total_size or start > end:
+            self.send_error(416, "Requested Range Not Satisfiable")
+            return
+
+        length = end - start + 1
+        content_type, _ = mimetypes.guess_type(file_path)
+        if not content_type:
+            content_type = 'video/mp4' if file_path.endswith('.mp4') else 'video/x-matroska'
+
+        if range_header:
+            self.send_response(206)
+            self.send_header('Content-Range', f'bytes {start}-{end}/{total_size}')
+        else:
+            self.send_response(200)
+
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(length))
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+
+        if head_only:
+            return
+
+        # Stream bytes from disk, prioritizing pieces as requested
+        try:
+            streamer.stream_bytes(self.wfile, start, length)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+
+class TorrentStreamer:
+    """Manages sequential downloading of a torrent and local HTTP streaming."""
+
+    def __init__(self, cache_dir: Optional[str] = None):
+        if not HAS_LIBTORRENT:
+            raise RuntimeError("libtorrent is required for TorrentStreamer")
+
+        if cache_dir is None:
+            cache_dir = Path(GLib.get_user_cache_dir()) / 'kinema' / 'torrents'
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        self.session: Optional[lt.session] = None
+        self.handle: Optional[lt.torrent_handle] = None
+        self.httpd: Optional[ThreadedHTTPServer] = None
+        self.http_thread: Optional[threading.Thread] = None
+        self.http_port: int = 0
+
+        self.video_file_path: Optional[str] = None
+        self.video_file_idx: int = -1
+        self.video_file_size: int = 0
+        self.piece_length: int = 0
+        self.start_piece: int = 0
+        self.end_piece: int = 0
+
+        self.is_running = False
+        self._stop_event = threading.Event()
+        self.state_string = "idle"
+
+    def _init_session(self):
+        """Initialize libtorrent session with DHT and high-performance settings."""
+        settings = {
+            'listen_interfaces': '0.0.0.0:6881',
+            'enable_dht': True,
+            'enable_lsd': True,
+            'alert_mask': lt.alert.category_t.error_notification | lt.alert.category_t.status_notification,
+        }
+        self.session = lt.session(settings)
+        # Add DHT routers
+        self.session.add_dht_node(('router.bittorrent.com', 6881))
+        self.session.add_dht_node(('dht.transmissionbt.com', 6881))
+        self.session.add_dht_node(('router.utorrent.com', 6881))
+
+    def start_stream(self, magnet_or_hash: str, timeout: int = 30) -> str:
+        """
+        Start downloading torrent sequentially and return streaming HTTP URL.
+        """
+        self.stop()
+        self._stop_event.clear()
+        self.is_running = True
+        self.state_string = "fetching_metadata"
+
+        self._init_session()
+
+        if magnet_or_hash.startswith('magnet:'):
+            magnet_uri = magnet_or_hash
+        else:
+            # Construct magnet from info hash
+            info_hash = magnet_or_hash.strip().lower()
+            trackers_str = ''.join(f'&tr={tr}' for tr in TRACKERS)
+            magnet_uri = f"magnet:?xt=urn:btih:{info_hash}{trackers_str}"
+
+        params = lt.parse_magnet_uri(magnet_uri)
+        params.save_path = str(self.cache_dir)
+        params.flags |= lt.torrent_flags.sequential_download
+
+        self.handle = self.session.add_torrent(params)
+        self.handle.set_flags(lt.torrent_flags.sequential_download)
+
+        # Wait for metadata
+        start_time = time.time()
+        while not self.handle.status().has_metadata:
+            if self._stop_event.is_set():
+                raise RuntimeError("Torrent streaming cancelled")
+            if time.time() - start_time > timeout:
+                raise TimeoutError("Timed out waiting for torrent metadata")
+            time.sleep(0.5)
+
+        info = self.handle.torrent_file()
+        num_files = info.num_files()
+
+        # Find largest video file
+        best_idx = -1
+        max_size = -1
+        files = info.files()
+        for i in range(num_files):
+            fn = files.file_path(i).lower()
+            sz = files.file_size(i)
+            if sz > max_size and any(fn.endswith(ext) for ext in VIDEO_EXTS):
+                max_size = sz
+                best_idx = i
+
+        if best_idx == -1:
+            # Fallback to absolute largest file
+            for i in range(num_files):
+                sz = files.file_size(i)
+                if sz > max_size:
+                    max_size = sz
+                    best_idx = i
+
+        if best_idx == -1 or max_size <= 0:
+            raise RuntimeError("No playable video file found in torrent")
+
+        self.video_file_idx = best_idx
+        self.video_file_size = max_size
+        rel_path = files.file_path(best_idx)
+        self.video_file_path = str(self.cache_dir / rel_path)
+        self.piece_length = info.piece_length()
+
+        # Prioritize video file only
+        priorities = [0] * num_files
+        priorities[best_idx] = 7
+        self.handle.prioritize_files(priorities)
+
+        req_start = info.map_file(best_idx, 0, 1)
+        req_end = info.map_file(best_idx, max_size - 1, 1)
+        self.start_piece = req_start.piece
+        self.end_piece = req_end.piece
+
+        # Prioritize header pieces (first 5 pieces) and footer pieces (last 2 pieces)
+        for p in range(self.start_piece, min(self.start_piece + 6, self.end_piece + 1)):
+            self.handle.piece_priority(p, 7)
+            self.handle.set_piece_deadline(p, 0)
+
+        for p in range(max(self.start_piece, self.end_piece - 2), self.end_piece + 1):
+            self.handle.piece_priority(p, 7)
+            self.handle.set_piece_deadline(p, 0)
+
+        # Start HTTP server on an ephemeral free port
+        self._start_http_server()
+        self.state_string = "buffering"
+
+        # Wait until first piece of video is ready so playback starts cleanly
+        wait_start = time.time()
+        while not self.handle.have_piece(self.start_piece):
+            if self._stop_event.is_set():
+                raise RuntimeError("Torrent playback stopped")
+            if time.time() - wait_start > 45:
+                # Proceed anyway to let MPV attempt buffering
+                break
+            time.sleep(0.3)
+
+        self.state_string = "ready"
+        return f"http://127.0.0.1:{self.http_port}/stream"
+
+    def _start_http_server(self):
+        """Bind and run HTTP Range server on loopback."""
+        # Find free port
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', 0))
+            self.http_port = s.getsockname()[1]
+
+        self.httpd = ThreadedHTTPServer(('127.0.0.1', self.http_port), TorrentStreamRequestHandler)
+        self.httpd.streamer = self
+
+        self.http_thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.http_thread.start()
+
+    def stream_bytes(self, wfile, offset: int, length: int, chunk_size: int = 65536):
+        """Read bytes from disk and wait for pieces to download if needed."""
+        info = self.handle.torrent_file()
+        bytes_sent = 0
+
+        while bytes_sent < length and not self._stop_event.is_set():
+            curr_pos = offset + bytes_sent
+            piece_req = info.map_file(self.video_file_idx, curr_pos, 1)
+            piece_idx = piece_req.piece
+
+            # Prioritize current piece and upcoming pieces
+            if not self.handle.have_piece(piece_idx):
+                for p in range(piece_idx, min(piece_idx + 8, self.end_piece + 1)):
+                    self.handle.piece_priority(p, 7)
+                    self.handle.set_piece_deadline(p, (p - piece_idx) * 100)
+
+                # Wait for piece with timeout
+                wait_count = 0
+                while not self.handle.have_piece(piece_idx) and not self._stop_event.is_set():
+                    time.sleep(0.1)
+                    wait_count += 1
+                    if wait_count > 300:  # 30s timeout
+                        break
+
+            # Read chunk from file
+            chunk_to_read = min(chunk_size, length - bytes_sent)
+            try:
+                with open(self.video_file_path, 'rb') as f:
+                    f.seek(curr_pos)
+                    data = f.read(chunk_to_read)
+                    if not data:
+                        time.sleep(0.1)
+                        continue
+                    wfile.write(data)
+                    bytes_sent += len(data)
+            except Exception as e:
+                break
+
+    def get_status(self) -> Dict[str, Any]:
+        """Return live torrent status dictionary."""
+        if not self.handle or not self.handle.is_valid():
+            return {'state': 'idle', 'progress': 0.0, 'download_rate': 0, 'peers': 0, 'seeds': 0}
+
+        st = self.handle.status()
+        return {
+            'state': self.state_string,
+            'progress': st.progress,
+            'download_rate': st.download_rate,
+            'upload_rate': st.upload_rate,
+            'peers': st.num_peers,
+            'seeds': st.num_seeds,
+            'total_done': st.total_done,
+            'total_size': self.video_file_size,
+        }
+
+    def stop(self):
+        """Stop streaming and clean up server and torrent session."""
+        self._stop_event.set()
+        self.is_running = False
+        self.state_string = "stopped"
+
+        if self.httpd:
+            try:
+                self.httpd.shutdown()
+                self.httpd.server_close()
+            except Exception:
+                pass
+            self.httpd = None
+
+        if self.session and self.handle and self.handle.is_valid():
+            try:
+                self.session.remove_torrent(self.handle)
+            except Exception:
+                pass
+            self.handle = None
+
+        if self.session:
+            self.session = None
+
+
+_streamer_instance: Optional[TorrentStreamer] = None
+
+def get_torrent_streamer() -> TorrentStreamer:
+    global _streamer_instance
+    if _streamer_instance is None:
+        _streamer_instance = TorrentStreamer()
+    return _streamer_instance

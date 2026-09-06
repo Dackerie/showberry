@@ -1,0 +1,6 @@
+# Development dependencies
+flake8
+pyflakes
+mypy
+pytest
+pytest-cov

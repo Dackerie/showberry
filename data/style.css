@@ -1,0 +1,154 @@
+/* Kinema Modern Libadwaita Stylesheet */
+
+/* Movie Cards & Posters */
+.movie-card {
+    border-radius: 12px;
+    padding: 6px;
+    background-color: alpha(@card_bg_color, 0.4);
+    border: 1px solid alpha(@borders, 0.4);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.movie-card:hover {
+    transform: translateY(-4px);
+    background-color: alpha(@card_bg_color, 0.85);
+    border-color: alpha(@accent_color, 0.6);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.movie-card:active {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.card-poster {
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Heartive-style hover play circle overlay */
+.card-play-overlay {
+    background-color: rgba(0, 0, 0, 0.65);
+    border-radius: 9999px;
+    padding: 12px;
+    color: #ffffff;
+    border: 2px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+}
+
+.card-play-overlay:hover {
+    background-color: @accent_bg_color;
+    border-color: #ffffff;
+}
+
+/* Movie Detail Page */
+.movie-backdrop {
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.genre-pill {
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background-color: alpha(@window_fg_color, 0.08);
+    color: @window_fg_color;
+    border: 1px solid alpha(@borders, 0.5);
+}
+
+.meta-rating {
+    font-weight: 700;
+    color: #e5a50a; /* warm gold */
+}
+
+/* Player Surface & Floating Controls */
+.player-page {
+    background-color: #000000;
+}
+
+.player-controls {
+    background-color: alpha(#161616, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    padding: 10px 18px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+    margin-bottom: 24px;
+    transition: opacity 250ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.player-controls scale trough {
+    min-height: 6px;
+    border-radius: 3px;
+}
+
+.player-controls scale highlight {
+    background-color: @accent_bg_color;
+    border-radius: 3px;
+}
+
+/* Navigation & Header */
+.navigation-sidebar {
+    background-color: alpha(@window_bg_color, 0.95);
+}
+
+.title-section {
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin-left: 8px;
+    margin-bottom: 4px;
+}
+
+/* Watchlist active button styling */
+.watchlist-active {
+    color: #e5a50a;
+}
+
+/* Floating OSD Notification Pill */
+.osd-pill {
+    background-color: alpha(#181818, 0.92);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 24px;
+    padding: 8px 22px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+}
+
+.player-top-bar {
+    background-color: alpha(#161616, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    padding: 8px 18px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+    transition: opacity 250ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Card network / release badge (bottom-left) */
+.card-badge {
+    background-color: rgba(0, 0, 0, 0.75);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+
+/* Remove / delete button overlay on Continue Watching cards */
+.card-remove-button {
+    background-color: rgba(0, 0, 0, 0.72);
+    border-radius: 9999px;
+    padding: 5px;
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    transition: background-color 150ms;
+}
+
+.card-remove-button:hover {
+    background-color: rgba(220, 50, 50, 0.85);
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
