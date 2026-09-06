@@ -121,6 +121,10 @@ class MovieCard(Gtk.Box):
         self.set_margin_bottom(6)
         self.set_margin_start(4)
         self.set_margin_end(4)
+        # Fixed width so cards don't stretch when window is resized
+        self.set_size_request(196, -1)
+        self.set_hexpand(False)
+        self.set_halign(Gtk.Align.START)
 
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         inner.set_margin_top(4)
