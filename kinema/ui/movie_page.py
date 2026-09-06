@@ -128,7 +128,8 @@ class MoviePage(Adw.NavigationPage):
             except (ValueError, TypeError):
                 pass
 
-        super().__init__(title=movie_title, tag='detail')
+        detail_tag = f'detail-{tmdb_id}-{id(self)}' if tmdb_id else f'detail-{id(self)}'
+        super().__init__(title=movie_title, tag=detail_tag)
 
         self._tmdb = TMDBClient()
         self._db = DatabaseService()
