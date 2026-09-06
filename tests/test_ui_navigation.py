@@ -570,6 +570,26 @@ class TestUINavigation(unittest.TestCase):
         widget.deactivate()
         self.assertFalse(widget._is_active)
 
+        # Test GL context recreation logic across realize cycles
+        mock_old_ctx = unittest.mock.MagicMock()
+        widget._ctx = mock_old_ctx
+        widget._gl_context_ref = 'gl-context-1'
+
+        with unittest.mock.patch.object(widget, 'make_current'), \
+             unittest.mock.patch.object(widget, 'get_context', return_value='gl-context-2'), \
+             unittest.mock.patch('kinema.ui.player_page.MpvRenderContext') as mock_render_cls:
+            mock_new_ctx = unittest.mock.MagicMock()
+            mock_render_cls.return_value = mock_new_ctx
+
+            widget._on_realize()
+
+            # Old context was freed
+            mock_old_ctx.free.assert_called_once()
+            # New context ref stored
+            self.assertEqual(widget._gl_context_ref, 'gl-context-2')
+            # New render context created and callback assigned
+            self.assertEqual(widget._ctx, mock_new_ctx)
+
 
     def test_movie_page_backdrop_dimensions(self):
         """MoviePage backdrop has responsive height scaling, can_shrink True, and START alignment."""
