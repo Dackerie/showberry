@@ -111,6 +111,7 @@ class KinemaWindow(Adw.ApplicationWindow):
         """Push movie detail page onto navigation view."""
         movie_page = MoviePage(movie=movie_data)
         movie_page.connect('play-movie', self._on_play_movie)
+        movie_page.connect('movie-selected', self._on_movie_selected)
         self._nav_view.push(movie_page)
 
     def _on_play_movie(self, page, stream_data):

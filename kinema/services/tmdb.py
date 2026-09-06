@@ -136,32 +136,69 @@ class TMDBClient:
         return [self._parse_movie(m) for m in data.get('results', [])]
 
     def get_movie_details(self, movie_id):
-        """Get detailed information about a movie."""
+        """Get detailed information about a movie including directors, cast, and recommendations."""
         cache_key = f"movie_{movie_id}"
         if cache_key in self._details_cache:
             return self._details_cache[cache_key]
 
-        data = self._request(f'/movie/{movie_id}', {'append_to_response': 'external_ids'})
+        data = self._request(f'/movie/{movie_id}', {'append_to_response': 'external_ids,credits,recommendations'})
         if data is None:
             return None
         parsed = self._parse_movie(data, detailed=True)
         ext_ids = data.get('external_ids') or {}
         parsed['imdb_id'] = data.get('imdb_id') or ext_ids.get('imdb_id')
+
+        # Parse credits (directors & top cast)
+        credits_data = data.get('credits') or {}
+        cast = []
+        for c in credits_data.get('cast', [])[:12]:
+            cast.append({
+                'name': c.get('name', ''),
+                'character': c.get('character', ''),
+                'profile_path': c.get('profile_path'),
+            })
+        directors = [
+            c['name'] for c in credits_data.get('crew', [])
+            if c.get('job') == 'Director'
+        ]
+        parsed['cast'] = cast
+        parsed['directors'] = directors
+
+        # Parse recommendations
+        recs = data.get('recommendations', {}).get('results', [])
+        parsed['recommendations'] = [self._parse_movie(m) for m in recs[:12]]
+
         self._details_cache[cache_key] = parsed
         return parsed
 
     def get_tv_details(self, tv_id):
-        """Get detailed information about a TV show including seasons."""
+        """Get detailed information about a TV show including seasons, cast, and recommendations."""
         cache_key = f"tv_{tv_id}"
         if cache_key in self._details_cache:
             return self._details_cache[cache_key]
 
-        data = self._request(f'/tv/{tv_id}', {'append_to_response': 'external_ids'})
+        data = self._request(f'/tv/{tv_id}', {'append_to_response': 'external_ids,credits,recommendations'})
         if data is None:
             return None
         parsed = self._parse_tv(data, detailed=True)
         ext_ids = data.get('external_ids') or {}
         parsed['imdb_id'] = ext_ids.get('imdb_id')
+
+        # Parse credits (top cast)
+        credits_data = data.get('credits') or {}
+        cast = []
+        for c in credits_data.get('cast', [])[:12]:
+            cast.append({
+                'name': c.get('name', ''),
+                'character': c.get('character', ''),
+                'profile_path': c.get('profile_path'),
+            })
+        parsed['cast'] = cast
+
+        # Parse recommendations
+        recs = data.get('recommendations', {}).get('results', [])
+        parsed['recommendations'] = [self._parse_tv(m) for m in recs[:12]]
+
         self._details_cache[cache_key] = parsed
         return parsed
 
@@ -272,6 +309,7 @@ class TMDBClient:
             'seasons': data.get('seasons', []),
             'imdb_id': (data.get('external_ids') or {}).get('imdb_id'),
             'network': (data.get('networks') or [{}])[-1].get('name', ''),
+            'runtime': (data.get('episode_run_time') or [None])[0] if data.get('episode_run_time') else None,
         }
 
         if show['poster_path']:

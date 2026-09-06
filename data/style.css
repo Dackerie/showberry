@@ -1,4 +1,18 @@
-/* Kinema Modern Libadwaita Stylesheet */
+/* FlowBox Child styling reset to prevent hover misalignment */
+flowboxchild {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border-radius: 12px;
+}
+
+flowboxchild:hover,
+flowboxchild:selected,
+flowboxchild:focus {
+    background: transparent;
+    outline: none;
+    box-shadow: none;
+}
 
 /* Movie Cards & Posters */
 .movie-card {
@@ -29,26 +43,35 @@
 
 /* Heartive-style hover play circle overlay */
 .card-play-overlay {
-    background-color: rgba(0, 0, 0, 0.72);
+    background-color: rgba(0, 0, 0, 0.75);
     border-radius: 9999px;
-    min-width: 56px;
-    min-height: 56px;
-    padding: 14px;
+    min-width: 64px;
+    min-height: 64px;
+    padding: 0;
+    margin: 0;
     color: #ffffff;
-    border: 2px solid rgba(255, 255, 255, 0.95);
+    border: 2.5px solid rgba(255, 255, 255, 0.95);
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
-    transition: background-color 150ms;
+    transition: all 150ms ease;
 }
 
 .card-play-overlay:hover {
     background-color: @accent_bg_color;
     border-color: #ffffff;
+    transform: scale(1.08);
 }
 
 /* Movie Detail Page */
 .movie-backdrop {
     border-radius: 0 0 16px 16px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    min-height: 200px;
+    max-height: 340px;
+}
+
+.backdrop-scrim {
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, @window_bg_color 100%);
+    pointer-events: none;
 }
 
 .genre-pill {
@@ -61,9 +84,44 @@
     border: 1px solid alpha(@borders, 0.5);
 }
 
+.genres-flowbox flowboxchild {
+    padding: 0;
+    margin: 0;
+    background: none;
+}
+.genres-flowbox flowboxchild:hover,
+.genres-flowbox flowboxchild:focus,
+.genres-flowbox flowboxchild:selected {
+    background: none;
+}
+
 .meta-rating {
     font-weight: 700;
     color: #e5a50a; /* warm gold */
+}
+
+/* Cast Cards */
+.cast-card {
+    background-color: alpha(@window_fg_color, 0.05);
+    border: 1px solid alpha(@borders, 0.4);
+    border-radius: 12px;
+    padding: 8px 14px;
+    min-width: 100px;
+    transition: background-color 150ms ease-in-out;
+}
+
+.cast-card:hover {
+    background-color: alpha(@window_fg_color, 0.1);
+}
+
+.cast-name {
+    font-weight: 600;
+    font-size: 0.88rem;
+    color: @window_fg_color;
+}
+
+.cast-character {
+    font-size: 0.78rem;
 }
 
 /* Player Surface & Floating Controls */
