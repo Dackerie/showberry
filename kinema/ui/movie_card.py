@@ -121,10 +121,11 @@ class MovieCard(Gtk.Box):
         self.set_margin_bottom(6)
         self.set_margin_start(4)
         self.set_margin_end(4)
-        # Fixed width so cards don't stretch when window is resized
+        # Fixed card width so cards never stretch horizontally
         self.set_size_request(196, -1)
         self.set_hexpand(False)
         self.set_halign(Gtk.Align.START)
+        self.set_valign(Gtk.Align.START)
 
         inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         inner.set_margin_top(4)
@@ -141,15 +142,22 @@ class MovieCard(Gtk.Box):
         self._poster.set_content_fit(Gtk.ContentFit.COVER)
         poster_overlay.set_child(self._poster)
 
-        # ── Centered 56 px play circle (visible on hover) ─────────────────
+        # ── Centered 64 px play circle (visible on hover) ─────────────────
         self._play_overlay = Gtk.Box()
+        self._play_overlay.set_size_request(64, 64)
         self._play_overlay.set_halign(Gtk.Align.CENTER)
         self._play_overlay.set_valign(Gtk.Align.CENTER)
         self._play_overlay.add_css_class('card-play-overlay')
         self._play_overlay.set_visible(False)
 
         play_icon = Gtk.Image.new_from_icon_name('media-playback-start-symbolic')
-        play_icon.set_pixel_size(28)
+        play_icon.set_pixel_size(34)
+        play_icon.set_halign(Gtk.Align.CENTER)
+        play_icon.set_valign(Gtk.Align.CENTER)
+        play_icon.set_hexpand(True)
+        play_icon.set_vexpand(True)
+        # Optical centering offset for right-pointing triangle
+        play_icon.set_margin_start(3)
         self._play_overlay.append(play_icon)
         poster_overlay.add_overlay(self._play_overlay)
 
@@ -160,16 +168,20 @@ class MovieCard(Gtk.Box):
         self._play_overlay.add_controller(play_click)
 
         # ── Badge (network / in theaters) ─────────────────────────────────
+        self._badge = Gtk.Label()
+        self._badge.add_css_class('genre-pill')
+        self._badge.add_css_class('card-badge')
+        self._badge.set_halign(Gtk.Align.START)
+        self._badge.set_valign(Gtk.Align.START)
+        self._badge.set_margin_top(6)
+        self._badge.set_margin_start(6)
         badge_label = _get_badge_label(self._movie)
         if badge_label:
-            badge = Gtk.Label(label=badge_label)
-            badge.add_css_class('genre-pill')
-            badge.add_css_class('card-badge')
-            badge.set_halign(Gtk.Align.START)
-            badge.set_valign(Gtk.Align.START)
-            badge.set_margin_top(6)
-            badge.set_margin_start(6)
-            poster_overlay.add_overlay(badge)
+            self._badge.set_text(badge_label)
+            self._badge.set_visible(True)
+        else:
+            self._badge.set_visible(False)
+        poster_overlay.add_overlay(self._badge)
 
         # ── Delete button (top-right, only for continue-watching) ──────────
         if show_remove_button:
@@ -233,12 +245,20 @@ class MovieCard(Gtk.Box):
             year_label.add_css_class('caption')
             meta_box.append(year_label)
 
+        self._runtime_label = Gtk.Label()
+        self._runtime_label.add_css_class('dim-label')
+        self._runtime_label.add_css_class('caption')
         runtime_str = _format_runtime(self._movie.get('runtime'))
+        if not runtime_str and self._movie.get('media_type') == 'tv':
+            seasons = self._movie.get('number_of_seasons')
+            if seasons:
+                runtime_str = f"{seasons} Season{'s' if seasons != 1 else ''}"
         if runtime_str:
-            rt_label = Gtk.Label(label=runtime_str)
-            rt_label.add_css_class('dim-label')
-            rt_label.add_css_class('caption')
-            meta_box.append(rt_label)
+            self._runtime_label.set_text(runtime_str)
+            self._runtime_label.set_visible(True)
+        else:
+            self._runtime_label.set_visible(False)
+        meta_box.append(self._runtime_label)
 
         inner.append(meta_box)
         self.append(inner)
@@ -255,8 +275,8 @@ class MovieCard(Gtk.Box):
         motion.connect('leave', self._on_hover_leave)
         self.add_controller(motion)
 
-        # ── Load poster asynchronously ─────────────────────────────────────
-        self._load_poster()
+        # ── Load poster and enrich metadata asynchronously ────────────────
+        self._load_card_data()
 
     # ── Interaction callbacks ──────────────────────────────────────────────
 
@@ -320,7 +340,67 @@ class MovieCard(Gtk.Box):
         }
         self.emit('play-movie', stream_data)
 
-    # ── Image loading ──────────────────────────────────────────────────────
+    # ── Asynchronous Data & Image Loading ──────────────────────────────────
+
+    def _load_card_data(self):
+        """Load poster and enrich missing metadata (runtime, TV network) asynchronously."""
+        self._load_poster()
+
+        tmdb_id = self._movie.get('id') or self._movie.get('tmdb_id')
+        if not tmdb_id:
+            return
+
+        media_type = self._movie.get('media_type', 'movie')
+        needs_tv_network = (media_type == 'tv' and not self._movie.get('network'))
+        needs_runtime = (not self._movie.get('runtime'))
+
+        if not needs_tv_network and not needs_runtime:
+            return
+
+        def enrich_worker():
+            try:
+                from kinema.services.tmdb import TMDBClient
+                client = TMDBClient()
+                if media_type == 'tv':
+                    details = client.get_tv_details(int(tmdb_id))
+                    if details:
+                        if details.get('network'):
+                            self._movie['network'] = details['network']
+                        if details.get('runtime'):
+                            self._movie['runtime'] = details['runtime']
+                        if details.get('number_of_seasons'):
+                            self._movie['number_of_seasons'] = details['number_of_seasons']
+                else:
+                    details = client.get_movie_details(int(tmdb_id))
+                    if details:
+                        if details.get('runtime'):
+                            self._movie['runtime'] = details['runtime']
+                        if details.get('release_date'):
+                            self._movie['release_date'] = details['release_date']
+
+                GLib.idle_add(self._update_enriched_ui)
+            except Exception as e:
+                logger.debug(f"Failed to enrich card metadata for TMDB {tmdb_id}: {e}")
+
+        threading.Thread(target=enrich_worker, daemon=True).start()
+
+    def _update_enriched_ui(self):
+        # Update badge (network or in theaters)
+        badge_label = _get_badge_label(self._movie)
+        if badge_label:
+            self._badge.set_text(badge_label)
+            self._badge.set_visible(True)
+
+        # Update runtime or TV seasons
+        rt_str = _format_runtime(self._movie.get('runtime'))
+        if not rt_str and self._movie.get('media_type') == 'tv':
+            seasons = self._movie.get('number_of_seasons')
+            if seasons:
+                rt_str = f"{seasons} Season{'s' if seasons != 1 else ''}"
+        if rt_str:
+            self._runtime_label.set_text(rt_str)
+            self._runtime_label.set_visible(True)
+        return False
 
     def _load_poster(self):
         """Load poster image in background thread to prevent UI hitching."""

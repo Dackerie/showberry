@@ -109,7 +109,21 @@ class MpvWidget(Gtk.GLArea):
         self._redraw_pending = False
         self._pending_subtitles = []
         self._wait_first_frame = False  # set True while A/V sync wait is active
+        self._is_active = True
+        self._has_drawn_first_frame = False
 
+    def activate(self):
+        """Re-enable rendering and event handling."""
+        self._is_active = True
+
+    def deactivate(self):
+        """Immediately stop playback and disable render callbacks to prevent deadlocks."""
+        self._is_active = False
+        try:
+            self.pause()
+            self.stop()
+        except Exception:
+            pass
 
     def _on_realize(self, *_):
         self.make_current()
@@ -131,17 +145,21 @@ class MpvWidget(Gtk.GLArea):
             logger.error(f"Failed to create MPV render context: {e}")
 
     def _on_unrealize(self, *_):
-        if self._ctx:
-            self._ctx.free()
-            self._ctx = None
+        # Do NOT destroy or free MpvRenderContext on page navigation pop.
+        # Freeing render context while MPV threads or GTK are tearing down deadlocks libmpv.
+        self._is_active = False
 
     def _on_mpv_callback(self):
+        if not self._is_active:
+            return
         if not self._redraw_pending:
             self._redraw_pending = True
             GLib.idle_add(self._trigger_redraw)
 
     def _trigger_redraw(self, *_):
         self._redraw_pending = False
+        if not self._is_active:
+            return False
         if self._ctx and self._ctx.update():
             self.queue_render()
         return False
@@ -150,7 +168,7 @@ class MpvWidget(Gtk.GLArea):
         return self.do_render(gl_context)
 
     def do_render(self, *_):
-        if not self._ctx:
+        if not self._is_active or not self._ctx:
             return False
 
         factor = self.get_scale_factor()
@@ -166,6 +184,10 @@ class MpvWidget(Gtk.GLArea):
             opengl_fbo={'w': width, 'h': height, 'fbo': fbo},
             block_for_target_time=False,
         )
+
+        if not self._has_drawn_first_frame:
+            self._has_drawn_first_frame = True
+            GLib.idle_add(self.emit, 'stream-ready')
 
         # Audio/video sync: unpause on the very first rendered frame so audio
         # never runs ahead of visible video frames.
@@ -225,7 +247,13 @@ class MpvWidget(Gtk.GLArea):
             except Exception:
                 pass
 
-        self._wait_first_frame = False  # reset flag
+        self._is_active = True
+        self._has_drawn_first_frame = False
+        self._wait_first_frame = True
+        try:
+            self._mpv.pause = True
+        except Exception:
+            pass
         self._mpv.play(url)
 
         self._pending_subtitles = list(subtitles or [])
@@ -242,17 +270,36 @@ class MpvWidget(Gtk.GLArea):
                 self.add_subtitle(sub_url, label=sub.get('label', 'Subtitle'), lang=sub.get('lang', 'eng'))
         return False
 
-    def add_subtitle(self, url: str, label: str = 'Subtitle', lang: str = 'eng'):
-        """Add external subtitle to playback (only when MPV has a file loaded)."""
+    def add_subtitle(self, url_or_path: str, label: str = 'Subtitle', lang: str = 'eng'):
+        """Add external subtitle to playback (only when MPV has a file loaded).
+        If url_or_path is a remote HTTP URL, downloads it to local cache in a thread first
+        so MPV's demuxer never blocks on remote sockets during playback.
+        """
         try:
-            # MPV error -12 (MPV_ERROR_COMMAND) occurs when no file is loaded.
-            # Guard by checking that mpv is in a playing state.
-            if not self._mpv.filename:
+            if not self._mpv or not self._mpv.filename:
                 return
-            self._mpv.command('sub-add', url, 'auto', label, lang)
-            logger.info(f"Added subtitle track: {label} ({url[:40]}...)")
+            if url_or_path.startswith(('http://', 'https://')):
+                def _bg_dl():
+                    try:
+                        local_path = SubtitleService().download_subtitle(url_or_path, filename_hint=label)
+                        if local_path and self._mpv and self._mpv.filename:
+                            GLib.idle_add(self._add_local_subtitle, local_path, label, lang)
+                    except Exception as err:
+                        logger.warning(f"Failed downloading subtitle from {url_or_path}: {err}")
+                threading.Thread(target=_bg_dl, daemon=True).start()
+            else:
+                self._add_local_subtitle(url_or_path, label, lang)
         except Exception as e:
-            logger.debug(f"Could not load subtitle {url}: {e}")
+            logger.debug(f"Could not load subtitle {url_or_path}: {e}")
+
+    def _add_local_subtitle(self, path: str, label: str = 'Subtitle', lang: str = 'eng'):
+        try:
+            if not self._mpv or not self._mpv.filename:
+                return
+            self._mpv.command('sub-add', path, 'auto', label, lang)
+            logger.info(f"Added local subtitle track: {label} ({path})")
+        except Exception as e:
+            logger.debug(f"Could not add local subtitle {path}: {e}")
 
 
     def get_sub_tracks(self) -> List[Dict[str, Any]]:
@@ -355,6 +402,8 @@ class SubtitlePopover(Gtk.Popover):
         super().__init__()
         self._player = player
         self._on_timing_changed = on_timing_changed
+        self._available_subtitles: List[Dict[str, Any]] = []
+        self._on_select_external = None
 
         self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self._box.set_margin_top(12)
@@ -426,6 +475,11 @@ class SubtitlePopover(Gtk.Popover):
     def set_player(self, player: MpvWidget):
         self._player = player
 
+    def set_available_subtitles(self, subs: List[Dict[str, Any]], on_select_external=None):
+        self._available_subtitles = subs or []
+        self._on_select_external = on_select_external
+        self.refresh_tracks()
+
     def _on_show(self, *_):
         self.refresh_tracks()
         self.refresh_delay_label()
@@ -472,7 +526,46 @@ class SubtitlePopover(Gtk.Popover):
         self._tracks_box.append(off_btn)
         group = off_btn
 
-        if not tracks:
+        loaded_titles = set()
+        for t in tracks:
+            tid = t['id']
+            title = t.get('title') or f"Track {tid}"
+            loaded_titles.add(title.strip().lower())
+            btn = Gtk.CheckButton(label=title)
+            btn.set_group(group)
+            if not is_off and (t.get('selected') or str(current_sid) == str(tid)):
+                btn.set_active(True)
+            btn.connect('toggled', self._on_track_toggled, tid)
+            self._tracks_box.append(btn)
+
+        # External / online subtitles that haven't been loaded yet
+        unloaded = [
+            s for s in self._available_subtitles
+            if s.get('label', '').strip().lower() not in loaded_titles
+        ]
+        if unloaded:
+            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+            sep.set_margin_top(6)
+            sep.set_margin_bottom(4)
+            self._tracks_box.append(sep)
+
+            hdr = Gtk.Label(label="Available Online")
+            hdr.add_css_class('dim-label')
+            hdr.add_css_class('caption')
+            hdr.set_xalign(0)
+            self._tracks_box.append(hdr)
+
+            for sub in unloaded[:12]:
+                btn = Gtk.Button()
+                lbl = Gtk.Label(label=sub.get('label', 'Subtitle'))
+                lbl.set_xalign(0)
+                lbl.set_hexpand(True)
+                btn.set_child(lbl)
+                btn.add_css_class('flat')
+                btn.connect('clicked', self._on_external_clicked, sub)
+                self._tracks_box.append(btn)
+
+        if not tracks and not unloaded:
             no_subs = Gtk.Label(label="No subtitles loaded yet")
             no_subs.add_css_class('dim-label')
             no_subs.add_css_class('caption')
@@ -480,14 +573,15 @@ class SubtitlePopover(Gtk.Popover):
             no_subs.set_margin_bottom(4)
             self._tracks_box.append(no_subs)
 
-        for t in tracks:
-            tid = t['id']
-            btn = Gtk.CheckButton(label=t['title'])
-            btn.set_group(group)
-            if not is_off and (t.get('selected') or str(current_sid) == str(tid)):
-                btn.set_active(True)
-            btn.connect('toggled', self._on_track_toggled, tid)
-            self._tracks_box.append(btn)
+    def _on_external_clicked(self, button, sub):
+        button.set_sensitive(False)
+        child = button.get_child()
+        if isinstance(child, Gtk.Label):
+            child.set_text(f"Loading {sub.get('label', 'subtitle')}...")
+        elif hasattr(button, 'set_label'):
+            button.set_label(f"Loading {sub.get('label', 'subtitle')}...")
+        if self._on_select_external:
+            self._on_select_external(sub)
 
     def _on_track_toggled(self, button, track_id):
         if button.get_active() and self._player:
@@ -634,6 +728,14 @@ class PlayerControls(Gtk.Box):
         if hasattr(self, '_sub_popover'):
             self._sub_popover.set_player(player)
 
+    def set_available_subtitles(self, subs: List[Dict[str, Any]], on_select_cb=None):
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.set_available_subtitles(subs, on_select_cb)
+
+    def refresh_subtitles(self):
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.refresh_tracks()
+
     def reset(self, start_pos: float = 0.0, total_duration: float = 0.0):
         """Reset seekbar, labels, and state to clean defaults."""
         self._is_dragging = False
@@ -656,6 +758,8 @@ class PlayerControls(Gtk.Box):
         self._curr_time_label.set_text(self._format_time(start_pos))
         self._total_time_label.set_text(self._format_time(total_duration))
         self._play_button.set_icon_name('media-playback-start-symbolic')
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.set_available_subtitles([])
 
     def start_update_timer(self, player: MpvWidget):
         """Start periodic updates of seek bar and time."""
@@ -777,6 +881,8 @@ class PlayerPage(Adw.NavigationPage):
         self._last_pointer_y = None
         self._cursor_hidden = False
         self._session_id = 0
+        self._pending_sub_query = None
+        self._available_subtitles = []
 
         self._setup_ui()
         self._setup_keybindings()
@@ -788,6 +894,7 @@ class PlayerPage(Adw.NavigationPage):
         self._overlay.set_vexpand(True)
 
         self._mpv_widget = MpvWidget()
+        self._mpv_widget.connect('stream-ready', self._on_stream_ready)
         self._overlay.set_child(self._mpv_widget)
 
         # Loading spinner
@@ -847,7 +954,7 @@ class PlayerPage(Adw.NavigationPage):
         self._osd_pill.add_css_class('osd-pill')
         self._osd_pill.set_halign(Gtk.Align.CENTER)
         self._osd_pill.set_valign(Gtk.Align.START)
-        self._osd_pill.set_margin_top(64)
+        self._osd_pill.set_margin_top(96)
         self._osd_pill.set_visible(False)
         self._overlay.add_overlay(self._osd_pill)
 
@@ -972,6 +1079,8 @@ class PlayerPage(Adw.NavigationPage):
         episode = stream_data.get('episode')
         self._start_pos = stream_data.get('start_position', 0)
         self._controls.reset(self._start_pos, 0.0)
+        self._available_subtitles = []
+        self._controls.set_available_subtitles([])
 
         tmdb_id = movie.get('id') or movie.get('tmdb_id')
         if not tmdb_id:
@@ -1024,16 +1133,14 @@ class PlayerPage(Adw.NavigationPage):
             if session_id != self._session_id:
                 return
 
-            # Start playback immediately — subtitles added separately in background.
-            GLib.idle_add(self._on_stream_resolved, result, [], session_id)
-
             if result and result.url:
-                # Fetch OpenSubtitles AFTER playback has started, add dynamically.
-                threading.Thread(
-                    target=self._fetch_subtitles_background,
-                    args=(tmdb_id, season, episode, movie, session_id),
-                    daemon=True
-                ).start()
+                # Save query params to fetch OpenSubtitles AFTER video visibly begins rendering
+                self._pending_sub_query = (tmdb_id, season, episode, movie, session_id)
+            else:
+                self._pending_sub_query = None
+
+            # Start playback immediately
+            GLib.idle_add(self._on_stream_resolved, result, [], session_id)
 
         except Exception as e:
             if session_id != self._session_id:
@@ -1041,7 +1148,7 @@ class PlayerPage(Adw.NavigationPage):
             GLib.idle_add(self._on_stream_error, str(e), session_id)
 
     def _fetch_subtitles_background(self, tmdb_id, season, episode, movie, session_id: int):
-        """Fetch OpenSubtitles in background and add tracks to the running player."""
+        """Fetch OpenSubtitles in background and add the primary track to the running player."""
         try:
             if session_id != self._session_id:
                 return
@@ -1053,29 +1160,90 @@ class PlayerPage(Adw.NavigationPage):
                 return
 
             subs = self._subtitles_service.get_subtitles(imdb_id, season=season, episode=episode)
-            for sub in subs[:10]:
-                if session_id != self._session_id:
-                    return
-                sub_url = sub.get('url')
-                if sub_url:
-                    label = sub.get('label', sub.get('lang', 'Subtitle'))
-                    lang = sub.get('lang', 'eng')
-                    GLib.idle_add(self._mpv_widget.add_subtitle, sub_url, label, lang)
+            if session_id != self._session_id:
+                return
+
+            self._available_subtitles = subs
+            GLib.idle_add(
+                self._controls.set_available_subtitles,
+                subs,
+                self._on_download_and_select_external_sub
+            )
+
+            # Auto-download and add ONLY the primary (English) subtitle to keep playback smooth
+            if subs:
+                primary_sub = subs[0]
+                sub_url = primary_sub.get('url')
+                if sub_url and session_id == self._session_id:
+                    label = primary_sub.get('label', primary_sub.get('lang', 'Subtitle'))
+                    lang = primary_sub.get('lang', 'eng')
+                    local_path = self._subtitles_service.download_subtitle(sub_url, filename_hint=label)
+                    if local_path and session_id == self._session_id:
+                        GLib.idle_add(self._mpv_widget.add_subtitle, local_path, label, lang)
         except Exception as ex:
             logger.warning(f"Background subtitle fetch failed: {ex}")
 
+    def _on_download_and_select_external_sub(self, sub: Dict[str, Any]):
+        """User selected an available online subtitle from the popover."""
+        sub_url = sub.get('url')
+        label = sub.get('label', sub.get('lang', 'Subtitle'))
+        lang = sub.get('lang', 'eng')
+        current_session = self._session_id
+
+        def _bg():
+            local_path = self._subtitles_service.download_subtitle(sub_url, filename_hint=label)
+            if local_path and current_session == self._session_id:
+                GLib.idle_add(self._activate_external_subtitle, local_path, label, lang)
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _activate_external_subtitle(self, local_path: str, label: str, lang: str):
+        if not self._mpv_widget:
+            return
+        self._mpv_widget._add_local_subtitle(local_path, label, lang)
+        tracks = self._mpv_widget.get_sub_tracks()
+        if tracks:
+            new_id = tracks[-1]['id']
+            self._mpv_widget.set_sub_track(new_id)
+            self.show_osd_notification(f"Subtitle: {label}")
+        self._controls.refresh_subtitles()
+
+    def _on_stream_ready(self, widget):
+        """Called when the first frame has rendered to GLArea."""
+        self._spinner.stop()
+        self._spinner_box.set_visible(False)
+
+        # Defer subtitle fetch until stream is visibly rolling (3s delay, zero bandwidth/CPU competition during buffer)
+        if self._pending_sub_query:
+            query = self._pending_sub_query
+            self._pending_sub_query = None
+            current_session = self._session_id
+
+            def _delayed_fetch():
+                if current_session == self._session_id:
+                    tmdb_id, season, episode, movie, sid = query
+                    threading.Thread(
+                        target=self._fetch_subtitles_background,
+                        args=(tmdb_id, season, episode, movie, sid),
+                        daemon=True
+                    ).start()
+                return False
+
+            GLib.timeout_add_seconds(3, _delayed_fetch)
 
     def _on_stream_resolved(self, result: Optional[StreamResult], extra_subs: List[Dict[str, Any]], session_id: int = 0):
         """Executed on main GTK UI thread when stream result is available."""
         if session_id and session_id != self._session_id:
             return False
 
-        self._spinner.stop()
-        self._spinner_box.set_visible(False)
-
         if not result or not result.url:
+            self._spinner.stop()
+            self._spinner_box.set_visible(False)
             self.emit('stream-failed', "Could not find a playable stream from any available provider.")
             return False
+
+        # Transition spinner text while MPV demuxes and buffers the first frame
+        self._spinner_label.set_text("Buffering stream...")
 
         logger.info(f"Starting playback: {result.url}")
 
@@ -1155,13 +1323,19 @@ class PlayerPage(Adw.NavigationPage):
     def _on_close(self, controls):
         """Close playback safely, saving final progress and stopping services."""
         self._session_id += 1  # Invalidate any in-flight resolver or subtitle worker threads
+        self._pending_sub_query = None
+        self._available_subtitles = []
 
-        # Silence audio and stop playback immediately
+        # Capture progress before deactivating
         try:
-            self._mpv_widget.pause()
-            self._mpv_widget.stop()
+            pos = self._mpv_widget.get_position()
+            dur = self._mpv_widget.get_duration()
+            stream_data = self._stream_data
         except Exception:
-            pass
+            pos, dur, stream_data = 0, 0, None
+
+        # Deactivate widget synchronously: pauses, stops, and disables further render callbacks
+        self._mpv_widget.deactivate()
 
         self._set_cursor_visible(True)
         if self._hide_timeout:
@@ -1171,14 +1345,6 @@ class PlayerPage(Adw.NavigationPage):
             GLib.source_remove(self._osd_hide_timeout)
             self._osd_hide_timeout = None
 
-        # Capture progress before stopping
-        try:
-            pos = self._mpv_widget.get_position()
-            dur = self._mpv_widget.get_duration()
-            stream_data = self._stream_data
-        except Exception:
-            pos, dur, stream_data = 0, 0, None
-
         self._stop_progress_timer()
         self._controls.stop_update_timer()
         self._controls.reset(0.0)
@@ -1186,7 +1352,7 @@ class PlayerPage(Adw.NavigationPage):
         # Emit immediately so UI pops back instantly with zero freeze
         self.emit('close-player')
 
-        # Run teardown in background daemon thread to avoid blocking GTK main loop
+        # Run persistence & background service teardown in background daemon thread
         def cleanup_worker():
             try:
                 if stream_data and pos > 5 and dur > 30:
@@ -1206,11 +1372,6 @@ class PlayerPage(Adw.NavigationPage):
                         )
             except Exception as ex:
                 logger.warning(f"Error saving watch progress during cleanup: {ex}")
-
-            try:
-                self._mpv_widget.stop()
-            except Exception as ex:
-                logger.warning(f"Error stopping MPV: {ex}")
 
             try:
                 get_torrent_streamer().stop()
