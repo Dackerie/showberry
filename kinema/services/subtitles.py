@@ -105,7 +105,7 @@ class SubtitleService:
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             )
 
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=4) as resp:
                 if resp.status != 200:
                     return []
                 data = json.loads(resp.read().decode('utf-8', errors='replace'))
@@ -164,7 +164,7 @@ class SubtitleService:
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
             )
 
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            with urllib.request.urlopen(req, timeout=4) as resp:
                 content = resp.read()
 
             with open(local_path, 'wb') as f:

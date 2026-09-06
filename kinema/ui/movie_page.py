@@ -165,6 +165,7 @@ class MoviePage(Adw.NavigationPage):
         scrim.add_css_class('backdrop-scrim')
         scrim.set_valign(Gtk.Align.FILL)
         scrim.set_vexpand(True)
+        scrim.set_can_target(False)
         backdrop_overlay.add_overlay(scrim)
 
         content.append(backdrop_overlay)
@@ -285,7 +286,7 @@ class MoviePage(Adw.NavigationPage):
         self._overview_label = Gtk.Label(label=self._movie.get('overview', ''))
         self._overview_label.set_xalign(0)
         self._overview_label.set_wrap(True)
-        self._overview_label.set_max_width_chars(80)
+        self._overview_label.set_hexpand(True)
         self._overview_label.set_margin_top(8)
         self._details.append(self._overview_label)
 
@@ -337,11 +338,13 @@ class MoviePage(Adw.NavigationPage):
 
         cast_scroll = Gtk.ScrolledWindow()
         cast_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        cast_scroll.set_min_content_height(74)
         cast_scroll.set_vexpand(False)
 
         self._cast_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self._cast_row.set_margin_top(4)
         self._cast_row.set_margin_bottom(8)
+        self._cast_row.set_valign(Gtk.Align.CENTER)
         cast_scroll.set_child(self._cast_row)
         self._cast_box.append(cast_scroll)
 
@@ -373,9 +376,10 @@ class MoviePage(Adw.NavigationPage):
 
         scroll.set_child(content)
 
-        # Breakpoint for mobile screen sizes (< 620px)
+        # Breakpoint for mobile/narrow screen sizes (< 780px)
         self._breakpoint_bin = Adw.BreakpointBin()
-        bp = Adw.Breakpoint.new(Adw.breakpoint_condition_parse("max-width: 620px"))
+        self._breakpoint_bin.set_size_request(320, 200)
+        bp = Adw.Breakpoint.new(Adw.breakpoint_condition_parse("max-width: 780px"))
         bp.add_setter(self._info_box, "orientation", Gtk.Orientation.VERTICAL)
         bp.add_setter(self._info_box, "spacing", 12)
         bp.add_setter(self._poster, "halign", Gtk.Align.CENTER)
@@ -497,7 +501,7 @@ class MoviePage(Adw.NavigationPage):
         for person in cast_list[:12]:
             chip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             chip.add_css_class('cast-card')
-            chip.set_valign(Gtk.Align.START)
+            chip.set_valign(Gtk.Align.CENTER)
 
             name = person.get('name', '')
             char = person.get('character', '')
@@ -505,8 +509,8 @@ class MoviePage(Adw.NavigationPage):
             name_lbl = Gtk.Label(label=name)
             name_lbl.add_css_class('cast-name')
             name_lbl.set_xalign(0.5)
-            name_lbl.set_wrap(True)
-            name_lbl.set_max_width_chars(16)
+            name_lbl.set_wrap(False)
+            name_lbl.set_single_line_mode(True)
             chip.append(name_lbl)
 
             if char:
@@ -514,8 +518,8 @@ class MoviePage(Adw.NavigationPage):
                 char_lbl.add_css_class('cast-character')
                 char_lbl.add_css_class('dim-label')
                 char_lbl.set_xalign(0.5)
-                char_lbl.set_wrap(True)
-                char_lbl.set_max_width_chars(16)
+                char_lbl.set_wrap(False)
+                char_lbl.set_single_line_mode(True)
                 chip.append(char_lbl)
 
             self._cast_row.append(chip)

@@ -584,10 +584,45 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(mp._cast_box.get_visible())
         self.assertIsNotNone(mp._cast_row.get_first_child())
 
+        # Verify cast pill labels are single-line and non-wrapping
+        cast_pill = mp._cast_row.get_first_child()
+        name_lbl = cast_pill.get_first_child()
+        self.assertFalse(name_lbl.get_wrap())
+        self.assertTrue(name_lbl.get_single_line_mode())
+
         # Render recommendations
         mp._render_recommendations([{'id': 201, 'title': 'Similar 1'}, {'id': 202, 'title': 'Similar 2'}])
         self.assertTrue(mp._recs_box.get_visible())
         self.assertIsNotNone(mp._recs_row.get_first_child())
+
+    def test_window_mobile_switcher_bar(self):
+        """KinemaWindow includes Adw.ViewSwitcherBar bound to main stack for mobile view."""
+        win = KinemaWindow()
+        self.assertIsNotNone(win._switcher_bar)
+        self.assertIsInstance(win._switcher_bar, Adw.ViewSwitcherBar)
+        self.assertEqual(win._switcher_bar.get_stack(), win._view_stack)
+
+    def test_movie_page_breakpoint_bin_size_request(self):
+        """MoviePage breakpoint bin sets explicit size request to prevent GTK warnings."""
+        from kinema.ui.movie_page import MoviePage
+        mp = MoviePage({'id': 100, 'title': 'Test Movie'})
+        w, h = mp._breakpoint_bin.get_size_request()
+        self.assertGreaterEqual(w, 320)
+        self.assertGreaterEqual(h, 200)
+
+    def test_player_available_subtitles_popover(self):
+        """PlayerControls and SubtitlePopover support external online subtitles."""
+        pp = PlayerPage()
+        subs = [
+            {'id': '1', 'url': 'https://example.com/sub1.srt', 'lang': 'eng', 'label': 'English (Test)'},
+            {'id': '2', 'url': 'https://example.com/sub2.srt', 'lang': 'spa', 'label': 'Spanish (Test)'},
+        ]
+        pp._controls.set_available_subtitles(subs)
+        self.assertEqual(len(pp._controls._sub_popover._available_subtitles), 2)
+
+        # Calling reset clears external subtitles
+        pp._controls.reset()
+        self.assertEqual(len(pp._controls._sub_popover._available_subtitles), 0)
 
 
 if __name__ == '__main__':

@@ -66,12 +66,10 @@ flowboxchild:focus {
     border-radius: 0 0 16px 16px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     min-height: 200px;
-    max-height: 340px;
 }
 
 .backdrop-scrim {
     background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, @window_bg_color 100%);
-    pointer-events: none;
 }
 
 .genre-pill {
@@ -102,16 +100,17 @@ flowboxchild:focus {
 
 /* Cast Cards */
 .cast-card {
-    background-color: alpha(@window_fg_color, 0.05);
-    border: 1px solid alpha(@borders, 0.4);
+    background-color: alpha(@window_fg_color, 0.06);
+    border: 1px solid alpha(@borders, 0.45);
     border-radius: 12px;
-    padding: 8px 14px;
-    min-width: 100px;
+    padding: 8px 16px;
+    min-width: 90px;
+    min-height: 48px;
     transition: background-color 150ms ease-in-out;
 }
 
 .cast-card:hover {
-    background-color: alpha(@window_fg_color, 0.1);
+    background-color: alpha(@window_fg_color, 0.12);
 }
 
 .cast-name {

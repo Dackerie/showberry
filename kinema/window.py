@@ -83,10 +83,22 @@ class KinemaWindow(Adw.ApplicationWindow):
         p_series = self._view_stack.add_titled(self._series_page, 'series', 'Series')
         p_series.set_icon_name('tv-symbolic')
 
-        switcher = Adw.ViewSwitcher()
-        switcher.set_stack(self._view_stack)
-        switcher.set_policy(Adw.ViewSwitcherPolicy.WIDE)
-        header_bar.set_title_widget(switcher)
+        self._switcher = Adw.ViewSwitcher()
+        self._switcher.set_stack(self._view_stack)
+        self._switcher.set_policy(Adw.ViewSwitcherPolicy.WIDE)
+        header_bar.set_title_widget(self._switcher)
+
+        # Bottom ViewSwitcherBar for narrow/mobile screens
+        self._switcher_bar = Adw.ViewSwitcherBar()
+        self._switcher_bar.set_stack(self._view_stack)
+        self._switcher_bar.set_reveal(False)
+        toolbar_view.add_bottom_bar(self._switcher_bar)
+
+        # Breakpoint for narrow/mobile screens (< 600px)
+        mobile_bp = Adw.Breakpoint.new(Adw.breakpoint_condition_parse("max-width: 600px"))
+        mobile_bp.add_setter(self._switcher, "visible", False)
+        mobile_bp.add_setter(self._switcher_bar, "reveal", True)
+        self.add_breakpoint(mobile_bp)
 
         # Hamburger Menu Button on top-right
         menu_button = Gtk.MenuButton()

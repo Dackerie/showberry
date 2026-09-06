@@ -52,6 +52,36 @@ class BaseProvider(ABC):
         return f'<{self.__class__.__name__}: {self.name}>'
 
 
+def is_stream_alive(res: StreamResult) -> bool:
+    """Verify stream URL is reachable and playable (HTTP 200/206/302)."""
+    if not res or not res.url:
+        return False
+
+    if res.url.startswith(('magnet:', 'http://127.0.0.1', 'http://localhost')):
+        return True
+
+    import requests
+    headers = dict(res.headers or {})
+    if res.referer:
+        headers['Referer'] = res.referer
+    if res.origin:
+        headers['Origin'] = res.origin
+    if 'User-Agent' not in headers:
+        headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+    try:
+        r = requests.head(res.url, headers=headers, timeout=2.5, allow_redirects=True)
+        if r.status_code in (200, 206, 302):
+            return True
+        if r.status_code in (403, 404, 429, 500, 502, 503):
+            r = requests.get(res.url, headers={**headers, 'Range': 'bytes=0-1024'}, timeout=2.5, stream=True)
+            return r.status_code in (200, 206, 302)
+        return False
+    except Exception as e:
+        logger.debug(f"Stream alive check failed for {res.url[:40]}: {e}")
+        return False
+
+
 class ProviderManager:
     """Manages providers and provides automatic fallback cascade resolution."""
 
@@ -96,7 +126,13 @@ class ProviderManager:
                 if res and res.url:
                     if not res.provider_name:
                         res.provider_name = provider.name
-                    logger.info(f"Successfully resolved stream with {provider.name}")
+
+                    # Live health check: verify stream is reachable, fallback if 429/403/dead
+                    if not is_stream_alive(res):
+                        logger.warning(f"Provider {provider.name} returned unreachable or rate-limited URL, falling back...")
+                        continue
+
+                    logger.info(f"Successfully resolved and verified stream with {provider.name}")
                     return res
             except Exception as e:
                 logger.warning(f"Provider {provider.name} failed: {e}")
