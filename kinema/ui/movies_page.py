@@ -78,17 +78,20 @@ class MoviesPage(Gtk.Box):
         self._flowbox.set_margin_bottom(24)
 
 
-        grid_clamp.set_child(self._flowbox)
-        self._scroll.set_child(grid_clamp)
-        self._content_overlay.set_child(self._scroll)
-
         # ── Infinite-scroll footer spinner ─────────────────────────────────
         self._footer_spinner = Gtk.Spinner()
         self._footer_spinner.set_size_request(32, 32)
         self._footer_spinner.set_halign(Gtk.Align.CENTER)
         self._footer_spinner.set_margin_bottom(24)
         self._footer_spinner.set_visible(False)
-        self._flowbox.get_parent().get_parent()  # placeholder connection
+
+        scroll_content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        scroll_content_box.append(self._flowbox)
+        scroll_content_box.append(self._footer_spinner)
+
+        grid_clamp.set_child(scroll_content_box)
+        self._scroll.set_child(grid_clamp)
+        self._content_overlay.set_child(self._scroll)
 
         # ── Overlay spinner (initial load) ─────────────────────────────────
         self._spinner = Gtk.Spinner()

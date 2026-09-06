@@ -29,12 +29,15 @@
 
 /* Heartive-style hover play circle overlay */
 .card-play-overlay {
-    background-color: rgba(0, 0, 0, 0.65);
+    background-color: rgba(0, 0, 0, 0.72);
     border-radius: 9999px;
-    padding: 12px;
+    min-width: 56px;
+    min-height: 56px;
+    padding: 14px;
     color: #ffffff;
-    border: 2px solid rgba(255, 255, 255, 0.9);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.95);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
+    transition: background-color 150ms;
 }
 
 .card-play-overlay:hover {

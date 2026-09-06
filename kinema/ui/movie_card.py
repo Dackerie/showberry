@@ -141,7 +141,7 @@ class MovieCard(Gtk.Box):
         self._poster.set_content_fit(Gtk.ContentFit.COVER)
         poster_overlay.set_child(self._poster)
 
-        # ── Centered 48 px play circle (visible on hover) ─────────────────
+        # ── Centered 56 px play circle (visible on hover) ─────────────────
         self._play_overlay = Gtk.Box()
         self._play_overlay.set_halign(Gtk.Align.CENTER)
         self._play_overlay.set_valign(Gtk.Align.CENTER)
@@ -149,7 +149,7 @@ class MovieCard(Gtk.Box):
         self._play_overlay.set_visible(False)
 
         play_icon = Gtk.Image.new_from_icon_name('media-playback-start-symbolic')
-        play_icon.set_pixel_size(24)
+        play_icon.set_pixel_size(28)
         self._play_overlay.append(play_icon)
         poster_overlay.add_overlay(self._play_overlay)
 
