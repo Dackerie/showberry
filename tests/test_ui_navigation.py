@@ -24,7 +24,7 @@ class TestUINavigation(unittest.TestCase):
 
         # Select movie -> pushes detail
         win._on_movie_selected(None, {'id': 278, 'title': 'The Shawshank Redemption'})
-        self.assertEqual(nav.get_visible_page().get_tag(), 'detail')
+        self.assertTrue(nav.get_visible_page().get_tag().startswith('detail'))
         self.assertEqual(nav.get_visible_page().get_title(), 'The Shawshank Redemption')
 
         # Play movie -> pushes player
@@ -33,11 +33,45 @@ class TestUINavigation(unittest.TestCase):
 
         # Close player -> pops back to detail
         win._on_close_player(win._player_page)
-        self.assertEqual(nav.get_visible_page().get_tag(), 'detail')
+        self.assertTrue(nav.get_visible_page().get_tag().startswith('detail'))
 
         # Pop detail -> returns to main
         nav.pop()
         self.assertEqual(nav.get_visible_page().get_tag(), 'main')
+
+    def test_more_like_this_navigation(self):
+        """Clicking a movie/series card in 'More Like This' pushes new detail page onto navigation stack."""
+        win = KinemaWindow()
+        nav = win._nav_view
+
+        win._on_movie_selected(None, {
+            'id': 100,
+            'title': 'Parent Movie',
+            'recommendations': [
+                {'id': 200, 'title': 'Recommended Child Movie'}
+            ]
+        })
+        parent_page = nav.get_visible_page()
+        self.assertEqual(parent_page.get_title(), 'Parent Movie')
+        self.assertEqual(len(nav.get_navigation_stack()), 2)
+
+        card = parent_page._recs_row.get_first_child()
+        self.assertIsNotNone(card)
+        self.assertEqual(card._movie.get('title'), 'Recommended Child Movie')
+
+        # Click recommended movie card
+        card.emit('clicked-movie', card._movie)
+
+        child_page = nav.get_visible_page()
+        self.assertEqual(child_page.get_title(), 'Recommended Child Movie')
+        self.assertEqual(len(nav.get_navigation_stack()), 3)
+        self.assertTrue(child_page.get_tag().startswith('detail'))
+        self.assertNotEqual(parent_page.get_tag(), child_page.get_tag())
+
+        # Pop returns to parent movie
+        nav.pop()
+        self.assertEqual(nav.get_visible_page().get_title(), 'Parent Movie')
+        self.assertEqual(len(nav.get_navigation_stack()), 2)
 
     def test_watchlist_page_instantiation(self):
         wlp = WatchlistPage()
