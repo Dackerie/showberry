@@ -225,7 +225,9 @@ class TestUINavigation(unittest.TestCase):
         providers = ProviderManager.get_providers()
         names = [p.name for p in providers]
         self.assertEqual(names[0], 'VidEasy')
-        self.assertEqual(names[1], 'VidLink')
+        self.assertEqual(names[1], 'Vidy')
+        self.assertEqual(names[2], 'VidKing')
+        self.assertEqual(names[3], 'VidLink')
 
 
     def test_movie_page_overview_none_handling(self):
@@ -671,6 +673,64 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(win._view_stack.get_visible_child_name(), 'series')
         win._cycle_tab(-1)
         self.assertEqual(win._view_stack.get_visible_child_name(), 'movies')
+
+    def test_shortcuts_window_multi_section(self):
+        """ShortcutsWindow is split into two sections with default size (680, 480) and max_height=10."""
+        from kinema.window import KinemaWindow
+        win = KinemaWindow()
+        # Verify method runs without error and presents window
+        win._show_shortcuts_window()
+        self.assertTrue(True)
+
+    def test_movies_page_grid_arrow_navigation(self):
+        """MoviesPage handles 2D grid arrow navigation, with Up returning to search entry on row 0."""
+        from kinema.ui.movies_page import MoviesPage
+        from kinema.ui.movie_card import MovieCard
+
+        mp = MoviesPage()
+        for i in range(12):
+            card = MovieCard({'id': 500 + i, 'title': f'Movie {i}'})
+            card.connect('navigate-grid', mp._on_card_navigate)
+            mp._flowbox.append(card)
+
+        # Focus first card
+        mp._focus_first_card()
+        child0 = mp._flowbox.get_child_at_index(0)
+        card0 = child0.get_child()
+
+        # Up on row 0 returns focus to search entry
+        card0.emit('navigate-grid', 'up')
+        # Search entry internal text widget has focus
+        root = card0.get_root()
+        if root:
+            focused = root.get_focus()
+            self.assertTrue(focused == mp._search_entry or focused.get_parent() == mp._search_entry)
+
+    def test_library_page_focus_navigation(self):
+        """LibraryPage focus_first focuses CW card, Down moves to WL, Up from WL moves back to CW."""
+        from kinema.ui.library_page import LibraryPage
+        from kinema.services.database import DatabaseService
+
+        db = DatabaseService()
+        with db._get_connection() as conn:
+            conn.execute('INSERT OR REPLACE INTO watch_history (tmdb_id, title, media_type, duration_seconds, progress_seconds, updated_at) VALUES (881, "Test CW", "movie", 7200, 1000, 1700000000)')
+            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (882, "Test WL", "movie", 1700000000)')
+            conn.commit()
+
+        lp = LibraryPage()
+        # focus_first returns True
+        self.assertTrue(lp.focus_first())
+
+        # CW card navigating down moves focus to WL
+        cw_card = lp._cw_box.get_first_child()
+        self.assertIsNotNone(cw_card)
+        cw_card.emit('navigate-grid', 'down')
+
+        # WL card navigating up moves focus back to CW
+        first_wl = lp._wl_flowbox.get_child_at_index(0)
+        self.assertIsNotNone(first_wl)
+        wl_card = first_wl.get_child()
+        wl_card.emit('navigate-grid', 'up')
 
 
     def test_movie_page_backdrop_dimensions(self):

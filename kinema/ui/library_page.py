@@ -137,6 +137,7 @@ class LibraryPage(Gtk.Box):
                 card.connect('clicked-movie', self._on_card_clicked)
                 card.connect('play-movie',    self._on_card_play)
                 card.connect('remove-item',   self._on_remove_item)
+                card.connect('navigate-grid', self._on_cw_navigate)
                 self._cw_box.append(card)
 
         # ── Populate Watchlist ─────────────────────────────────────────────
@@ -145,7 +146,116 @@ class LibraryPage(Gtk.Box):
                 card = MovieCard(item)
                 card.connect('clicked-movie', self._on_card_clicked)
                 card.connect('play-movie',    self._on_card_play)
+                card.connect('navigate-grid', self._on_wl_navigate)
+                card.connect('toggle-watchlist', self._on_wl_card_toggled)
                 self._wl_flowbox.append(card)
+
+    def focus_first(self) -> bool:
+        """Focus the first item in Continue Watching, or first item in Watchlist."""
+        if self._cw_section.get_visible():
+            first_cw = self._cw_box.get_first_child()
+            if first_cw and hasattr(first_cw, 'grab_focus'):
+                first_cw.grab_focus()
+                return True
+        first_wl = self._wl_flowbox.get_child_at_index(0)
+        if first_wl:
+            wl_card = first_wl.get_child()
+            if wl_card and hasattr(wl_card, 'grab_focus'):
+                wl_card.grab_focus()
+            else:
+                first_wl.grab_focus()
+            return True
+        return False
+
+    def _on_cw_navigate(self, card, direction: str):
+        if direction == 'right':
+            sib = card.get_next_sibling()
+            if sib and hasattr(sib, 'grab_focus'):
+                sib.grab_focus()
+        elif direction == 'left':
+            sib = card.get_prev_sibling()
+            if sib and hasattr(sib, 'grab_focus'):
+                sib.grab_focus()
+        elif direction == 'down':
+            # Move down into the first item of the Watchlist
+            first_wl = self._wl_flowbox.get_child_at_index(0)
+            if first_wl:
+                wl_card = first_wl.get_child()
+                if wl_card and hasattr(wl_card, 'grab_focus'):
+                    wl_card.grab_focus()
+                else:
+                    first_wl.grab_focus()
+
+    def _on_wl_navigate(self, card, direction: str):
+        parent = card.get_parent()
+        if not parent or not hasattr(parent, 'get_index'):
+            return
+        idx = parent.get_index()
+
+        width = self._scroll.get_width()
+        if width <= 1:
+            width = 1000
+        available_width = min(width - 32, 1400)
+        cols = max(1, available_width // 210)
+
+        if direction == 'up':
+            if idx < cols:
+                # First row of Watchlist -> navigate up to Continue Watching
+                if self._cw_section.get_visible():
+                    first_cw = self._cw_box.get_first_child()
+                    if first_cw and hasattr(first_cw, 'grab_focus'):
+                        first_cw.grab_focus()
+                        return
+            else:
+                target_idx = max(0, idx - cols)
+                target_child = self._wl_flowbox.get_child_at_index(target_idx)
+                if target_child:
+                    c = target_child.get_child()
+                    if c and hasattr(c, 'grab_focus'):
+                        c.grab_focus()
+                    else:
+                        target_child.grab_focus()
+        elif direction == 'down':
+            target_idx = idx + cols
+            target_child = self._wl_flowbox.get_child_at_index(target_idx)
+            if not target_child:
+                last_idx = idx
+                while self._wl_flowbox.get_child_at_index(last_idx + 1):
+                    last_idx += 1
+                if last_idx > idx:
+                    target_idx = last_idx
+                else:
+                    return
+            target_child = self._wl_flowbox.get_child_at_index(target_idx)
+            if target_child:
+                c = target_child.get_child()
+                if c and hasattr(c, 'grab_focus'):
+                    c.grab_focus()
+                else:
+                    target_child.grab_focus()
+        elif direction == 'left':
+            if idx > 0:
+                target_child = self._wl_flowbox.get_child_at_index(idx - 1)
+                if target_child:
+                    c = target_child.get_child()
+                    if c and hasattr(c, 'grab_focus'):
+                        c.grab_focus()
+                    else:
+                        target_child.grab_focus()
+        elif direction == 'right':
+            target_child = self._wl_flowbox.get_child_at_index(idx + 1)
+            if target_child:
+                c = target_child.get_child()
+                if c and hasattr(c, 'grab_focus'):
+                    c.grab_focus()
+                else:
+                    target_child.grab_focus()
+
+    def _on_wl_card_toggled(self, card, data):
+        movie, added = data
+        if not added:
+            # Removed from watchlist; refresh watchlist row
+            self.refresh()
 
     def _on_card_clicked(self, card, movie_data):
         self.emit('movie-selected', movie_data)
@@ -159,6 +269,19 @@ class LibraryPage(Gtk.Box):
             self._db.delete_history_item(tmdb_id)
         except Exception as e:
             logger.warning(f"Failed to remove history item {tmdb_id}: {e}")
+
+        # Shift focus to adjacent card before removal
+        if card:
+            next_focus = card.get_next_sibling() or card.get_prev_sibling()
+            if next_focus and hasattr(next_focus, 'grab_focus'):
+                next_focus.grab_focus()
+            elif not next_focus:
+                first_wl = self._wl_flowbox.get_child_at_index(0)
+                if first_wl:
+                    wl_card = first_wl.get_child()
+                    if wl_card and hasattr(wl_card, 'grab_focus'):
+                        wl_card.grab_focus()
+
         # Find and remove the card from the CW box immediately (instant feedback)
         child = self._cw_box.get_first_child()
         while child:
@@ -167,6 +290,7 @@ class LibraryPage(Gtk.Box):
                 self._cw_box.remove(child)
                 break
             child = next_child
+
         # If the CW row is now empty, hide it
         if self._cw_box.get_first_child() is None:
             self._cw_section.set_visible(False)
@@ -174,7 +298,7 @@ class LibraryPage(Gtk.Box):
             if not has_wl:
                 self._scroll.set_visible(False)
                 self._empty_status.set_visible(True)
-        # Show a toast notification via the root window
+
         root = self.get_root()
         if root and hasattr(root, 'show_toast'):
             root.show_toast("Removed from Continue Watching")

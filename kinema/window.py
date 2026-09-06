@@ -4,7 +4,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Adw, Gio
+from gi.repository import Gtk, Adw, Gio, GLib
 
 from kinema.ui.library_page import LibraryPage
 from kinema.ui.movies_page import MoviesPage
@@ -224,6 +224,13 @@ class KinemaWindow(Adw.ApplicationWindow):
             self._nav_view.pop()
         self._view_stack.set_visible_child_name(tab_name)
 
+        if tab_name == 'library' and hasattr(self, '_library_page'):
+            GLib.idle_add(self._library_page.focus_first)
+        elif tab_name == 'movies' and hasattr(self, '_movies_page'):
+            GLib.idle_add(self._movies_page._search_entry.grab_focus)
+        elif tab_name == 'series' and hasattr(self, '_series_page'):
+            GLib.idle_add(self._series_page._search_entry.grab_focus)
+
     def _cycle_tab(self, step: int):
         visible = self._nav_view.get_visible_page()
         if visible and visible.get_tag() == 'player':
@@ -254,20 +261,19 @@ class KinemaWindow(Adw.ApplicationWindow):
         win = Gtk.ShortcutsWindow()
         win.set_transient_for(self)
         win.set_modal(True)
+        win.set_default_size(680, 480)
 
-        section = Gtk.ShortcutsSection()
-        win.set_child(section)
+        # ── Section 1: App & Navigation ────────────────────────────────────
+        sec_app = Gtk.ShortcutsSection(title="App & Navigation", section_name="app", max_height=10)
 
-        # ── General ────────────────────────────────────────────────────────
         g_gen = Gtk.ShortcutsGroup(title="General")
         g_gen.append(Gtk.ShortcutsShortcut(title="Search", accelerator="<Ctrl>F"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Keyboard Shortcuts", accelerator="<Ctrl>question"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Preferences", accelerator="<Ctrl>comma"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="F11"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Go Back / Exit Player", accelerator="Escape"))
-        section.append(g_gen)
+        sec_app.append(g_gen)
 
-        # ── Navigation ─────────────────────────────────────────────────────
         g_nav = Gtk.ShortcutsGroup(title="Navigation")
         g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Library", accelerator="<Ctrl>1"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Movies", accelerator="<Ctrl>2"))
@@ -277,9 +283,13 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_nav.append(Gtk.ShortcutsShortcut(title="Open Details", accelerator="Return"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Play Directly", accelerator="space"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Toggle Watchlist", accelerator="w"))
-        section.append(g_nav)
+        sec_app.append(g_nav)
 
-        # ── Playback ───────────────────────────────────────────────────────
+        win.add_section(sec_app)
+
+        # ── Section 2: Player Controls ─────────────────────────────────────
+        sec_player = Gtk.ShortcutsSection(title="Player Controls", section_name="playback", max_height=10)
+
         g_play = Gtk.ShortcutsGroup(title="Playback")
         g_play.append(Gtk.ShortcutsShortcut(title="Play / Pause", accelerator="space"))
         g_play.append(Gtk.ShortcutsShortcut(title="Seek Backward 10s", accelerator="Left"))
@@ -293,7 +303,9 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_play.append(Gtk.ShortcutsShortcut(title="Increase Subtitle Delay", accelerator="x"))
         g_play.append(Gtk.ShortcutsShortcut(title="Subtitles Menu", accelerator="s"))
         g_play.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="f"))
-        section.append(g_play)
+        sec_player.append(g_play)
+
+        win.add_section(sec_player)
 
         win.present()
 

@@ -133,10 +133,56 @@ class SeriesPage(Gtk.Box):
     def _focus_first_card(self):
         first_child = self._flowbox.get_child_at_index(0)
         if first_child:
-            first_child.grab_focus()
             card = first_child.get_child()
             if card and hasattr(card, 'grab_focus'):
                 card.grab_focus()
+            else:
+                first_child.grab_focus()
+
+    def _get_columns_count(self) -> int:
+        width = self._scroll.get_width()
+        if width <= 1:
+            width = 1000
+        available_width = min(width - 32, 1400)
+        return max(1, available_width // 210)
+
+    def _on_card_navigate(self, card, direction: str):
+        parent = card.get_parent()
+        if not parent or not hasattr(parent, 'get_index'):
+            return
+        idx = parent.get_index()
+        cols = self._get_columns_count()
+
+        target_idx = None
+        if direction == 'up':
+            if idx < cols:
+                self._search_entry.grab_focus()
+                return
+            target_idx = max(0, idx - cols)
+        elif direction == 'down':
+            target_idx = idx + cols
+            if not self._flowbox.get_child_at_index(target_idx):
+                last_idx = idx
+                while self._flowbox.get_child_at_index(last_idx + 1):
+                    last_idx += 1
+                if last_idx > idx:
+                    target_idx = last_idx
+                else:
+                    return
+        elif direction == 'left':
+            if idx > 0:
+                target_idx = idx - 1
+        elif direction == 'right':
+            target_idx = idx + 1
+
+        if target_idx is not None:
+            target_child = self._flowbox.get_child_at_index(target_idx)
+            if target_child:
+                target_card = target_child.get_child()
+                if target_card and hasattr(target_card, 'grab_focus'):
+                    target_card.grab_focus()
+                else:
+                    target_child.grab_focus()
 
     def _on_search_key_pressed(self, controller, keyval, keycode, state):
         if keyval == Gdk.KEY_Down:
@@ -250,6 +296,8 @@ class SeriesPage(Gtk.Box):
             card = MovieCard(s)
             card.connect('clicked-movie', self._on_card_clicked)
             card.connect('play-movie', self._on_card_play)
+            card.connect('navigate-grid', self._on_card_navigate)
+            card.connect('toggle-watchlist', self._on_card_watchlist)
             self._flowbox.append(card)
 
         self._current_page = page + 1
@@ -279,6 +327,14 @@ class SeriesPage(Gtk.Box):
 
     def _on_card_play(self, card, stream_data):
         self.emit('play-movie', stream_data)
+
+    def _on_card_watchlist(self, card, data):
+        movie, added = data
+        title = movie.get('title') or movie.get('name') or 'Item'
+        msg = f"Added '{title}' to Watchlist" if added else f"Removed '{title}' from Watchlist"
+        win = self.get_root()
+        if win and hasattr(win, 'show_toast'):
+            win.show_toast(msg, timeout=2)
 
     def refresh(self):
         self._load_series(reset=True)

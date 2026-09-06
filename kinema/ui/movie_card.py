@@ -105,9 +105,11 @@ class MovieCard(Gtk.Box):
     """
 
     __gsignals__ = {
-        'clicked-movie': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
-        'play-movie':    (GObject.SignalFlags.RUN_FIRST, None, (object,)),
-        'remove-item':   (GObject.SignalFlags.RUN_FIRST, None, (int,)),
+        'clicked-movie':    (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'play-movie':       (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'remove-item':      (GObject.SignalFlags.RUN_FIRST, None, (int,)),
+        'navigate-grid':    (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        'toggle-watchlist': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
     }
 
     def __init__(self, movie_data: Dict[str, Any], show_remove_button: bool = False):
@@ -312,10 +314,46 @@ class MovieCard(Gtk.Box):
         elif keyval in (Gdk.KEY_space, Gdk.KEY_p, Gdk.KEY_P):
             self._start_play()
             return True
+        elif keyval in (Gdk.KEY_w, Gdk.KEY_W):
+            self._toggle_watchlist()
+            return True
         elif keyval in (Gdk.KEY_Delete, Gdk.KEY_BackSpace, Gdk.KEY_r, Gdk.KEY_R) and self._show_remove_button:
             self._on_remove_released(None, 1, 0, 0)
             return True
+        elif keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            self.emit('navigate-grid', 'up')
+            return True
+        elif keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            self.emit('navigate-grid', 'down')
+            return True
+        elif keyval in (Gdk.KEY_Left, Gdk.KEY_KP_Left):
+            self.emit('navigate-grid', 'left')
+            return True
+        elif keyval in (Gdk.KEY_Right, Gdk.KEY_KP_Right):
+            self.emit('navigate-grid', 'right')
+            return True
         return False
+
+    def _toggle_watchlist(self):
+        mid = self._movie.get('id') or self._movie.get('tmdb_id')
+        if not mid:
+            return
+        if self._db.is_in_watchlist(mid):
+            self._db.remove_from_watchlist(mid)
+            added = False
+        else:
+            self._db.add_to_watchlist(
+                tmdb_id=mid,
+                title=self._movie.get('title') or self._movie.get('name') or 'Unknown',
+                media_type=self._movie.get('media_type', 'movie'),
+                poster_url=self._movie.get('poster_path') or self._movie.get('poster_url'),
+                release_date=self._movie.get('release_date') or self._movie.get('first_air_date'),
+                vote_average=float(self._movie.get('vote_average') or 0.0),
+                overview=self._movie.get('overview'),
+                backdrop_url=self._movie.get('backdrop_path') or self._movie.get('backdrop_url'),
+            )
+            added = True
+        self.emit('toggle-watchlist', (self._movie, added))
 
     def _on_body_released(self, gesture, n_press, x, y):
         """Card body click → navigate to detail page."""

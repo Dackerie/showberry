@@ -143,26 +143,34 @@ class ProviderManager:
 
 def get_all_providers():
     """Get all available providers ordered by reliability and priority."""
-    from kinema.providers.vidlink import VidLinkProvider
     from kinema.providers.videasy import VidEasyProvider
+    from kinema.providers.vidy import VidyProvider
+    from kinema.providers.vidking import VidKingProvider
+    from kinema.providers.vidlink import VidLinkProvider
+    from kinema.providers.vixsrc import VixSrcProvider
     from kinema.providers.vidfast import VidFastProvider
-    from kinema.providers.vidnest import VidNestProvider
-    from kinema.providers.superembed import SuperEmbedProvider
-    from kinema.providers.primewire import PrimeWireProvider
-    from kinema.providers.cinesrc import CineSrcProvider
     from kinema.providers.vidzee import VidZeeProvider
+    from kinema.providers.cinesrc import CineSrcProvider
+    from kinema.providers.superembed import SuperEmbedProvider
+    from kinema.providers.vidrift import VidRiftProvider
+    from kinema.providers.vidnest import VidNestProvider
+    from kinema.providers.primewire import PrimeWireProvider
     from kinema.providers.vidsrc import VidSrcProvider
     from kinema.providers.torrent import TorrentProvider
 
     return [
         VidEasyProvider(),
+        VidyProvider(),
+        VidKingProvider(),
         VidLinkProvider(),
+        VixSrcProvider(),
         VidFastProvider(),
-        VidNestProvider(),
-        SuperEmbedProvider(),
-        PrimeWireProvider(),
-        CineSrcProvider(),
         VidZeeProvider(),
+        CineSrcProvider(),
+        SuperEmbedProvider(),
+        VidRiftProvider(),
+        VidNestProvider(),
+        PrimeWireProvider(),
         VidSrcProvider(),
         TorrentProvider(),
     ]
