@@ -106,6 +106,7 @@ class MpvWidget(Gtk.GLArea):
             network_timeout=15,
         )
         self._ctx = None
+        self._gl_context_ref = None
         self._redraw_pending = False
         self._pending_subtitles = []
         self._wait_first_frame = False  # set True while A/V sync wait is active
@@ -132,6 +133,20 @@ class MpvWidget(Gtk.GLArea):
 
     def _on_realize(self, *_):
         self.make_current()
+        curr_gdk_ctx = self.get_context()
+
+        # If the underlying GdkGLContext was recreated (e.g. across navigation pops and pushes),
+        # the previous MpvRenderContext is bound to a destroyed OpenGL context and cannot render.
+        # Safely free it while the new OpenGL context is current before creating a fresh one.
+        if self._ctx and self._gl_context_ref != curr_gdk_ctx:
+            logger.info("GL context changed across realize cycles; recreating MPV render context")
+            try:
+                self._ctx.free()
+            except Exception as e:
+                logger.warning(f"Error freeing stale MPV render context: {e}")
+            self._ctx = None
+
+        self._gl_context_ref = curr_gdk_ctx
 
         if self._ctx:
             self._ctx.update_cb = self._on_mpv_callback
@@ -151,8 +166,8 @@ class MpvWidget(Gtk.GLArea):
             logger.error(f"Failed to create MPV render context: {e}")
 
     def _on_unrealize(self, *_):
-        # Do NOT destroy or free MpvRenderContext on page navigation pop.
-        # Freeing render context while MPV threads or GTK are tearing down deadlocks libmpv.
+        # Do NOT free MpvRenderContext here during tear down; it will be cleanly
+        # freed and recreated on the next _on_realize() with the active context.
         self._is_active = False
         try:
             if self._ctx:
@@ -454,6 +469,14 @@ class MpvWidget(Gtk.GLArea):
             pass
 
     def terminate(self):
+        self._is_active = False
+        try:
+            if self._ctx:
+                self.make_current()
+                self._ctx.free()
+                self._ctx = None
+        except Exception:
+            pass
         try:
             self._mpv.terminate()
         except Exception:
