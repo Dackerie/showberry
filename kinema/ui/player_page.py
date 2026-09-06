@@ -267,10 +267,23 @@ class MpvWidget(Gtk.GLArea):
         for sub in subs:
             sub_url = sub.get('url')
             if sub_url:
-                self.add_subtitle(sub_url, label=sub.get('label', 'Subtitle'), lang=sub.get('lang', 'eng'))
+                self.add_subtitle(
+                    sub_url,
+                    label=sub.get('label', 'Subtitle'),
+                    lang=sub.get('lang', 'eng'),
+                    referer=sub.get('referer'),
+                    headers=sub.get('headers')
+                )
         return False
 
-    def add_subtitle(self, url_or_path: str, label: str = 'Subtitle', lang: str = 'eng'):
+    def add_subtitle(
+        self,
+        url_or_path: str,
+        label: str = 'Subtitle',
+        lang: str = 'eng',
+        referer: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None
+    ):
         """Add external subtitle to playback (only when MPV has a file loaded).
         If url_or_path is a remote HTTP URL, downloads it to local cache in a thread first
         so MPV's demuxer never blocks on remote sockets during playback.
@@ -281,7 +294,12 @@ class MpvWidget(Gtk.GLArea):
             if url_or_path.startswith(('http://', 'https://')):
                 def _bg_dl():
                     try:
-                        local_path = SubtitleService().download_subtitle(url_or_path, filename_hint=label)
+                        local_path = SubtitleService().download_subtitle(
+                            url_or_path,
+                            filename_hint=label,
+                            headers=headers,
+                            referer=referer
+                        )
                         if local_path and self._mpv and self._mpv.filename:
                             GLib.idle_add(self._add_local_subtitle, local_path, label, lang)
                     except Exception as err:
@@ -647,6 +665,7 @@ class PlayerControls(Gtk.Box):
         self._seek_back_btn = Gtk.Button.new_from_icon_name('media-seek-backward-symbolic')
         self._seek_back_btn.add_css_class('flat')
         self._seek_back_btn.set_tooltip_text("Seek back 10s (Left Arrow)")
+        self._seek_back_btn.set_focusable(False)
         self._seek_back_btn.connect('clicked', lambda b: self._seek_relative(-10))
         controls.append(self._seek_back_btn)
 
@@ -655,6 +674,7 @@ class PlayerControls(Gtk.Box):
         self._play_button.add_css_class('suggested-action')
         self._play_button.add_css_class('circular')
         self._play_button.set_tooltip_text("Play/Pause (Space)")
+        self._play_button.set_focusable(False)
         self._play_button.connect('clicked', self._on_play_pause)
         controls.append(self._play_button)
 
@@ -662,6 +682,7 @@ class PlayerControls(Gtk.Box):
         self._seek_fwd_btn = Gtk.Button.new_from_icon_name('media-seek-forward-symbolic')
         self._seek_fwd_btn.add_css_class('flat')
         self._seek_fwd_btn.set_tooltip_text("Seek forward 10s (Right Arrow)")
+        self._seek_fwd_btn.set_focusable(False)
         self._seek_fwd_btn.connect('clicked', lambda b: self._seek_relative(10))
         controls.append(self._seek_fwd_btn)
 
@@ -674,6 +695,7 @@ class PlayerControls(Gtk.Box):
         self._volume_btn = Gtk.Button.new_from_icon_name('audio-volume-high-symbolic')
         self._volume_btn.add_css_class('flat')
         self._volume_btn.set_tooltip_text("Mute/Unmute (M)")
+        self._volume_btn.set_focusable(False)
         self._volume_btn.connect('clicked', self._on_mute_clicked)
         controls.append(self._volume_btn)
 
@@ -681,6 +703,7 @@ class PlayerControls(Gtk.Box):
         self._volume_scale.set_size_request(100, -1)
         self._volume_scale.set_value(100)
         self._volume_scale.set_draw_value(False)
+        self._volume_scale.set_focusable(False)
         self._volume_scale.connect('value-changed', self._on_volume_changed)
         controls.append(self._volume_scale)
 
@@ -691,12 +714,14 @@ class PlayerControls(Gtk.Box):
         self._sub_btn.add_css_class('flat')
         self._sub_btn.set_tooltip_text("Subtitles & Timing (Z: -100ms, X: +100ms)")
         self._sub_btn.set_popover(self._sub_popover)
+        self._sub_btn.set_focusable(False)
         controls.append(self._sub_btn)
 
         # Fullscreen button
         self._fullscreen_button = Gtk.Button.new_from_icon_name('view-fullscreen-symbolic')
         self._fullscreen_button.add_css_class('flat')
         self._fullscreen_button.set_tooltip_text("Toggle Fullscreen (F)")
+        self._fullscreen_button.set_focusable(False)
         self._fullscreen_button.connect('clicked', lambda b: self.emit('fullscreen-toggle'))
         controls.append(self._fullscreen_button)
 
@@ -704,6 +729,7 @@ class PlayerControls(Gtk.Box):
         self._close_button = Gtk.Button.new_from_icon_name('window-close-symbolic')
         self._close_button.add_css_class('flat')
         self._close_button.set_tooltip_text("Exit Player (Esc)")
+        self._close_button.set_focusable(False)
         self._close_button.connect('clicked', lambda b: self.emit('close'))
         controls.append(self._close_button)
 
@@ -884,6 +910,9 @@ class PlayerPage(Adw.NavigationPage):
         self._pending_sub_query = None
         self._available_subtitles = []
 
+        self.set_focusable(True)
+        self.connect('map', lambda w: self.grab_focus())
+
         self._setup_ui()
         self._setup_keybindings()
         self.connect('unrealize', lambda w: self._set_cursor_visible(True))
@@ -921,6 +950,7 @@ class PlayerPage(Adw.NavigationPage):
         back_btn.add_css_class('circular')
         back_btn.add_css_class('flat')
         back_btn.set_tooltip_text("Back to details (Esc)")
+        back_btn.set_focusable(False)
         back_btn.connect('clicked', lambda b: self._on_close(None))
         self._top_bar.append(back_btn)
 
@@ -944,6 +974,7 @@ class PlayerPage(Adw.NavigationPage):
         top_fs_btn.add_css_class('circular')
         top_fs_btn.add_css_class('flat')
         top_fs_btn.set_tooltip_text("Toggle Fullscreen (F)")
+        top_fs_btn.set_focusable(False)
         top_fs_btn.connect('clicked', lambda b: self._on_fullscreen_toggle(None))
         self._top_bar.append(top_fs_btn)
 
@@ -1001,6 +1032,7 @@ class PlayerPage(Adw.NavigationPage):
     def _setup_keybindings(self):
         """Configure keyboard shortcuts for media playback."""
         key_controller = Gtk.EventControllerKey.new()
+        key_controller.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         key_controller.connect('key-pressed', self._on_key_pressed)
         self.add_controller(key_controller)
 
@@ -1054,14 +1086,16 @@ class PlayerPage(Adw.NavigationPage):
                 self._on_close(None)
             return True
         elif keyname in ['z', 'Z']:
-            new_delay = self._mpv_widget.adjust_sub_delay(-0.1)
+            delta = -0.5 if shift else -0.1
+            new_delay = self._mpv_widget.adjust_sub_delay(delta)
             sign = "+" if new_delay > 0 else ""
             self.show_osd_notification(f"Subtitle Delay: {sign}{new_delay:.2f}s ({sign}{int(new_delay * 1000)}ms)")
             self._controls._sub_popover.refresh_delay_label()
             self._show_controls_briefly()
             return True
         elif keyname in ['x', 'X']:
-            new_delay = self._mpv_widget.adjust_sub_delay(0.1)
+            delta = 0.5 if shift else 0.1
+            new_delay = self._mpv_widget.adjust_sub_delay(delta)
             sign = "+" if new_delay > 0 else ""
             self.show_osd_notification(f"Subtitle Delay: {sign}{new_delay:.2f}s ({sign}{int(new_delay * 1000)}ms)")
             self._controls._sub_popover.refresh_delay_label()
@@ -1148,7 +1182,7 @@ class PlayerPage(Adw.NavigationPage):
             GLib.idle_add(self._on_stream_error, str(e), session_id)
 
     def _fetch_subtitles_background(self, tmdb_id, season, episode, movie, session_id: int):
-        """Fetch OpenSubtitles in background and add the primary track to the running player."""
+        """Fetch OpenSubtitles in background and add to available subtitles."""
         try:
             if session_id != self._session_id:
                 return
@@ -1163,15 +1197,21 @@ class PlayerPage(Adw.NavigationPage):
             if session_id != self._session_id:
                 return
 
-            self._available_subtitles = subs
+            # Combine OpenSubtitles with existing provider subtitles
+            existing_labels = {s.get('label', '').strip().lower() for s in self._available_subtitles}
+            for s in subs:
+                if s.get('label', '').strip().lower() not in existing_labels:
+                    self._available_subtitles.append(s)
+
             GLib.idle_add(
                 self._controls.set_available_subtitles,
-                subs,
+                self._available_subtitles,
                 self._on_download_and_select_external_sub
             )
 
-            # Auto-download and add ONLY the primary (English) subtitle to keep playback smooth
-            if subs:
+            # Auto-download and add primary OpenSubtitle ONLY if NO provider subtitle was loaded
+            has_loaded = bool(self._mpv_widget and self._mpv_widget.get_sub_tracks())
+            if not has_loaded and subs and session_id == self._session_id:
                 primary_sub = subs[0]
                 sub_url = primary_sub.get('url')
                 if sub_url and session_id == self._session_id:
@@ -1188,10 +1228,17 @@ class PlayerPage(Adw.NavigationPage):
         sub_url = sub.get('url')
         label = sub.get('label', sub.get('lang', 'Subtitle'))
         lang = sub.get('lang', 'eng')
+        headers = sub.get('headers')
+        referer = sub.get('referer')
         current_session = self._session_id
 
         def _bg():
-            local_path = self._subtitles_service.download_subtitle(sub_url, filename_hint=label)
+            local_path = self._subtitles_service.download_subtitle(
+                sub_url,
+                filename_hint=label,
+                headers=headers,
+                referer=referer
+            )
             if local_path and current_session == self._session_id:
                 GLib.idle_add(self._activate_external_subtitle, local_path, label, lang)
 
@@ -1252,16 +1299,34 @@ class PlayerPage(Adw.NavigationPage):
             self._provider_badge.set_text(f"{result.provider_name}{q}")
             self._provider_badge.set_visible(True)
 
-        # Combine provider captions with OpenSubtitles tracks
-        all_subs = list(result.subtitles or [])
-        all_subs.extend(extra_subs)
+        # Attach stream referer and headers to provider subtitles
+        provider_subs = list(result.subtitles or [])
+        for s in provider_subs:
+            if 'referer' not in s and result.referer:
+                s['referer'] = result.referer
+            if 'headers' not in s and result.headers:
+                s['headers'] = result.headers
+
+        # Keep all provider subtitles in self._available_subtitles for on-demand selection
+        self._available_subtitles = list(provider_subs)
+        self._controls.set_available_subtitles(
+            self._available_subtitles,
+            self._on_download_and_select_external_sub
+        )
+
+        # Auto-download ONLY the primary English (or first) subtitle to avoid parallel thread flood
+        initial_subs = []
+        if provider_subs:
+            eng_subs = [s for s in provider_subs if s.get('lang', '').lower() in ('eng', 'en')]
+            primary_sub = eng_subs[0] if eng_subs else provider_subs[0]
+            initial_subs = [primary_sub]
 
         self._mpv_widget.play(
             url=result.url,
             referer=result.referer,
             origin=result.origin,
             headers=result.headers,
-            subtitles=all_subs,
+            subtitles=initial_subs,
             start_pos=self._start_pos
         )
         self._controls.start_update_timer(self._mpv_widget)
@@ -1398,6 +1463,7 @@ class PlayerPage(Adw.NavigationPage):
         self._show_controls_briefly()
 
     def _on_video_clicked(self, gesture, n_press, x, y):
+        self.grab_focus()
         # If subtitle popover is currently open, dismiss it and do not toggle playback
         if hasattr(self, '_controls') and hasattr(self._controls, '_sub_popover'):
             if self._controls._sub_popover.get_visible():

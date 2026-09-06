@@ -155,8 +155,8 @@ def get_all_providers():
     from kinema.providers.torrent import TorrentProvider
 
     return [
-        VidLinkProvider(),
         VidEasyProvider(),
+        VidLinkProvider(),
         VidFastProvider(),
         VidNestProvider(),
         SuperEmbedProvider(),

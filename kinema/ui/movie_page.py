@@ -29,7 +29,6 @@ class BackdropWidget(Gtk.Widget):
         self._can_shrink = True
         self.set_valign(Gtk.Align.START)
         self.set_vexpand(False)
-        self.set_size_request(-1, 280)
         self.add_css_class('movie-backdrop')
 
     def set_paintable(self, paintable):
@@ -66,7 +65,11 @@ class BackdropWidget(Gtk.Widget):
         draw_w = pw * scale
         draw_h = ph * scale
         draw_x = (w - draw_w) / 2.0
-        draw_y = 0.0  # TOP-ANCHORED: heads and hair are never cropped!
+        if draw_h > h:
+            # Upper-bias framing: preserves headroom/sky while capturing characters' faces and bodies
+            draw_y = (h - draw_h) * 0.20
+        else:
+            draw_y = (h - draw_h) / 2.0
 
         rect = Graphene.Rect()
         rect.init(0, 0, w, h)
@@ -77,11 +80,18 @@ class BackdropWidget(Gtk.Widget):
         snapshot.restore()
         snapshot.pop()
 
+    def do_get_request_mode(self):
+        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
+
     def do_measure(self, orientation, for_size):
         if orientation == Gtk.Orientation.HORIZONTAL:
             return 0, 0, -1, -1
         else:
-            return 200, 280, -1, -1
+            if for_size > 0:
+                calc_h = int(for_size * 0.28)
+                target_h = max(260, min(480, calc_h))
+                return target_h, target_h, -1, -1
+            return 260, 320, -1, -1
 
 
 class MoviePage(Adw.NavigationPage):
@@ -158,7 +168,6 @@ class MoviePage(Adw.NavigationPage):
         backdrop_overlay.set_vexpand(False)
 
         self._backdrop = BackdropWidget()
-        self._backdrop.set_size_request(-1, 280)
         backdrop_overlay.set_child(self._backdrop)
 
         scrim = Gtk.Box()
@@ -338,7 +347,7 @@ class MoviePage(Adw.NavigationPage):
 
         cast_scroll = Gtk.ScrolledWindow()
         cast_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
-        cast_scroll.set_min_content_height(74)
+        cast_scroll.set_min_content_height(54)
         cast_scroll.set_vexpand(False)
 
         self._cast_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -499,7 +508,7 @@ class MoviePage(Adw.NavigationPage):
             return
 
         for person in cast_list[:12]:
-            chip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            chip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
             chip.add_css_class('cast-card')
             chip.set_valign(Gtk.Align.CENTER)
 

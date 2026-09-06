@@ -145,9 +145,16 @@ class SubtitleService:
             logger.warning(f"Failed to fetch subtitles from OpenSubtitles: {e}")
             return []
 
-    def download_subtitle(self, sub_url: str, filename_hint: str = "subtitle.srt") -> Optional[str]:
+    def download_subtitle(
+        self,
+        sub_url: str,
+        filename_hint: str = "subtitle.srt",
+        headers: Optional[Dict[str, str]] = None,
+        referer: Optional[str] = None
+    ) -> Optional[str]:
         """
         Download subtitle to local cache and return the local path.
+        Accepts optional referer and headers to authenticate against protected provider CDNs.
         """
         try:
             url_hash = hex(abs(hash(sub_url)))[2:]
@@ -159,10 +166,18 @@ class SubtitleService:
             if local_path.exists() and local_path.stat().st_size > 0:
                 return str(local_path)
 
-            req = urllib.request.Request(
-                sub_url,
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            )
+            req_headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            if referer:
+                req_headers['Referer'] = referer
+                req_headers['Origin'] = referer.rstrip('/')
+            if headers:
+                for k, v in headers.items():
+                    if k.lower() in ('referer', 'origin', 'user-agent', 'accept'):
+                        req_headers[k] = v
+
+            req = urllib.request.Request(sub_url, headers=req_headers)
 
             with urllib.request.urlopen(req, timeout=4) as resp:
                 content = resp.read()
