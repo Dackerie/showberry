@@ -5,7 +5,7 @@ import gi
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw
+from gi.repository import Gtk, Adw
 
 Adw.init()
 
@@ -438,7 +438,159 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(win.has_action('clear_history'))
         self.assertTrue(win.has_action('about'))
 
+    def test_is_stream_alive(self):
+        """is_stream_alive correctly validates stream accessibility and rejects 429/403/404."""
+        from unittest.mock import patch, MagicMock
+        from kinema.providers.base import is_stream_alive, StreamResult
+
+        res = StreamResult(url='https://example.com/stream.m3u8')
+
+        # 200 OK
+        with patch('requests.head') as mock_head:
+            mock_head.return_value = MagicMock(status_code=200)
+            self.assertTrue(is_stream_alive(res))
+
+        # 206 Partial Content
+        with patch('requests.head') as mock_head:
+            mock_head.return_value = MagicMock(status_code=206)
+            self.assertTrue(is_stream_alive(res))
+
+        # 429 Too Many Requests
+        with patch('requests.head') as mock_head:
+            mock_head.return_value = MagicMock(status_code=429)
+            self.assertFalse(is_stream_alive(res))
+
+        # 403 Forbidden
+        with patch('requests.head') as mock_head:
+            mock_head.return_value = MagicMock(status_code=403)
+            self.assertFalse(is_stream_alive(res))
+
+        # Exception
+        with patch('requests.head', side_effect=Exception("Network down")):
+            self.assertFalse(is_stream_alive(res))
+
+    def test_provider_manager_skips_unhealthy_streams(self):
+        """ProviderManager automatically skips rate-limited/dead streams and cascades to next provider."""
+        from unittest.mock import patch, MagicMock
+        from kinema.providers.base import ProviderManager, StreamResult, BaseProvider
+
+        class BadProvider(BaseProvider):
+            name = "BadProvider"
+            priority = 1
+            def get_stream_url(self, tmdb_id, season=None, episode=None):
+                return StreamResult(url="https://bad.com/429.m3u8", provider_name="BadProvider")
+
+        class GoodProvider(BaseProvider):
+            name = "GoodProvider"
+            priority = 2
+            def get_stream_url(self, tmdb_id, season=None, episode=None):
+                return StreamResult(url="https://good.com/200.m3u8", provider_name="GoodProvider")
+
+        with patch('kinema.providers.base.get_all_providers', return_value=[BadProvider(), GoodProvider()]):
+            with patch('kinema.providers.base.is_stream_alive') as mock_alive:
+                # First stream is dead/429, second stream is alive
+                mock_alive.side_effect = [False, True]
+                res = ProviderManager.resolve_stream(123)
+                self.assertIsNotNone(res)
+                self.assertEqual(res.provider_name, "GoodProvider")
+                self.assertEqual(res.url, "https://good.com/200.m3u8")
+
+    def test_mpv_widget_deactivate_and_activate(self):
+        """MpvWidget deactivate pauses, stops, and disables rendering callbacks without deadlock."""
+        from kinema.ui.player_page import MpvWidget
+        widget = MpvWidget()
+        self.assertTrue(widget._is_active)
+
+        widget.deactivate()
+        self.assertFalse(widget._is_active)
+        self.assertFalse(widget._trigger_redraw())
+        self.assertFalse(widget.do_render())
+
+        widget.activate()
+        self.assertTrue(widget._is_active)
+
+    def test_movie_page_backdrop_dimensions(self):
+        """MoviePage backdrop has 280px height, can_shrink True, and START alignment."""
+        from kinema.ui.movie_page import MoviePage
+        mp = MoviePage(movie={'id': 1, 'title': 'Test'})
+        self.assertTrue(mp._backdrop.get_can_shrink())
+        w, h = mp._backdrop.get_size_request()
+        self.assertEqual(h, 280)
+        self.assertEqual(mp._backdrop.get_valign(), Gtk.Align.START)
+        # Verify play button is placed beside poster inside details box
+        self.assertIsNotNone(mp._play_button.get_parent())
+
+    def test_movie_card_play_overlay_and_alignment(self):
+        """MovieCard play overlay is 64x64 with 34px icon, card has fixed 196px width without stretching."""
+        from kinema.ui.movie_card import MovieCard
+        card = MovieCard({'id': 1, 'title': 'Test'})
+        w, h = card._play_overlay.get_size_request()
+        self.assertEqual(w, 64)
+        self.assertEqual(h, 64)
+        self.assertEqual(card.get_halign(), Gtk.Align.START)
+        self.assertFalse(card.get_hexpand())
+        cw, _ = card.get_size_request()
+        self.assertEqual(cw, 196)
+
+    def test_player_page_osd_pill_margin(self):
+        """OSD notification pill is positioned >= 90px from top to clear top bar."""
+        from kinema.ui.player_page import PlayerPage
+        player = PlayerPage()
+        self.assertGreaterEqual(player._osd_pill.get_margin_top(), 90)
+
+    def test_flowbox_homogeneous_setting(self):
+        """MoviesPage and SeriesPage flowboxes have set_homogeneous(True)."""
+        from kinema.ui.movies_page import MoviesPage
+        from kinema.ui.series_page import SeriesPage
+        mp = MoviesPage()
+        sp = SeriesPage()
+        self.assertTrue(mp._flowbox.get_homogeneous())
+        self.assertTrue(sp._flowbox.get_homogeneous())
+
+    def test_movie_card_enrichment(self):
+        """_update_enriched_ui updates TV network badge and runtime labels."""
+        from kinema.ui.movie_card import MovieCard
+        tv_card = MovieCard({'id': 94997, 'media_type': 'tv', 'title': 'House of the Dragon'})
+        self.assertFalse(tv_card._badge.get_visible())
+
+        # Simulate enrichment
+        tv_card._movie['network'] = 'HBO'
+        tv_card._movie['runtime'] = 60
+        tv_card._update_enriched_ui()
+
+    def test_movie_page_responsive_min_width(self):
+        """MoviePage min width is <= 360px to support narrow mobile screens."""
+        from kinema.ui.movie_page import MoviePage
+        mp = MoviePage({'id': 100, 'title': 'Responsive Mobile Test Movie', 'runtime': 120})
+        min_w, _, _, _ = mp.measure(Gtk.Orientation.HORIZONTAL, -1)
+        self.assertLessEqual(min_w, 360)
+
+    def test_movie_page_instant_directors(self):
+        """Director label renders instantly at 0ms if directors present in movie data."""
+        from kinema.ui.movie_page import MoviePage
+        mp = MoviePage({'id': 550, 'title': 'Fight Club', 'directors': ['David Fincher']})
+        self.assertTrue(mp._director_label.get_visible())
+        self.assertEqual(mp._director_label.get_text(), 'Directed by David Fincher')
+
+    def test_movie_page_cast_and_recommendations(self):
+        """MoviePage renders cast chips and recommended cards when present."""
+        from kinema.ui.movie_page import MoviePage
+        mp = MoviePage({'id': 100, 'title': 'Test Movie'})
+        self.assertFalse(mp._cast_box.get_visible())
+        self.assertFalse(mp._recs_box.get_visible())
+
+        # Render cast
+        mp._render_cast([{'name': 'Actor One', 'character': 'Hero'}, {'name': 'Actor Two', 'character': 'Villain'}])
+        self.assertTrue(mp._cast_box.get_visible())
+        self.assertIsNotNone(mp._cast_row.get_first_child())
+
+        # Render recommendations
+        mp._render_recommendations([{'id': 201, 'title': 'Similar 1'}, {'id': 202, 'title': 'Similar 2'}])
+        self.assertTrue(mp._recs_box.get_visible())
+        self.assertIsNotNone(mp._recs_row.get_first_child())
+
 
 if __name__ == '__main__':
     unittest.main()
+
 

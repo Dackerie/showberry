@@ -8,7 +8,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Adw, GLib, GObject, Pango
+from gi.repository import Gtk, Adw, GLib, GObject, Pango, Graphene
 
 from kinema.services.tmdb import TMDBClient, genre_id_to_name
 from kinema.services.image_cache import ImageCache
@@ -16,11 +16,80 @@ from kinema.services.database import DatabaseService
 from kinema.providers import get_all_providers
 
 
+class BackdropWidget(Gtk.Widget):
+    """Backdrop widget that scales with COVER but anchors to the TOP (draw_y = 0.0).
+
+    Ensures actors' heads, hair, and sky are never cut off.
+    Minimum width is 0 to allow the window to shrink smoothly to mobile sizes.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._paintable = None
+        self._can_shrink = True
+        self.set_valign(Gtk.Align.START)
+        self.set_vexpand(False)
+        self.set_size_request(-1, 280)
+        self.add_css_class('movie-backdrop')
+
+    def set_paintable(self, paintable):
+        self._paintable = paintable
+        self.queue_draw()
+
+    def get_paintable(self):
+        return self._paintable
+
+    def set_can_shrink(self, val: bool):
+        self._can_shrink = val
+
+    def get_can_shrink(self) -> bool:
+        return getattr(self, '_can_shrink', True)
+
+    def set_content_fit(self, fit):
+        pass
+
+    def do_snapshot(self, snapshot):
+        if not self._paintable:
+            return
+        w = self.get_width()
+        h = self.get_height()
+        if w <= 0 or h <= 0:
+            return
+
+        pw = self._paintable.get_intrinsic_width()
+        ph = self._paintable.get_intrinsic_height()
+        if pw <= 0 or ph <= 0:
+            self._paintable.snapshot(snapshot, w, h)
+            return
+
+        scale = max(w / pw, h / ph)
+        draw_w = pw * scale
+        draw_h = ph * scale
+        draw_x = (w - draw_w) / 2.0
+        draw_y = 0.0  # TOP-ANCHORED: heads and hair are never cropped!
+
+        rect = Graphene.Rect()
+        rect.init(0, 0, w, h)
+        snapshot.push_clip(rect)
+        snapshot.save()
+        snapshot.translate(Graphene.Point().init(draw_x, draw_y))
+        self._paintable.snapshot(snapshot, draw_w, draw_h)
+        snapshot.restore()
+        snapshot.pop()
+
+    def do_measure(self, orientation, for_size):
+        if orientation == Gtk.Orientation.HORIZONTAL:
+            return 0, 0, -1, -1
+        else:
+            return 200, 280, -1, -1
+
+
 class MoviePage(Adw.NavigationPage):
     """Media detail page with backdrop, poster, info, TV season/episode selector, and play button."""
 
     __gsignals__ = {
         'play-movie': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'movie-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
     }
 
     def __init__(self, movie=None):
@@ -83,21 +152,29 @@ class MoviePage(Adw.NavigationPage):
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
 
-        # Backdrop image with overlay
+        # Backdrop image with overlay (top-anchored snapshot widget)
         backdrop_overlay = Gtk.Overlay()
-        self._backdrop = Gtk.Picture()
-        self._backdrop.set_size_request(-1, 320)
-        self._backdrop.set_content_fit(Gtk.ContentFit.COVER)
-        self._backdrop.add_css_class('movie-backdrop')
+        backdrop_overlay.set_valign(Gtk.Align.START)
+        backdrop_overlay.set_vexpand(False)
+
+        self._backdrop = BackdropWidget()
+        self._backdrop.set_size_request(-1, 280)
         backdrop_overlay.set_child(self._backdrop)
+
+        scrim = Gtk.Box()
+        scrim.add_css_class('backdrop-scrim')
+        scrim.set_valign(Gtk.Align.FILL)
+        scrim.set_vexpand(True)
+        backdrop_overlay.add_overlay(scrim)
+
         content.append(backdrop_overlay)
 
         # Info section
-        info_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
-        info_box.set_margin_start(24)
-        info_box.set_margin_end(24)
-        info_box.set_margin_top(16)
-        info_box.set_margin_bottom(16)
+        self._info_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=20)
+        self._info_box.set_margin_start(24)
+        self._info_box.set_margin_end(24)
+        self._info_box.set_margin_top(16)
+        self._info_box.set_margin_bottom(16)
 
         # Poster (strict 2:3 aspect ratio, never stretches vertically)
         self._poster = Gtk.Picture()
@@ -106,103 +183,114 @@ class MoviePage(Adw.NavigationPage):
         self._poster.set_can_shrink(True)
         self._poster.set_valign(Gtk.Align.START)
         self._poster.add_css_class('card-poster')
-        info_box.append(self._poster)
-
+        self._info_box.append(self._poster)
 
         # Details
-        details = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        details.set_vexpand(True)
-        details.set_valign(Gtk.Align.START)
+        self._details = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._details.set_vexpand(True)
+        self._details.set_valign(Gtk.Align.START)
 
         # Title
         self._title_label = Gtk.Label(label=self._movie.get('title', ''))
         self._title_label.add_css_class('title-1')
         self._title_label.set_xalign(0)
         self._title_label.set_wrap(True)
-        details.append(self._title_label)
+        self._details.append(self._title_label)
 
         # Tagline
         self._tagline_label = Gtk.Label()
         self._tagline_label.add_css_class('dim-label')
         self._tagline_label.add_css_class('italic')
         self._tagline_label.set_xalign(0)
+        self._tagline_label.set_wrap(True)
         self._tagline_label.set_visible(False)
-        details.append(self._tagline_label)
+        self._details.append(self._tagline_label)
 
         # Rating, year, runtime
-        meta_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        meta_box.set_margin_top(4)
+        self._meta_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._meta_box.set_margin_top(4)
 
         self._rating_label = Gtk.Label()
         self._rating_label.add_css_class('meta-rating')
         self._rating_label.add_css_class('title-4')
-        meta_box.append(self._rating_label)
+        self._meta_box.append(self._rating_label)
 
         self._year_label = Gtk.Label()
         self._year_label.add_css_class('dim-label')
         self._year_label.add_css_class('title-4')
-        meta_box.append(self._year_label)
+        self._meta_box.append(self._year_label)
 
         self._runtime_label = Gtk.Label()
         self._runtime_label.add_css_class('dim-label')
         self._runtime_label.add_css_class('title-4')
-        meta_box.append(self._runtime_label)
+        self._runtime_label.set_wrap(True)
+        self._meta_box.append(self._runtime_label)
 
-        details.append(meta_box)
+        self._details.append(self._meta_box)
 
-        # Genres
-        self._genres_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        # Dedicated Director label (instant display, clean typography)
+        self._director_label = Gtk.Label()
+        self._director_label.add_css_class('dim-label')
+        self._director_label.set_xalign(0)
+        self._director_label.set_wrap(True)
+        self._director_label.set_visible(False)
+        self._details.append(self._director_label)
+
+        # Genres (FlowBox so pills wrap cleanly on narrow/mobile screens)
+        self._genres_box = Gtk.FlowBox()
+        self._genres_box.add_css_class('genres-flowbox')
+        self._genres_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        self._genres_box.set_homogeneous(False)
+        self._genres_box.set_min_children_per_line(1)
+        self._genres_box.set_max_children_per_line(10)
+        self._genres_box.set_row_spacing(6)
+        self._genres_box.set_column_spacing(6)
         self._genres_box.set_margin_top(6)
-        details.append(self._genres_box)
+        self._details.append(self._genres_box)
 
-        # Overview
-        self._overview_label = Gtk.Label(label=self._movie.get('overview', ''))
-        self._overview_label.set_xalign(0)
-        self._overview_label.set_wrap(True)
-        self._overview_label.set_max_width_chars(80)
-        self._overview_label.set_margin_top(10)
-        details.append(self._overview_label)
+        # Action buttons row (Play + Resume + Provider)
+        self._actions_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self._actions_row.set_margin_top(10)
+        self._actions_row.set_margin_bottom(4)
 
-        info_box.append(details)
-        content.append(info_box)
-
-        # Play / Provider section
-        play_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        play_box.set_margin_start(24)
-        play_box.set_margin_end(24)
-        play_box.set_margin_top(8)
-        play_box.set_margin_bottom(16)
-
-        # Provider selector
-        provider_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-        provider_label = Gtk.Label(label='Provider:')
-        provider_label.add_css_class('dim-label')
-        provider_box.append(provider_label)
-
-        self._provider_dropdown = Gtk.DropDown()
-        self._provider_dropdown.set_size_request(200, -1)
-        provider_box.append(self._provider_dropdown)
-        play_box.append(provider_box)
-
-        # Action buttons row (Play + Resume)
-        actions_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
-
-        self._play_button = Gtk.Button(label='Play')
+        self._play_button = Gtk.Button(label='▶  Play')
         self._play_button.add_css_class('suggested-action')
         self._play_button.add_css_class('pill')
-        self._play_button.set_size_request(160, -1)
+        self._play_button.set_size_request(130, -1)
         self._play_button.connect('clicked', self._on_play_clicked)
-        actions_row.append(self._play_button)
+        self._actions_row.append(self._play_button)
 
         # Resume button (if previously watched)
         self._resume_button = Gtk.Button(label='Resume')
         self._resume_button.add_css_class('pill')
         self._resume_button.set_visible(False)
         self._resume_button.connect('clicked', self._on_resume_clicked)
-        actions_row.append(self._resume_button)
+        self._actions_row.append(self._resume_button)
 
-        play_box.append(actions_row)
-        content.append(play_box)
+        # Provider selector
+        self._provider_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._provider_box.set_valign(Gtk.Align.CENTER)
+        provider_label = Gtk.Label(label='Provider:')
+        provider_label.add_css_class('dim-label')
+        self._provider_box.append(provider_label)
+
+        self._provider_dropdown = Gtk.DropDown()
+        self._provider_dropdown.set_size_request(160, -1)
+        self._provider_box.append(self._provider_dropdown)
+        self._actions_row.append(self._provider_box)
+
+        self._details.append(self._actions_row)
+
+        # Overview
+        self._overview_label = Gtk.Label(label=self._movie.get('overview', ''))
+        self._overview_label.set_xalign(0)
+        self._overview_label.set_wrap(True)
+        self._overview_label.set_max_width_chars(80)
+        self._overview_label.set_margin_top(8)
+        self._details.append(self._overview_label)
+
+        self._info_box.append(self._details)
+        content.append(self._info_box)
 
         # TV Shows Section (Seasons & Episodes)
         self._tv_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -235,8 +323,79 @@ class MoviePage(Adw.NavigationPage):
 
         content.append(self._tv_box)
 
+        # Top Cast Section (fills empty void below details)
+        self._cast_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self._cast_box.set_margin_start(24)
+        self._cast_box.set_margin_end(24)
+        self._cast_box.set_margin_bottom(20)
+        self._cast_box.set_visible(False)
+
+        cast_title = Gtk.Label(label="Top Cast")
+        cast_title.add_css_class('title-3')
+        cast_title.set_xalign(0)
+        self._cast_box.append(cast_title)
+
+        cast_scroll = Gtk.ScrolledWindow()
+        cast_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        cast_scroll.set_vexpand(False)
+
+        self._cast_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        self._cast_row.set_margin_top(4)
+        self._cast_row.set_margin_bottom(8)
+        cast_scroll.set_child(self._cast_row)
+        self._cast_box.append(cast_scroll)
+
+        content.append(self._cast_box)
+
+        # More Like This (Recommendations) Section
+        self._recs_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self._recs_box.set_margin_start(24)
+        self._recs_box.set_margin_end(24)
+        self._recs_box.set_margin_bottom(32)
+        self._recs_box.set_visible(False)
+
+        recs_title = Gtk.Label(label="More Like This")
+        recs_title.add_css_class('title-3')
+        recs_title.set_xalign(0)
+        self._recs_box.append(recs_title)
+
+        recs_scroll = Gtk.ScrolledWindow()
+        recs_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        recs_scroll.set_vexpand(False)
+
+        self._recs_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        self._recs_row.set_margin_top(4)
+        self._recs_row.set_margin_bottom(8)
+        recs_scroll.set_child(self._recs_row)
+        self._recs_box.append(recs_scroll)
+
+        content.append(self._recs_box)
+
         scroll.set_child(content)
-        toolbar_view.set_content(scroll)
+
+        # Breakpoint for mobile screen sizes (< 620px)
+        self._breakpoint_bin = Adw.BreakpointBin()
+        bp = Adw.Breakpoint.new(Adw.breakpoint_condition_parse("max-width: 620px"))
+        bp.add_setter(self._info_box, "orientation", Gtk.Orientation.VERTICAL)
+        bp.add_setter(self._info_box, "spacing", 12)
+        bp.add_setter(self._poster, "halign", Gtk.Align.CENTER)
+        bp.add_setter(self._poster, "width-request", 160)
+        bp.add_setter(self._poster, "height-request", 240)
+        bp.add_setter(self._actions_row, "orientation", Gtk.Orientation.VERTICAL)
+        bp.add_setter(self._genres_box, "halign", Gtk.Align.CENTER)
+        bp.add_setter(self._details, "halign", Gtk.Align.FILL)
+        bp.add_setter(self._title_label, "xalign", 0.5)
+        bp.add_setter(self._title_label, "justify", Gtk.Justification.CENTER)
+        bp.add_setter(self._tagline_label, "xalign", 0.5)
+        bp.add_setter(self._meta_box, "halign", Gtk.Align.CENTER)
+        bp.add_setter(self._director_label, "xalign", 0.5)
+        bp.add_setter(self._play_button, "hexpand", True)
+        bp.add_setter(self._resume_button, "hexpand", True)
+        bp.add_setter(self._provider_box, "halign", Gtk.Align.CENTER)
+        self._breakpoint_bin.add_breakpoint(bp)
+        self._breakpoint_bin.set_child(scroll)
+
+        toolbar_view.set_content(self._breakpoint_bin)
         self.set_child(toolbar_view)
 
         # Populate initial movie/show fields
@@ -275,6 +434,13 @@ class MoviePage(Adw.NavigationPage):
             self._runtime_label.set_text('')
 
 
+        directors = movie.get('directors') or []
+        if directors:
+            self._director_label.set_text(f"Directed by {', '.join(directors)}")
+            self._director_label.set_visible(True)
+        else:
+            self._director_label.set_visible(False)
+
         # Genres
         genre_names = movie.get('genre_names', [])
         genre_ids = movie.get('genre_ids', [])
@@ -307,8 +473,75 @@ class MoviePage(Adw.NavigationPage):
                 self._resume_button.set_visible(True)
                 self._resume_pos = pos
 
+        # Render cast & recommendations if already available
+        if movie.get('cast'):
+            self._render_cast(movie.get('cast', []))
+        if movie.get('recommendations'):
+            self._render_recommendations(movie.get('recommendations', []))
+
         self._load_images_async()
         self._setup_providers()
+
+    def _render_cast(self, cast_list):
+        """Render top cast member chips in horizontal scrolling row."""
+        while True:
+            child = self._cast_row.get_first_child()
+            if child is None:
+                break
+            self._cast_row.remove(child)
+
+        if not cast_list:
+            self._cast_box.set_visible(False)
+            return
+
+        for person in cast_list[:12]:
+            chip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            chip.add_css_class('cast-card')
+            chip.set_valign(Gtk.Align.START)
+
+            name = person.get('name', '')
+            char = person.get('character', '')
+
+            name_lbl = Gtk.Label(label=name)
+            name_lbl.add_css_class('cast-name')
+            name_lbl.set_xalign(0.5)
+            name_lbl.set_wrap(True)
+            name_lbl.set_max_width_chars(16)
+            chip.append(name_lbl)
+
+            if char:
+                char_lbl = Gtk.Label(label=char)
+                char_lbl.add_css_class('cast-character')
+                char_lbl.add_css_class('dim-label')
+                char_lbl.set_xalign(0.5)
+                char_lbl.set_wrap(True)
+                char_lbl.set_max_width_chars(16)
+                chip.append(char_lbl)
+
+            self._cast_row.append(chip)
+
+        self._cast_box.set_visible(True)
+
+    def _render_recommendations(self, recs_list):
+        """Render 'More Like This' movie cards in horizontal scrolling row."""
+        while True:
+            child = self._recs_row.get_first_child()
+            if child is None:
+                break
+            self._recs_row.remove(child)
+
+        if not recs_list:
+            self._recs_box.set_visible(False)
+            return
+
+        from kinema.ui.movie_card import MovieCard
+        for rec in recs_list[:12]:
+            card = MovieCard(rec)
+            card.connect('play-movie', lambda c, sd: self.emit('play-movie', sd))
+            card.connect('clicked-movie', lambda c, md: self.emit('movie-selected', md))
+            self._recs_row.append(card)
+
+        self._recs_box.set_visible(True)
 
     def _format_runtime_ends_at(self, runtime_minutes: int) -> str:
         """Format runtime as '2h 19m • Ends at 9:55 PM'."""
@@ -377,7 +610,7 @@ class MoviePage(Adw.NavigationPage):
                 if tex:
                     GLib.idle_add(self._poster.set_paintable, tex)
             if backdrop_url:
-                tex = cache.get_image(backdrop_url, height=320)
+                tex = cache.get_image(backdrop_url, width=1280, height=720)
                 if tex:
                     GLib.idle_add(self._backdrop.set_paintable, tex)
 
@@ -409,17 +642,10 @@ class MoviePage(Adw.NavigationPage):
                 GLib.idle_add(self._on_tv_details_loaded, tv_details)
         else:
             details = self._tmdb.get_movie_details(movie_id)
-            credits = self._tmdb.get_movie_credits(movie_id)
-            directors = credits.get('directors', []) if credits else []
             if details:
-                GLib.idle_add(self._on_movie_details_loaded, details, directors)
-            elif directors:
-                GLib.idle_add(
-                    self._year_label.set_text,
-                    f"{self._year_label.get_text()} • Directed by {', '.join(directors)}"
-                )
+                GLib.idle_add(self._on_movie_details_loaded, details)
 
-    def _on_movie_details_loaded(self, details, directors):
+    def _on_movie_details_loaded(self, details):
         self._detailed_media = details
         self._movie.update(details)
 
@@ -437,16 +663,17 @@ class MoviePage(Adw.NavigationPage):
             self._rating_label.set_text(f'★ {rating:.1f}')
 
         release_date = details.get('release_date') or self._movie.get('release_date') or ''
-        year_str = str(release_date)[:4] if release_date else self._year_label.get_text()
+        if release_date:
+            self._year_label.set_text(str(release_date)[:4])
+
+        directors = details.get('directors') or []
         if directors:
-            self._year_label.set_text(f"{year_str} • Directed by {', '.join(directors)}")
-        elif year_str:
-            self._year_label.set_text(year_str)
+            self._director_label.set_text(f"Directed by {', '.join(directors)}")
+            self._director_label.set_visible(True)
 
         runtime = details.get('runtime')
         if runtime:
             self._runtime_label.set_text(self._format_runtime_ends_at(runtime))
-
 
         genre_names = details.get('genre_names', [])
         if genre_names:
@@ -459,6 +686,10 @@ class MoviePage(Adw.NavigationPage):
                 lbl = Gtk.Label(label=gname)
                 lbl.add_css_class('genre-pill')
                 self._genres_box.append(lbl)
+
+        # Render cast & recommendations
+        self._render_cast(details.get('cast', []))
+        self._render_recommendations(details.get('recommendations', []))
 
         # Check watch history for Resume button
         movie_id = details.get('id') or self._movie.get('id')
@@ -491,6 +722,10 @@ class MoviePage(Adw.NavigationPage):
         rating = tv_details.get('vote_average', 0)
         if rating > 0:
             self._rating_label.set_text(f'★ {rating:.1f}')
+
+        # Render cast & recommendations for TV too
+        self._render_cast(tv_details.get('cast', []))
+        self._render_recommendations(tv_details.get('recommendations', []))
 
         seasons = tv_details.get('seasons', [])
         # Filter out Season 0 (Specials) if preferred, or keep all
