@@ -207,6 +207,15 @@ class TestUINavigation(unittest.TestCase):
         self.assertIsNotNone(lp)
         lp.refresh()
 
+    def test_library_page_grid_alignment(self):
+        """Watchlist FlowBox must align to START with matching margins to Continue Watching."""
+        from kinema.ui.library_page import LibraryPage
+        lp = LibraryPage()
+        self.assertEqual(lp._cw_box.get_halign(), Gtk.Align.START)
+        self.assertEqual(lp._wl_flowbox.get_halign(), Gtk.Align.START)
+        self.assertEqual(lp._cw_box.get_margin_start(), lp._wl_flowbox.get_margin_start())
+        self.assertEqual(lp._cw_box.get_margin_end(), lp._wl_flowbox.get_margin_end())
+
     def test_movies_page_instantiation(self):
         from kinema.ui.movies_page import MoviesPage
         mp = MoviesPage()
