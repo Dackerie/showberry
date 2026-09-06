@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Kinema
+Comment=Browse and play movies
+Exec=kinema
+Icon=com.github.kinema.Kinema
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Player;GTK;
+Keywords=movies;streaming;player;mpv;
+StartupNotify=true

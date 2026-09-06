@@ -1,0 +1,21 @@
+[project]
+name = "kinema"
+version = "0.1.0"
+description = "A movie browser and player for GNOME"
+requires-python = ">=3.11"
+dependencies = [
+    "PyGObject>=3.48",
+    "python-mpv>=1.0",
+    "PyOpenGL>=3.1",
+    "requests>=2.31",
+    "Pillow>=10.0",
+    "curl_cffi>=0.7.0",
+    "pycryptodome>=3.20.0",
+]
+
+[project.scripts]
+kinema = "kinema.main:main"
+
+[build-system]
+requires = ["meson-python>=0.16"]
+build-backend = "mesonpy"

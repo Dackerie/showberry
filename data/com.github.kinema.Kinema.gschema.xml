@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="kinema">
+  <schema id="com.github.kinema.Kinema" path="/com/github/kinema/Kinema/">
+    <key name="tmdb-api-key" type="s">
+      <default>''</default>
+      <summary>TMDB API Key</summary>
+      <description>API key for The Movie Database (TMDB)</description>
+    </key>
+    <key name="default-provider" type="s">
+      <default>'vidfast'</default>
+      <summary>Default Provider</summary>
+      <description>The default streaming provider to use</description>
+    </key>
+    <key name="theme-variant" type="s">
+      <default>'default'</default>
+      <summary>Theme Variant</summary>
+      <description>Theme variant (default, light, dark)</description>
+    </key>
+    <key name="window-width" type="i">
+      <default>1200</default>
+      <summary>Window Width</summary>
+      <description>The last used window width</description>
+    </key>
+    <key name="window-height" type="i">
+      <default>700</default>
+      <summary>Window Height</summary>
+      <description>The last used window height</description>
+    </key>
+    <key name="is-maximized" type="b">
+      <default>false</default>
+      <summary>Window Maximized</summary>
+      <description>Whether the window was maximized</description>
+    </key>
+  </schema>
+</schemalist>
