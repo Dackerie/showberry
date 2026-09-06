@@ -78,7 +78,18 @@ class SeriesPage(Gtk.Box):
         self._flowbox.set_margin_bottom(24)
 
 
-        grid_clamp.set_child(self._flowbox)
+        # ── Infinite-scroll footer spinner ─────────────────────────────────
+        self._footer_spinner = Gtk.Spinner()
+        self._footer_spinner.set_size_request(32, 32)
+        self._footer_spinner.set_halign(Gtk.Align.CENTER)
+        self._footer_spinner.set_margin_bottom(24)
+        self._footer_spinner.set_visible(False)
+
+        scroll_content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        scroll_content_box.append(self._flowbox)
+        scroll_content_box.append(self._footer_spinner)
+
+        grid_clamp.set_child(scroll_content_box)
         self._scroll.set_child(grid_clamp)
         self._content_overlay.set_child(self._scroll)
 
@@ -178,6 +189,8 @@ class SeriesPage(Gtk.Box):
 
         self._spinner.stop()
         self._spinner.set_visible(False)
+        self._footer_spinner.set_visible(False)
+        self._footer_spinner.stop()
         self._is_loading = False
 
         # Deduplicate
@@ -231,6 +244,8 @@ class SeriesPage(Gtk.Box):
         page_size = vadj.get_page_size()
         if upper - (value + page_size) < 600:
             if not self._is_loading and self._has_more:
+                self._footer_spinner.set_visible(True)
+                self._footer_spinner.start()
                 self._load_series(reset=False)
 
     # ── Signal forwarding ──────────────────────────────────────────────────

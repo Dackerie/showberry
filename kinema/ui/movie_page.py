@@ -99,10 +99,11 @@ class MoviePage(Adw.NavigationPage):
         info_box.set_margin_top(16)
         info_box.set_margin_bottom(16)
 
-        # Poster
+        # Poster (strict 2:3 aspect ratio, never stretches vertically)
         self._poster = Gtk.Picture()
         self._poster.set_size_request(200, 300)
-        self._poster.set_content_fit(Gtk.ContentFit.CONTAIN)
+        self._poster.set_content_fit(Gtk.ContentFit.COVER)
+        self._poster.set_can_shrink(True)
         self._poster.set_valign(Gtk.Align.START)
         self._poster.add_css_class('card-poster')
         info_box.append(self._poster)

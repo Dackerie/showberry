@@ -19,6 +19,7 @@ class TMDBClient:
         self._session.headers.update({
             'Accept': 'application/json',
         })
+        self._details_cache = {}
 
     def set_api_key(self, api_key):
         self._api_key = api_key or os.environ.get('TMDB_API_KEY') or DEFAULT_TMDB_API_KEY
@@ -136,22 +137,32 @@ class TMDBClient:
 
     def get_movie_details(self, movie_id):
         """Get detailed information about a movie."""
+        cache_key = f"movie_{movie_id}"
+        if cache_key in self._details_cache:
+            return self._details_cache[cache_key]
+
         data = self._request(f'/movie/{movie_id}', {'append_to_response': 'external_ids'})
         if data is None:
             return None
         parsed = self._parse_movie(data, detailed=True)
         ext_ids = data.get('external_ids') or {}
         parsed['imdb_id'] = data.get('imdb_id') or ext_ids.get('imdb_id')
+        self._details_cache[cache_key] = parsed
         return parsed
 
     def get_tv_details(self, tv_id):
         """Get detailed information about a TV show including seasons."""
+        cache_key = f"tv_{tv_id}"
+        if cache_key in self._details_cache:
+            return self._details_cache[cache_key]
+
         data = self._request(f'/tv/{tv_id}', {'append_to_response': 'external_ids'})
         if data is None:
             return None
         parsed = self._parse_tv(data, detailed=True)
         ext_ids = data.get('external_ids') or {}
         parsed['imdb_id'] = ext_ids.get('imdb_id')
+        self._details_cache[cache_key] = parsed
         return parsed
 
     def get_imdb_id(self, tmdb_id: int, is_tv: bool = False):

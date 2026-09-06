@@ -776,6 +776,7 @@ class PlayerPage(Adw.NavigationPage):
         self._last_pointer_x = None
         self._last_pointer_y = None
         self._cursor_hidden = False
+        self._session_id = 0
 
         self._setup_ui()
         self._setup_keybindings()
@@ -1001,13 +1002,16 @@ class PlayerPage(Adw.NavigationPage):
             self._provider_badge.set_visible(False)
         self._spinner_label.set_text(f"Resolving stream for {display_title}...")
 
+        self._session_id += 1
+        current_session = self._session_id
+
         threading.Thread(
             target=self._resolve_thread,
-            args=(tmdb_id, season, episode, provider_name, movie),
+            args=(tmdb_id, season, episode, provider_name, movie, current_session),
             daemon=True
         ).start()
 
-    def _resolve_thread(self, tmdb_id, season, episode, provider_name, movie):
+    def _resolve_thread(self, tmdb_id, season, episode, provider_name, movie, session_id: int):
         """Background thread: resolve stream first, start playback ASAP, then fetch subs in parallel."""
         try:
             result = ProviderManager.resolve_stream(
@@ -1017,32 +1021,41 @@ class PlayerPage(Adw.NavigationPage):
                 preferred_provider_name=provider_name
             )
 
+            if session_id != self._session_id:
+                return
+
             # Start playback immediately — subtitles added separately in background.
-            GLib.idle_add(self._on_stream_resolved, result, [])
+            GLib.idle_add(self._on_stream_resolved, result, [], session_id)
 
             if result and result.url:
                 # Fetch OpenSubtitles AFTER playback has started, add dynamically.
                 threading.Thread(
                     target=self._fetch_subtitles_background,
-                    args=(tmdb_id, season, episode, movie),
+                    args=(tmdb_id, season, episode, movie, session_id),
                     daemon=True
                 ).start()
 
         except Exception as e:
-            GLib.idle_add(self._on_stream_error, str(e))
+            if session_id != self._session_id:
+                return
+            GLib.idle_add(self._on_stream_error, str(e), session_id)
 
-    def _fetch_subtitles_background(self, tmdb_id, season, episode, movie):
+    def _fetch_subtitles_background(self, tmdb_id, season, episode, movie, session_id: int):
         """Fetch OpenSubtitles in background and add tracks to the running player."""
         try:
+            if session_id != self._session_id:
+                return
             imdb_id = movie.get('imdb_id')
             if not imdb_id:
                 imdb_id = self._tmdb.get_imdb_id(tmdb_id, is_tv=(season is not None))
 
-            if not imdb_id:
+            if not imdb_id or session_id != self._session_id:
                 return
 
             subs = self._subtitles_service.get_subtitles(imdb_id, season=season, episode=episode)
             for sub in subs[:10]:
+                if session_id != self._session_id:
+                    return
                 sub_url = sub.get('url')
                 if sub_url:
                     label = sub.get('label', sub.get('lang', 'Subtitle'))
@@ -1052,15 +1065,17 @@ class PlayerPage(Adw.NavigationPage):
             logger.warning(f"Background subtitle fetch failed: {ex}")
 
 
-    def _on_stream_resolved(self, result: Optional[StreamResult], extra_subs: List[Dict[str, Any]]):
+    def _on_stream_resolved(self, result: Optional[StreamResult], extra_subs: List[Dict[str, Any]], session_id: int = 0):
         """Executed on main GTK UI thread when stream result is available."""
+        if session_id and session_id != self._session_id:
+            return False
+
         self._spinner.stop()
         self._spinner_box.set_visible(False)
 
         if not result or not result.url:
             self.emit('stream-failed', "Could not find a playable stream from any available provider.")
-            self.emit('close-player')
-            return
+            return False
 
         logger.info(f"Starting playback: {result.url}")
 
@@ -1129,14 +1144,25 @@ class PlayerPage(Adw.NavigationPage):
 
         return True
 
-    def _on_stream_error(self, err_msg: str):
+    def _on_stream_error(self, err_msg: str, session_id: int = 0):
+        if session_id and session_id != self._session_id:
+            return False
         self._spinner.stop()
         self._spinner_box.set_visible(False)
         self.emit('stream-failed', f"Stream error: {err_msg}")
-        self.emit('close-player')
+        return False
 
     def _on_close(self, controls):
         """Close playback safely, saving final progress and stopping services."""
+        self._session_id += 1  # Invalidate any in-flight resolver or subtitle worker threads
+
+        # Silence audio and stop playback immediately
+        try:
+            self._mpv_widget.pause()
+            self._mpv_widget.stop()
+        except Exception:
+            pass
+
         self._set_cursor_visible(True)
         if self._hide_timeout:
             GLib.source_remove(self._hide_timeout)

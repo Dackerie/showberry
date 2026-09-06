@@ -384,6 +384,54 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(win._nav_view.get_visible_page().get_tag(), 'player')
         win._on_close_player(win._player_page)
 
+    def test_player_page_session_invalidation(self):
+        """Closing player invalidates session ID, rendering stale resolver callbacks inert."""
+        from kinema.ui.player_page import PlayerPage
+        player = PlayerPage()
+        initial_session = player._session_id
+
+        # Simulating load_stream
+        player._session_id += 1
+        active_session = player._session_id
+        self.assertGreater(active_session, initial_session)
+
+        # Close player
+        player._on_close(None)
+        closed_session = player._session_id
+        self.assertGreater(closed_session, active_session)
+
+        # Stale callbacks with active_session must be ignored (return False)
+        failed_signals = []
+        player.connect('stream-failed', lambda p, err: failed_signals.append(err))
+
+        res = player._on_stream_resolved(None, [], session_id=active_session)
+        self.assertFalse(res)
+        self.assertEqual(len(failed_signals), 0)
+
+        err_res = player._on_stream_error("Stale error", session_id=active_session)
+        self.assertFalse(err_res)
+        self.assertEqual(len(failed_signals), 0)
+
+    def test_tmdb_details_cache(self):
+        """TMDBClient caches get_movie_details and get_tv_details in _details_cache."""
+        from kinema.services.tmdb import TMDBClient
+        client = TMDBClient()
+        self.assertTrue(hasattr(client, '_details_cache'))
+        client._details_cache['movie_123'] = {'id': 123, 'title': 'Cached Movie'}
+        client._details_cache['tv_456'] = {'id': 456, 'name': 'Cached TV'}
+
+        self.assertEqual(client.get_movie_details(123)['title'], 'Cached Movie')
+        self.assertEqual(client.get_tv_details(456)['name'], 'Cached TV')
+
+    def test_pages_footer_spinner_present(self):
+        """Both MoviesPage and SeriesPage have footer spinners for infinite scrolling."""
+        from kinema.ui.movies_page import MoviesPage
+        from kinema.ui.series_page import SeriesPage
+        mp = MoviesPage()
+        sp = SeriesPage()
+        self.assertTrue(hasattr(mp, '_footer_spinner'))
+        self.assertTrue(hasattr(sp, '_footer_spinner'))
+
     def test_window_actions_and_hamburger_menu(self):
         win = KinemaWindow()
         self.assertTrue(win.has_action('preferences'))
