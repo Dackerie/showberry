@@ -41,10 +41,15 @@ class VidFastProvider(BaseProvider):
                     'X-Requested-With': 'XMLHttpRequest',
                 }
 
+                resp = None
                 if hasattr(curl_requests, 'get') and 'impersonate' in curl_requests.get.__code__.co_varnames:
-                    resp = curl_requests.get(url, headers=headers, impersonate='chrome124', timeout=12)
-                else:
-                    resp = curl_requests.get(url, headers=headers, timeout=12)
+                    try:
+                        resp = curl_requests.get(url, headers=headers, impersonate='chrome124', timeout=12)
+                    except Exception as ce:
+                        logger.debug(f"VidFast curl_cffi failed ({ce}), falling back to requests")
+                if resp is None:
+                    import requests
+                    resp = requests.get(url, headers=headers, timeout=12)
 
                 if resp.status_code != 200:
                     continue

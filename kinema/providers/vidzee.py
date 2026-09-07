@@ -34,10 +34,15 @@ class VidZeeProvider(BaseProvider):
                 'Referer': f"{self.base_url}/",
             }
 
+            resp = None
             if hasattr(curl_requests, 'get') and 'impersonate' in curl_requests.get.__code__.co_varnames:
-                resp = curl_requests.get(url, headers=headers, impersonate='chrome124', timeout=4)
-            else:
-                resp = curl_requests.get(url, headers=headers, timeout=4)
+                try:
+                    resp = curl_requests.get(url, headers=headers, impersonate='chrome124', timeout=4)
+                except Exception as ce:
+                    logger.debug(f"VidZee curl_cffi failed ({ce}), falling back to requests")
+            if resp is None:
+                import requests
+                resp = requests.get(url, headers=headers, timeout=4)
 
             if resp.status_code != 200:
                 return None

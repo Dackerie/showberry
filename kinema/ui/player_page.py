@@ -697,9 +697,9 @@ class PlayerControls(Gtk.Box):
     def __init__(self):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.add_css_class('player-controls')
-        self.set_margin_start(24)
-        self.set_margin_end(24)
-        self.set_margin_bottom(24)
+        self.set_margin_start(0)
+        self.set_margin_end(0)
+        self.set_margin_bottom(0)
         self.set_valign(Gtk.Align.END)
         self.set_hexpand(True)
 
