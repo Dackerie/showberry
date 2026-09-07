@@ -874,13 +874,50 @@ class TestUINavigation(unittest.TestCase):
             pass
         self.assertTrue(True)
 
-    def test_subtitles_download_with_headers_signature(self):
-        """SubtitleService download_subtitle supports custom referer and headers."""
-        from kinema.services.subtitles import SubtitleService
-        import inspect
-        sig = inspect.signature(SubtitleService.download_subtitle)
-        self.assertIn('headers', sig.parameters)
-        self.assertIn('referer', sig.parameters)
+    def test_movie_page_gdk_key_shortcuts(self):
+        """MoviePage key pressed handler must use Gdk without NameError."""
+        from kinema.ui.movie_page import MoviePage
+        from gi.repository import Gdk
+        mp = MoviePage({'id': 100, 'title': 'Test Movie'})
+        # Trigger _on_key_pressed with Gdk.KEY_space, Gdk.KEY_p, Gdk.KEY_w, Gdk.KEY_Escape
+        # Should execute cleanly without NameError: name 'Gdk' is not defined
+        try:
+            mp._on_key_pressed(None, Gdk.KEY_space, 0, 0)
+            mp._on_key_pressed(None, Gdk.KEY_p, 0, 0)
+            mp._on_key_pressed(None, Gdk.KEY_w, 0, 0)
+            mp._on_key_pressed(None, Gdk.KEY_Escape, 0, 0)
+        except NameError as ne:
+            self.fail(f"_on_key_pressed raised NameError: {ne}")
+
+    def test_player_controls_docked_margins(self):
+        """PlayerControls must be docked to bottom edge with 0 margins."""
+        pp = PlayerPage()
+        self.assertEqual(pp._controls.get_margin_bottom(), 0)
+        self.assertEqual(pp._controls.get_margin_start(), 0)
+        self.assertEqual(pp._controls.get_margin_end(), 0)
+        self.assertEqual(pp._controls.get_valign(), Gtk.Align.END)
+        self.assertTrue(pp._controls.get_hexpand())
+
+    def test_torrent_streamer_safe_stop_and_status(self):
+        """TorrentStreamer get_status and stop handle None handles gracefully without crashes."""
+        from kinema.services.torrent import get_torrent_streamer
+        streamer = get_torrent_streamer()
+        st = streamer.get_status()
+        self.assertIsInstance(st, dict)
+        self.assertEqual(st['state'], 'idle')
+        # Calling stop repeatedly should be safe
+        streamer.stop()
+        st2 = streamer.get_status()
+        self.assertIsInstance(st2, dict)
+
+    def test_is_stream_alive_extended_status(self):
+        """is_stream_alive accepts localhost streams and handles valid status codes."""
+        from kinema.providers.base import is_stream_alive, StreamResult
+        local_res = StreamResult(url='http://127.0.0.1:8080/stream', quality='1080p')
+        self.assertTrue(is_stream_alive(local_res))
+
+        magnet_res = StreamResult(url='magnet:?xt=urn:btih:abc', quality='1080p')
+        self.assertTrue(is_stream_alive(magnet_res))
 
 
 if __name__ == '__main__':

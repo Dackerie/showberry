@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
+import urllib.request
 
 from gi.repository import GLib
 
@@ -136,22 +137,32 @@ class TorrentStreamer:
         self.state_string = "idle"
 
     def _init_session(self):
-        """Initialize libtorrent session with DHT and high-performance settings."""
+        """Initialize libtorrent session with DHT, LSD, and ephemeral port."""
         settings = {
-            'listen_interfaces': '0.0.0.0:6881',
+            'listen_interfaces': '0.0.0.0:0,[::]:0',
             'enable_dht': True,
             'enable_lsd': True,
+            'enable_upnp': True,
+            'enable_natpmp': True,
             'alert_mask': lt.alert.category_t.error_notification | lt.alert.category_t.status_notification,
         }
         self.session = lt.session(settings)
-        # Add DHT routers
-        self.session.add_dht_node(('router.bittorrent.com', 6881))
-        self.session.add_dht_node(('dht.transmissionbt.com', 6881))
-        self.session.add_dht_node(('router.utorrent.com', 6881))
+        # Add public DHT bootstrap nodes
+        for host, port in [
+            ('router.bittorrent.com', 6881),
+            ('dht.transmissionbt.com', 6881),
+            ('router.utorrent.com', 6881),
+            ('dht.aelitis.com', 6881),
+        ]:
+            try:
+                self.session.add_dht_node((host, port))
+            except Exception:
+                pass
 
-    def start_stream(self, magnet_or_hash: str, timeout: int = 30) -> str:
+    def start_stream(self, magnet_or_hash: str, torrent_url: Optional[str] = None, timeout: int = 35) -> str:
         """
         Start downloading torrent sequentially and return streaming HTTP URL.
+        Supports instant metadata loading via direct .torrent URLs and cache mirrors.
         """
         self.stop()
         self._stop_event.clear()
@@ -160,29 +171,77 @@ class TorrentStreamer:
 
         self._init_session()
 
-        if magnet_or_hash.startswith('magnet:'):
-            magnet_uri = magnet_or_hash
-        else:
-            # Construct magnet from info hash
-            info_hash = magnet_or_hash.strip().lower()
-            trackers_str = ''.join(f'&tr={tr}' for tr in TRACKERS)
-            magnet_uri = f"magnet:?xt=urn:btih:{info_hash}{trackers_str}"
+        info_hash = magnet_or_hash.strip().lower() if not magnet_or_hash.startswith('magnet:') else None
 
-        params = lt.parse_magnet_uri(magnet_uri)
-        params.save_path = str(self.cache_dir)
-        params.flags |= lt.torrent_flags.sequential_download
+        # 1. Attempt instantaneous direct .torrent fetch (bypassing DHT metadata wait)
+        torrent_bytes = None
+        urls_to_try = []
+        if torrent_url:
+            urls_to_try.append(torrent_url)
+        if info_hash and len(info_hash) == 40:
+            urls_to_try.extend([
+                f"https://itorrents.org/torrent/{info_hash.upper()}.torrent",
+                f"https://torrage.info/torrent.php?h={info_hash}",
+            ])
 
-        self.handle = self.session.add_torrent(params)
+        for u in urls_to_try:
+            try:
+                req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+                with urllib.request.urlopen(req, timeout=4.0) as resp:
+                    if resp.status == 200:
+                        raw = resp.read()
+                        if raw and raw.startswith(b'd8:announce'):
+                            torrent_bytes = raw
+                            logger.info(f"Direct .torrent file loaded from {u[:50]}")
+                            break
+            except Exception as e:
+                logger.debug(f"Direct .torrent fetch failed from {u[:50]}: {e}")
+
+        if torrent_bytes:
+            try:
+                ti = lt.torrent_info(torrent_bytes)
+                params = lt.add_torrent_params()
+                params.ti = ti
+                params.save_path = str(self.cache_dir)
+                params.flags |= lt.torrent_flags.sequential_download
+                self.handle = self.session.add_torrent(params)
+            except Exception as e:
+                logger.warning(f"Failed to load torrent_info from bytes: {e}")
+
+        if not self.handle or not self.handle.is_valid():
+            if magnet_or_hash.startswith('magnet:'):
+                magnet_uri = magnet_or_hash
+            else:
+                trackers_str = ''.join(f'&tr={tr}' for tr in TRACKERS)
+                magnet_uri = f"magnet:?xt=urn:btih:{info_hash}{trackers_str}"
+
+            params = lt.parse_magnet_uri(magnet_uri)
+            params.save_path = str(self.cache_dir)
+            params.flags |= lt.torrent_flags.sequential_download
+            self.handle = self.session.add_torrent(params)
+
         self.handle.set_flags(lt.torrent_flags.sequential_download)
 
-        # Wait for metadata
+        # Wait for metadata with thread-safe checks
         start_time = time.time()
-        while not self.handle.status().has_metadata:
+        while True:
             if self._stop_event.is_set():
                 raise RuntimeError("Torrent streaming cancelled")
+
+            handle = self.handle
+            if not handle or not handle.is_valid():
+                raise RuntimeError("Torrent handle became invalid or was stopped")
+
+            try:
+                st = handle.status()
+                if st.has_metadata:
+                    break
+            except Exception as ex:
+                logger.debug(f"Torrent status check failed: {ex}")
+
             if time.time() - start_time > timeout:
                 raise TimeoutError("Timed out waiting for torrent metadata")
-            time.sleep(0.5)
+            time.sleep(0.4)
 
         info = self.handle.torrent_file()
         num_files = info.num_files()
@@ -225,12 +284,12 @@ class TorrentStreamer:
         self.start_piece = req_start.piece
         self.end_piece = req_end.piece
 
-        # Prioritize header pieces (first 5 pieces) and footer pieces (last 2 pieces)
-        for p in range(self.start_piece, min(self.start_piece + 6, self.end_piece + 1)):
+        # Prioritize header pieces (first 6 pieces) and footer pieces (last 3 pieces)
+        for p in range(self.start_piece, min(self.start_piece + 7, self.end_piece + 1)):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
 
-        for p in range(max(self.start_piece, self.end_piece - 2), self.end_piece + 1):
+        for p in range(max(self.start_piece, self.end_piece - 3), self.end_piece + 1):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
 
@@ -238,15 +297,19 @@ class TorrentStreamer:
         self._start_http_server()
         self.state_string = "buffering"
 
-        # Wait until first piece of video is ready so playback starts cleanly
+        # Quick initial buffer check (max 3s) so MPV receives URL immediately and streams concurrently
         wait_start = time.time()
-        while not self.handle.have_piece(self.start_piece):
+        while True:
             if self._stop_event.is_set():
                 raise RuntimeError("Torrent playback stopped")
-            if time.time() - wait_start > 45:
-                # Proceed anyway to let MPV attempt buffering
+            handle = self.handle
+            if not handle or not handle.is_valid():
+                raise RuntimeError("Torrent handle became invalid or was stopped")
+            if handle.have_piece(self.start_piece):
                 break
-            time.sleep(0.3)
+            if time.time() - wait_start > 3.0:
+                break
+            time.sleep(0.2)
 
         self.state_string = "ready"
         return f"http://127.0.0.1:{self.http_port}/stream"

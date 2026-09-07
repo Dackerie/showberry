@@ -13,6 +13,7 @@ from kinema.services.torrent import get_torrent_streamer, HAS_LIBTORRENT
 logger = logging.getLogger(__name__)
 
 TORRENTIO_BASE = "https://torrentio.strem.fun/stream"
+MEDIAFUSION_BASE = "https://mediafusion.elfhosted.com/stream"
 YTS_MIRRORS = [
     "https://movies-api.accel.li/api/v2/list_movies.json",
     "https://yts.gg/api/v2/list_movies.json",
@@ -20,7 +21,7 @@ YTS_MIRRORS = [
 
 
 class TorrentProvider(BaseProvider):
-    """Provider that discovers torrents via Torrentio & YTS and streams them sequentially via libtorrent."""
+    """Provider that discovers torrents via Torrentio, MediaFusion & YTS and streams them sequentially via libtorrent."""
 
     name = 'Torrent (P2P)'
 
@@ -51,6 +52,10 @@ class TorrentProvider(BaseProvider):
             torrentio_streams = self._fetch_torrentio_streams(imdb_id, is_tv, season, episode)
             all_streams.extend(torrentio_streams)
 
+            # 3. Query MediaFusion streams (additional tracker sources)
+            mediafusion_streams = self._fetch_mediafusion_streams(imdb_id, is_tv, season, episode)
+            all_streams.extend(mediafusion_streams)
+
             if not all_streams:
                 logger.info(f"No torrent streams found for {imdb_id}")
                 return None
@@ -72,6 +77,7 @@ class TorrentProvider(BaseProvider):
             info_hash = best_stream['infoHash']
             title = best_stream.get('title', '')
             quality = best_stream.get('quality')
+            torrent_url = best_stream.get('torrent_url')
             if not quality:
                 quality = '1080p' if '1080' in title else ('720p' if '720' in title else 'HD')
 
@@ -79,7 +85,7 @@ class TorrentProvider(BaseProvider):
 
             # Start sequential torrent streaming server
             streamer = get_torrent_streamer()
-            http_url = streamer.start_stream(info_hash, timeout=25)
+            http_url = streamer.start_stream(info_hash, torrent_url=torrent_url, timeout=35)
 
             return StreamResult(
                 url=http_url,
@@ -116,6 +122,7 @@ class TorrentProvider(BaseProvider):
                                     'name': f"YTS {t.get('type', 'bluray')}",
                                     'quality': q,
                                     'seeds': seeds,
+                                    'torrent_url': t.get('url'),
                                 })
                         break
             except Exception as e:
@@ -139,29 +146,54 @@ class TorrentProvider(BaseProvider):
             logger.warning(f"Torrentio query failed: {e}")
         return []
 
+    def _fetch_mediafusion_streams(self, imdb_id: str, is_tv: bool, season: int = None, episode: int = None) -> List[Dict[str, Any]]:
+        """Fetch multi-tracker torrent streams from MediaFusion."""
+        if is_tv:
+            url = f"{MEDIAFUSION_BASE}/series/{imdb_id}:{season}:{episode}.json"
+        else:
+            url = f"{MEDIAFUSION_BASE}/movie/{imdb_id}.json"
+
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode())
+                    return data.get('streams', [])
+        except Exception as e:
+            logger.debug(f"MediaFusion query failed: {e}")
+        return []
+
     def _select_best_stream(self, streams: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Rank streams based on seeders and resolution."""
         def score(stream):
             title = stream.get('title', '')
+            tl = title.lower()
             seeds = stream.get('seeds')
             if seeds is None:
                 seeds_match = re.search(r'👤\s*(\d+)', title)
                 seeds = int(seeds_match.group(1)) if seeds_match else 0
 
+            # Cap seeds contribution to avoid huge multi-movie packs overpowering single movies
+            seeds_score = min(seeds, 150)
+
             res_bonus = 0
-            tl = title.lower()
             if '1080p' in tl or stream.get('quality') == '1080p':
                 res_bonus = 500
             elif '720p' in tl or stream.get('quality') == '720p':
                 res_bonus = 300
             elif '4k' in tl or '2160p' in tl:
-                res_bonus = 100
+                res_bonus = 200
             elif 'cam' in tl or 'telesync' in tl:
-                res_bonus = -1000
+                res_bonus = -2000
 
             source_bonus = 100 if 'yts' in tl else 0
+            # Direct .torrent download URLs resolve immediately without DHT overhead
+            direct_torrent_bonus = 1000 if stream.get('torrent_url') else 0
 
-            return seeds + res_bonus + source_bonus
+            # Penalize box sets / collection packs that have slow multi-file downloads
+            pack_penalty = -1500 if re.search(r'\b(pack|complete|collection|anthology|movies)\b', tl) else 0
+
+            return seeds_score + res_bonus + source_bonus + direct_torrent_bonus + pack_penalty
 
         sorted_streams = sorted(streams, key=score, reverse=True)
         return sorted_streams[0] if sorted_streams else None

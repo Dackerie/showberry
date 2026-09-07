@@ -33,10 +33,15 @@ class VixSrcProvider(BaseProvider):
                 url = f'{self.base_url}/movie/{tmdb_id}'
 
             # VixSrc is protected by Cloudflare Turnstile; attempt curl_cffi chrome impersonation
+            resp = None
             if hasattr(curl_requests, 'get') and 'impersonate' in curl_requests.get.__code__.co_varnames:
-                resp = curl_requests.get(url, headers=self.headers, impersonate='chrome124', timeout=8)
-            else:
-                resp = curl_requests.get(url, headers=self.headers, timeout=8)
+                try:
+                    resp = curl_requests.get(url, headers=self.headers, impersonate='chrome124', timeout=8)
+                except Exception as ce:
+                    logger.debug(f"VixSrc curl_cffi failed ({ce}), falling back to requests")
+            if resp is None:
+                import requests
+                resp = requests.get(url, headers=self.headers, timeout=8)
 
             if resp.status_code != 200:
                 logger.debug(f"VixSrc returned status {resp.status_code}")

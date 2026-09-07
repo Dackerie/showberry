@@ -8,7 +8,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Adw, GLib, GObject, Pango, Graphene
+from gi.repository import Gtk, Adw, GLib, GObject, Pango, Graphene, Gdk
 
 from kinema.services.tmdb import TMDBClient, genre_id_to_name
 from kinema.services.image_cache import ImageCache
