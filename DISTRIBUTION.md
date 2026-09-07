@@ -28,7 +28,7 @@ Since Showberry does not yet have a remote git repository, the first step is pus
 
 ### 1. Create the GitHub Repository
 1. Open your browser and navigate to **[github.com/new](https://github.com/new)**.
-2. Enter Repository name: `showberry` (or under an organization, e.g. `showberry-app/showberry`).
+2. Enter Repository name: `showberry`.
 3. Set Visibility to **Public**.
 4. **Important**: Leave "Add a README file", "Add .gitignore", and "Choose a license" **unchecked** (we already have clean, customized files in the repo).
 5. Click **Create repository**.

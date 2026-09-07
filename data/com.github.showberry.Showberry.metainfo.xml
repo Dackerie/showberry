@@ -20,8 +20,8 @@
     </ul>
   </description>
   <launchable type="desktop-id">com.github.showberry.Showberry.desktop</launchable>
-  <url type="homepage">https://github.com/showberry-app/showberry</url>
-  <url type="bugtracker">https://github.com/showberry-app/showberry/issues</url>
+  <url type="homepage">https://github.com/Dackerie/showberry</url>
+  <url type="bugtracker">https://github.com/Dackerie/showberry/issues</url>
   <developer id="com.github.showberry">
     <name>Showberry Contributors</name>
   </developer>
@@ -37,7 +37,7 @@
   </branding>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/showberry-app/showberry/master/data/screenshots/browse.png</image>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/browse.png</image>
       <caption>Browse trending movies and series</caption>
     </screenshot>
   </screenshots>

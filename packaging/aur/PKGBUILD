@@ -4,7 +4,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="An elegant, modern movie and TV series streaming application for GNOME"
 arch=('any')
-url="https://github.com/showberry-app/showberry"
+url="https://github.com/Dackerie/showberry"
 license=('GPL-3.0-or-later')
 depends=(
     'gtk4'
@@ -27,7 +27,7 @@ makedepends=(
     'python-setuptools'
     'python-wheel'
 )
-source=("$pkgname-$pkgver.tar.gz::https://github.com/showberry-app/showberry/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Dackerie/showberry/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {
