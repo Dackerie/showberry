@@ -390,10 +390,16 @@ class KinemaWindow(Adw.ApplicationWindow):
             app = self.get_application()
             if app:
                 settings = app.get_settings()
-                width, height = self.get_default_size()
-                settings.set_int('window-width', width)
-                settings.set_int('window-height', height)
-                settings.set_boolean('is-maximized', self.is_maximized())
+                if settings:
+                    schema = settings.get_property('settings-schema')
+                    keys = schema.list_keys() if schema else []
+                    width, height = self.get_default_size()
+                    if 'window-width' in keys:
+                        settings.set_int('window-width', width)
+                    if 'window-height' in keys:
+                        settings.set_int('window-height', height)
+                    if 'is-maximized' in keys:
+                        settings.set_boolean('is-maximized', self.is_maximized())
         except Exception:
             pass
         return False

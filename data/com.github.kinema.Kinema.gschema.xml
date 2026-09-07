@@ -26,6 +26,11 @@
       <summary>Window Height</summary>
       <description>The last used window height</description>
     </key>
+    <key name="is-maximized" type="b">
+      <default>false</default>
+      <summary>Is Maximized</summary>
+      <description>Whether the window is maximized</description>
+    </key>
     <key name="preferred-torrent-quality" type="s">
       <default>'1080p'</default>
       <summary>Preferred Torrent Quality</summary>
