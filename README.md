@@ -55,49 +55,6 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 
 ---
 
-## 🛠️ Architecture & Technical Details
-
-```mermaid
-flowchart TD
-    subgraph UI["GNOME Interface Layer (GTK 4 / Libadwaita)"]
-        Nav["Adw.NavigationView"] --> Pages["LibraryPage | MoviesPage | SeriesPage"]
-        Pages --> MovieCard["MovieCard (FlowBox Grid)"]
-        Pages --> Details["MoviePage (Backdrop, Cast, Seasons)"]
-        Details --> Player["PlayerPage (OSD, Subtitles, Controls)"]
-    end
-
-    subgraph Core["Services & Core Pipeline"]
-        TMDB["TMDBClient (Multi-tier Cache)"]
-        DB["DatabaseService (SQLite WAL)"]
-        Sub["SubtitleService (OpenSubtitles)"]
-        Settings["SettingsService (GSettings)"]
-    end
-
-    subgraph Playback["Video Playback Engine"]
-        Player --> MPV["MPVWidget (Gtk.GLArea)"]
-        MPV --> LibMPV["libmpv Render Context (OpenGL Sink)"]
-    end
-
-    subgraph Streaming["Streaming & Network Engine"]
-        Player --> TorrentStreamer["TorrentStreamer (libtorrent-rasterbar)"]
-        Player --> ProviderManager["ProviderManager (Parallel Scrapers)"]
-        TorrentStreamer --> HTTP["Threaded HTTP Streaming Bridge"]
-        HTTP --> MPV
-        ProviderManager --> MPV
-    end
-
-    MovieCard -.-> TMDB
-    Details -.-> DB
-    Player -.-> DB
-```
-
-### Key Technical Highlights:
-1. **OpenGL Display Subsystem**: By setting `GSK_RENDERER=gl` and binding `libmpv` through a custom `Gtk.GLArea` proc-address resolution bridge, Showberry bypasses Wayland/Vulkan swapchain deadlocks, providing stutter-free 60fps+ frame presentation.
-2. **Sequential Torrent Streaming Bridge**: Rather than waiting for full downloads, `TorrentStreamer` initializes high-priority piece windows around the current read pointer, pre-buffers moov atoms, and exposes a local loopback HTTP server (`http://127.0.0.1:<port>`) supporting HTTP Range requests (`206 Partial Content`).
-3. **Database Migration & Resilience**: Implements an automatic zero-loss SQLite schema migration engine that upgrades legacy configurations on startup and enables concurrent read/write operations using SQLite WAL mode.
-
----
-
 ## ⌨️ Keyboard Shortcuts
 
 ### Player Hotkeys

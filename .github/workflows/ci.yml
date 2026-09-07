@@ -62,7 +62,20 @@ jobs:
           GSETTINGS_SCHEMA_DIR: data
           PYTHONPATH: .
         run: |
-          xvfb-run -a -s "-screen 0 1920x1080x24" pytest tests/ -v
+          xvfb-run -a -s "-screen 0 1920x1080x24" pytest tests/ -v -ra --tb=short 2>&1 | tee pytest_output.log
+
+      - name: Report Test Results
+        if: always()
+        run: |
+          if [ -f pytest_output.log ]; then
+            echo "## Pytest Results" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            cat pytest_output.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -E "(FAILED|ERROR)" pytest_output.log | while IFS= read -r line; do
+              echo "::error title=Pytest Failure::$line"
+            done
+          fi
 
       - name: Build Python Wheel
         run: |
