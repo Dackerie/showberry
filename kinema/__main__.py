@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run Kinema application."""
+"""Run Showberry application."""
 
 import sys
 import os

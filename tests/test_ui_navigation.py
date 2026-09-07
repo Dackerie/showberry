@@ -1110,8 +1110,88 @@ class TestUINavigation(unittest.TestCase):
         details._update_stats()
         details.close()
 
+    def test_showberry_app_branding_and_torrent_stream_switching(self):
+        """Showberry window branding and asynchronous torrent stream switching."""
+        from unittest.mock import patch, MagicMock
+        from gi.repository import Gdk
+        from kinema.ui.movie_page import MoviePage
+
+        # 1. Branding
+        win = KinemaWindow()
+        self.assertEqual(win.get_title(), "Showberry")
+
+        # 2. MoviePage stream selection emits play-movie with chosen_stream
+        movie = {'id': 12345, 'title': 'Test Film'}
+        mp = MoviePage(movie=movie)
+        emitted_signals = []
+        mp.connect('play-movie', lambda emitter, data: emitted_signals.append(data))
+
+        sample_stream = {'infoHash': 'abcd1234ef', 'quality': '1080p', 'seeds': 45}
+        mp._on_custom_stream_selected(sample_stream)
+        self.assertEqual(len(emitted_signals), 1)
+        self.assertEqual(emitted_signals[0]['provider'], 'torrent')
+        self.assertEqual(emitted_signals[0]['chosen_stream'], sample_stream)
+
+        # 3. PlayerPage stream switching halts previous playback and resolves chosen_stream in worker
+        pp = PlayerPage()
+        pp._mpv_widget.stop = MagicMock()
+        pp._mpv_widget._is_stream_active = True
+
+        mock_streamer = MagicMock()
+        mock_streamer.start_stream.return_value = 'http://127.0.0.1:8888/stream'
+
+        with patch('threading.Thread') as mock_thread, \
+             patch('kinema.services.torrent.get_torrent_streamer', return_value=mock_streamer):
+            mock_thread_instance = MagicMock()
+            mock_thread.return_value = mock_thread_instance
+
+            new_stream_data = {
+                'movie': movie,
+                'provider': 'torrent',
+                'chosen_stream': sample_stream,
+            }
+            pp.load_stream(new_stream_data)
+
+            # MPV was stopped and reset
+            pp._mpv_widget.stop.assert_called_once()
+            self.assertFalse(pp._mpv_widget._is_stream_active)
+            # Background thread was started
+            mock_thread.assert_called_once()
+            mock_thread_instance.start.assert_called_once()
+
+            # Verify worker execution with chosen_stream
+            target_fn = mock_thread.call_args[1]['target']
+            args = mock_thread.call_args[1]['args']
+            pp._on_stream_resolved = MagicMock()
+
+            # Execute thread worker directly
+            target_fn(*args)
+            mock_streamer.start_stream.assert_called_once_with(
+                'abcd1234ef',
+                torrent_url=None,
+                file_idx=None,
+                season=None,
+                episode=None
+            )
+
+        # 4. Keyboard shortcuts T and I in PlayerPage
+        mock_open_chooser = MagicMock()
+        mock_open_details = MagicMock()
+        pp._on_open_stream_chooser = mock_open_chooser
+        pp._on_open_stream_details = mock_open_details
+
+        ctrl = MagicMock()
+        res_t = pp._on_key_pressed(ctrl, Gdk.KEY_t, 0, Gdk.ModifierType(0))
+        self.assertTrue(res_t)
+        mock_open_chooser.assert_called_once()
+
+        res_i = pp._on_key_pressed(ctrl, Gdk.KEY_i, 0, Gdk.ModifierType(0))
+        self.assertTrue(res_i)
+        mock_open_details.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()
+
 
 

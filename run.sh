@@ -1,5 +1,5 @@
 #!/bin/sh
-# Run Kinema without installing
+# Run Showberry without installing
 cd "$(dirname "$0")"
 export GSETTINGS_SCHEMA_DIR=data
 export GSK_RENDERER=gl

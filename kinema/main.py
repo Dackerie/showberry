@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kinema - A movie browser and player for GNOME."""
+"""Showberry - A movie browser and player for GNOME."""
 
 import os
 import sys

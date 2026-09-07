@@ -3,19 +3,19 @@
   <id>com.github.kinema.Kinema</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
-  <name>Kinema</name>
-  <summary>Browse and play movies</summary>
+  <name>Showberry</name>
+  <summary>Browse and stream movies and TV series</summary>
   <description>
     <p>
-      Kinema is a movie browser and player for GNOME. It uses TMDB for movie
-      metadata and supports multiple streaming providers with MPV playback.
+      Showberry is a modern movie and TV series streaming application for GNOME. It uses TMDB for movie
+      and series metadata and supports multiple streaming providers with MPV playback.
     </p>
     <p>Features:</p>
     <ul>
-      <li>Browse trending and popular movies from TMDB</li>
-      <li>Search for any movie by title</li>
-      <li>Play movies using MPV with hardware acceleration</li>
-      <li>Multiple streaming provider support</li>
+      <li>Browse trending and popular movies and series from TMDB</li>
+      <li>Search for any title with instant results</li>
+      <li>Stream movies and TV series using MPV with hardware acceleration</li>
+      <li>Torrent P2P streaming with background buffering and file selection</li>
       <li>Clean, adaptive GNOME interface</li>
     </ul>
   </description>
@@ -23,13 +23,13 @@
   <url type="homepage">https://github.com/user/kinema</url>
   <url type="bugtracker">https://github.com/user/kinema/issues</url>
   <developer id="com.github.user">
-    <name>Kinema Contributors</name>
+    <name>Showberry Contributors</name>
   </developer>
   <content_rating type="oars-1.1" />
   <releases>
     <release version="0.1.0" date="2026-09-06">
       <description>
-        <p>Initial release of Kinema.</p>
+        <p>Initial release of Showberry.</p>
       </description>
     </release>
   </releases>
