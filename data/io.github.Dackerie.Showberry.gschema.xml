@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="showberry">
-  <schema id="com.github.showberry.Showberry" path="/com/github/showberry/Showberry/">
+  <schema id="io.github.Dackerie.Showberry" path="/io/github/Dackerie/Showberry/">
     <key name="tmdb-api-key" type="s">
       <default>''</default>
       <summary>TMDB API Key</summary>

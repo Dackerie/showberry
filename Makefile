@@ -23,7 +23,7 @@ pkg:
 	makepkg -si
 
 flatpak:
-	flatpak-builder --user --install --force-clean build-dir data/com.github.showberry.Showberry.json
+	flatpak-builder --user --install --force-clean build-dir data/io.github.Dackerie.Showberry.json
 
 lint:
 	$(PYTHON) -m py_compile showberry/*.py showberry/*/*.py

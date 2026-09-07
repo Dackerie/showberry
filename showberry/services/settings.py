@@ -12,7 +12,7 @@ class SettingsService:
 
     def __init__(self):
         schema_source = Gio.SettingsSchemaSource.get_default()
-        schema = schema_source.lookup('com.github.showberry.Showberry', True) if schema_source else None
+        schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
         if not schema:
             user_schemas = Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas'
             if (user_schemas / 'gschemas.compiled').exists():
@@ -21,7 +21,7 @@ class SettingsService:
                     schema_source,
                     False
                 )
-                schema = schema_source.lookup('com.github.showberry.Showberry', True) if schema_source else None
+                schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
         if not schema:
             local_data = Path(__file__).parent.parent.parent / 'data'
             if (local_data / 'gschemas.compiled').exists():
@@ -30,7 +30,7 @@ class SettingsService:
                     schema_source,
                     False
                 )
-                schema = schema_source.lookup('com.github.showberry.Showberry', True) if schema_source else None
+                schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
 
         if schema:
             self._settings = Gio.Settings.new_full(schema, None, None)

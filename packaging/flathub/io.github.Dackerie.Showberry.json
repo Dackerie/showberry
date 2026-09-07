@@ -1,5 +1,5 @@
 {
-  "app-id": "com.github.showberry.Showberry",
+  "app-id": "io.github.Dackerie.Showberry",
   "runtime": "org.gnome.Platform",
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
@@ -63,9 +63,9 @@
       "buildsystem": "simple",
       "build-commands": [
         "pip3 install --no-deps --prefix=/app .",
-        "install -Dm644 data/com.github.showberry.Showberry.desktop /app/share/applications/com.github.showberry.Showberry.desktop",
-        "install -Dm644 data/com.github.showberry.Showberry.metainfo.xml /app/share/metainfo/com.github.showberry.Showberry.metainfo.xml",
-        "install -Dm644 data/com.github.showberry.Showberry.gschema.xml /app/share/glib-2.0/schemas/com.github.showberry.Showberry.gschema.xml",
+        "install -Dm644 data/io.github.Dackerie.Showberry.desktop /app/share/applications/io.github.Dackerie.Showberry.desktop",
+        "install -Dm644 data/io.github.Dackerie.Showberry.metainfo.xml /app/share/metainfo/io.github.Dackerie.Showberry.metainfo.xml",
+        "install -Dm644 data/io.github.Dackerie.Showberry.gschema.xml /app/share/glib-2.0/schemas/io.github.Dackerie.Showberry.gschema.xml",
         "glib-compile-schemas /app/share/glib-2.0/schemas",
         "mkdir -p /app/share/icons && cp -r data/icons/* /app/share/icons/ 2>/dev/null || true"
       ],

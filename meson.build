@@ -27,7 +27,7 @@ install_data(
 
 # Compile GSettings schema
 install_data(
-  'data/com.github.showberry.Showberry.gschema.xml',
+  'data/io.github.Dackerie.Showberry.gschema.xml',
   install_dir: get_option('datadir') / 'glib-2.0' / 'schemas',
 )
 
@@ -39,13 +39,13 @@ meson.add_install_script(
 
 # Install desktop file
 install_data(
-  'data/com.github.showberry.Showberry.desktop',
+  'data/io.github.Dackerie.Showberry.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
 
 # Install AppStream metainfo
 install_data(
-  'data/com.github.showberry.Showberry.metainfo.xml',
+  'data/io.github.Dackerie.Showberry.metainfo.xml',
   install_dir: get_option('datadir') / 'metainfo',
 )
 

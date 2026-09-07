@@ -381,7 +381,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://github.com/Dackerie/showberry")
-        dialog.set_application_icon("com.github.showberry.Showberry")
+        dialog.set_application_icon("io.github.Dackerie.Showberry")
         dialog.set_license_type(Gtk.License.GPL_3_0)
         dialog.present(self)
 

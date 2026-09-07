@@ -51,11 +51,11 @@ jobs:
 
       - name: Validate Desktop Entry
         run: |
-          desktop-file-validate data/com.github.showberry.Showberry.desktop
+          desktop-file-validate data/io.github.Dackerie.Showberry.desktop
 
       - name: Validate AppStream Metadata
         run: |
-          appstreamcli validate --no-net data/com.github.showberry.Showberry.metainfo.xml
+          appstreamcli validate --no-net data/io.github.Dackerie.Showberry.metainfo.xml
 
       - name: Run Test Suite
         env:
