@@ -564,11 +564,16 @@ def prune_torrent_cache(cache_dir: Path, max_size_gb: int, current_file: Optiona
         logger.warning(f"Error during torrent cache pruning: {e}")
 
 
-
 _streamer_instance: Optional[TorrentStreamer] = None
 
-def get_torrent_streamer() -> TorrentStreamer:
+
+def get_torrent_streamer() -> Optional[TorrentStreamer]:
     global _streamer_instance
+    if not HAS_LIBTORRENT:
+        return None
     if _streamer_instance is None:
-        _streamer_instance = TorrentStreamer()
+        try:
+            _streamer_instance = TorrentStreamer()
+        except RuntimeError:
+            return None
     return _streamer_instance

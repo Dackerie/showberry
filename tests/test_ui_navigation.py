@@ -917,8 +917,11 @@ class TestUINavigation(unittest.TestCase):
 
     def test_torrent_streamer_safe_stop_and_status(self):
         """TorrentStreamer get_status and stop handle None handles gracefully without crashes."""
-        from showberry.services.torrent import get_torrent_streamer
+        from showberry.services.torrent import get_torrent_streamer, HAS_LIBTORRENT
+        if not HAS_LIBTORRENT:
+            self.skipTest("libtorrent not installed in this environment")
         streamer = get_torrent_streamer()
+        self.assertIsNotNone(streamer)
         st = streamer.get_status()
         self.assertIsInstance(st, dict)
         self.assertEqual(st['state'], 'idle')
@@ -1247,7 +1250,6 @@ class TestUINavigation(unittest.TestCase):
             pp = MagicMock()
             pp._stream_data = {'movie': movie, 'provider': 'torrent'}
             pp.get_root.return_value = None
-            dialog = StreamDetailsDialog(parent_window=None, player_page=pp)
 
             mock_streamer = MagicMock()
             mock_streamer.is_running = True
@@ -1264,11 +1266,12 @@ class TestUINavigation(unittest.TestCase):
 
             from unittest.mock import patch
             with patch('showberry.ui.stream_dialogs.get_torrent_streamer', return_value=mock_streamer):
+                dialog = StreamDetailsDialog(parent_window=None, player_page=pp)
                 dialog._update_stats()
                 self.assertEqual(dialog._progress_bar.get_fraction(), 0.5)
                 self.assertIn("500.0 / 1000.0 MB", dialog._progress_val.get_text())
                 self.assertEqual(dialog._file_val.get_text(), 'movie.1080p.mkv')
-            dialog.close()
+                dialog.close()
 
         finally:
             DatabaseService._instance = orig_instance
