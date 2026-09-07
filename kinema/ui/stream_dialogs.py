@@ -302,7 +302,7 @@ class StreamDetailsDialog(Adw.Window):
             self._progress_bar.set_fraction(progress)
 
             total_done = st.get('total_done', 0)
-            total_size = st.get('video_file_size', 0)
+            total_size = st.get('total_size', 0) or st.get('video_file_size', 0)
             done_mb = total_done / (1024 * 1024)
             size_mb = total_size / (1024 * 1024)
             if size_mb > 0:

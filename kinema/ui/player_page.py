@@ -1544,6 +1544,17 @@ class PlayerPage(Adw.NavigationPage):
             tmdb_id = movie.get('id')
 
             if tmdb_id and dur > 30 and pos > 5:
+                chosen = self._stream_data.get('chosen_stream') or {}
+                t_status = {}
+                try:
+                    from kinema.services.torrent import get_torrent_streamer
+                    t_status = get_torrent_streamer().get_status()
+                except Exception:
+                    pass
+                info_hash = chosen.get('infoHash') or t_status.get('info_hash')
+                file_idx = chosen.get('fileIdx') if chosen.get('fileIdx') is not None else t_status.get('file_idx')
+                stream_provider = self._stream_data.get('provider') or ('torrent' if info_hash else None)
+
                 self._db.update_watch_progress(
                     tmdb_id=tmdb_id,
                     title=movie.get('title', 'Unknown'),
@@ -1554,6 +1565,9 @@ class PlayerPage(Adw.NavigationPage):
                     episode=self._stream_data.get('episode'),
                     progress_seconds=pos,
                     duration_seconds=dur,
+                    stream_provider=stream_provider,
+                    info_hash=info_hash,
+                    file_idx=file_idx,
                 )
         except Exception as e:
             logger.warning(f"Failed to persist watch progress: {e}")
@@ -1607,6 +1621,16 @@ class PlayerPage(Adw.NavigationPage):
                     movie = stream_data.get('movie', {})
                     tmdb_id = movie.get('id')
                     if tmdb_id:
+                        chosen = stream_data.get('chosen_stream') or {}
+                        t_status = {}
+                        try:
+                            t_status = get_torrent_streamer().get_status()
+                        except Exception:
+                            pass
+                        info_hash = chosen.get('infoHash') or t_status.get('info_hash')
+                        file_idx = chosen.get('fileIdx') if chosen.get('fileIdx') is not None else t_status.get('file_idx')
+                        stream_provider = stream_data.get('provider') or ('torrent' if info_hash else None)
+
                         self._db.update_watch_progress(
                             tmdb_id=tmdb_id,
                             title=movie.get('title', 'Unknown'),
@@ -1617,6 +1641,9 @@ class PlayerPage(Adw.NavigationPage):
                             episode=stream_data.get('episode'),
                             progress_seconds=pos,
                             duration_seconds=dur,
+                            stream_provider=stream_provider,
+                            info_hash=info_hash,
+                            file_idx=file_idx,
                         )
             except Exception as ex:
                 logger.warning(f"Error saving watch progress during cleanup: {ex}")
@@ -1746,6 +1773,9 @@ class PlayerPage(Adw.NavigationPage):
             info_hash = stream_info.get('infoHash')
             if not info_hash:
                 return
+            quality = stream_info.get('quality', '')
+            label = f"Switching to {quality} stream..." if quality else "Switching stream..."
+            self.show_osd_notification(label)
             new_data = dict(self._stream_data)
             new_data['provider'] = 'torrent'
             new_data['chosen_stream'] = stream_info

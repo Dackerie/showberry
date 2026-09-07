@@ -1,9 +1,9 @@
 {
   "app-id": "com.github.kinema.Kinema",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "46",
+  "runtime-version": "47",
   "sdk": "org.gnome.Sdk",
-  "command": "kinema",
+  "command": "showberry",
   "finish-args": [
     "--share=ipc",
     "--socket=fallback-x11",
@@ -12,6 +12,8 @@
     "--socket=pulseaudio",
     "--share=network",
     "--talk-name=org.freedesktop.Notifications",
+    "--filesystem=xdg-cache/showberry:create",
+    "--filesystem=xdg-data/showberry:create",
     "--filesystem=xdg-cache/kinema:create",
     "--filesystem=xdg-data/kinema:create"
   ],
@@ -77,8 +79,16 @@
       ]
     },
     {
-      "name": "kinema",
-      "buildsystem": "meson",
+      "name": "showberry",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --no-deps --prefix=/app .",
+        "install -Dm644 data/com.github.kinema.Kinema.desktop /app/share/applications/com.github.kinema.Kinema.desktop",
+        "install -Dm644 data/com.github.kinema.Kinema.metainfo.xml /app/share/metainfo/com.github.kinema.Kinema.metainfo.xml",
+        "install -Dm644 data/com.github.kinema.Kinema.gschema.xml /app/share/glib-2.0/schemas/com.github.kinema.Kinema.gschema.xml",
+        "glib-compile-schemas /app/share/glib-2.0/schemas",
+        "mkdir -p /app/share/icons && cp -r data/icons/* /app/share/icons/ 2>/dev/null || true"
+      ],
       "sources": [
         {
           "type": "dir",

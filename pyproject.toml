@@ -1,7 +1,8 @@
 [project]
-name = "kinema"
+name = "showberry"
 version = "0.1.0"
-description = "A movie browser and player for GNOME"
+description = "A modern movie and TV series streaming application for GNOME"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "PyGObject>=3.48",
@@ -14,8 +15,13 @@ dependencies = [
 ]
 
 [project.scripts]
+showberry = "kinema.main:main"
 kinema = "kinema.main:main"
 
 [build-system]
-requires = ["meson-python>=0.16"]
-build-backend = "mesonpy"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kinema*"]
