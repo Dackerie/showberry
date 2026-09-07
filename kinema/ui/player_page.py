@@ -119,6 +119,7 @@ class MpvWidget(Gtk.GLArea):
         self._wait_first_frame = False  # set True while A/V sync wait is active
         self._is_active = True
         self._has_drawn_first_frame = False
+        self._is_stream_active = False
 
     def activate(self):
         """Re-enable rendering and event handling."""
@@ -127,6 +128,8 @@ class MpvWidget(Gtk.GLArea):
     def deactivate(self):
         """Immediately stop playback and disable render callbacks to prevent deadlocks."""
         self._is_active = False
+        self._is_stream_active = False
+        self._has_drawn_first_frame = False
         try:
             if self._ctx:
                 self._ctx.update_cb = None
@@ -249,13 +252,21 @@ class MpvWidget(Gtk.GLArea):
         except Exception:
             pass
 
-        if not self._has_drawn_first_frame:
-            self._has_drawn_first_frame = True
-            GLib.idle_add(self.emit, 'stream-ready')
+        if self._is_stream_active and not self._has_drawn_first_frame:
+            try:
+                vid = self._mpv.vid
+                time_pos = self._mpv.time_pos
+                has_frame = (vid is not None and vid != 'no') and (time_pos is not None or not self._mpv.eof_reached)
+            except Exception:
+                has_frame = True
+
+            if has_frame:
+                self._has_drawn_first_frame = True
+                GLib.idle_add(self.emit, 'stream-ready')
 
         # Audio/video sync: unpause on the very first rendered frame so audio
         # never runs ahead of visible video frames.
-        if self._wait_first_frame:
+        if self._wait_first_frame and self._has_drawn_first_frame:
             self._wait_first_frame = False
             try:
                 self._mpv.pause = False
@@ -271,6 +282,9 @@ class MpvWidget(Gtk.GLArea):
 
     def play(self, url, referer=None, origin=None, headers=None, subtitles=None, start_pos=0):
         """Play a video URL with custom referer/origin headers and subtitles."""
+        self._is_stream_active = True
+        self._has_drawn_first_frame = False
+        self._wait_first_frame = True
         if referer:
             try:
                 self._mpv['referrer'] = referer
@@ -1071,6 +1085,22 @@ class PlayerPage(Adw.NavigationPage):
         self._provider_badge.set_visible(False)
         self._top_bar.append(self._provider_badge)
 
+        self._switch_stream_btn = Gtk.Button.new_from_icon_name('view-list-bullet-symbolic')
+        self._switch_stream_btn.add_css_class('circular')
+        self._switch_stream_btn.add_css_class('flat')
+        self._switch_stream_btn.set_tooltip_text("Switch stream / torrent")
+        self._switch_stream_btn.set_focusable(False)
+        self._switch_stream_btn.connect('clicked', self._on_open_stream_chooser)
+        self._top_bar.append(self._switch_stream_btn)
+
+        self._stream_info_btn = Gtk.Button.new_from_icon_name('info-symbolic')
+        self._stream_info_btn.add_css_class('circular')
+        self._stream_info_btn.add_css_class('flat')
+        self._stream_info_btn.set_tooltip_text("Stream & buffer details")
+        self._stream_info_btn.set_focusable(False)
+        self._stream_info_btn.connect('clicked', self._on_open_stream_details)
+        self._top_bar.append(self._stream_info_btn)
+
         self._overlay.add_overlay(self._top_bar)
 
         # Floating OSD pill for notifications (volume, seek, timing feedback)
@@ -1255,6 +1285,18 @@ class PlayerPage(Adw.NavigationPage):
         self._session_id += 1
         current_session = self._session_id
 
+        # Direct pre-resolved stream URL (e.g. chosen from TorrentStreamChooserDialog)
+        if stream_data.get('direct_url'):
+            from kinema.providers.base import StreamResult
+            stream_info = stream_data.get('stream_info') or {}
+            res = StreamResult(
+                url=stream_data['direct_url'],
+                provider_name='torrent',
+                quality=stream_info.get('quality', '1080p'),
+            )
+            GLib.idle_add(self._on_stream_resolved, res, [], current_session)
+            return
+
         threading.Thread(
             target=self._resolve_thread,
             args=(tmdb_id, season, episode, provider_name, movie, current_session),
@@ -1411,6 +1453,8 @@ class PlayerPage(Adw.NavigationPage):
 
         # Transition spinner text while MPV demuxes and buffers the first frame
         self._spinner_label.set_text("Buffering stream...")
+        self._spinner_box.set_visible(True)
+        self._spinner.start()
 
         logger.info(f"Starting playback: {result.url}")
 
@@ -1663,3 +1707,47 @@ class PlayerPage(Adw.NavigationPage):
 
         self._hide_timeout = None
         return False
+
+    def _on_open_stream_details(self, btn):
+        """Open live buffer and download stats dialog."""
+        from kinema.ui.stream_dialogs import StreamDetailsDialog
+        window = self.get_root()
+        dialog = StreamDetailsDialog(parent_window=window, player_page=self)
+        dialog.present()
+
+    def _on_open_stream_chooser(self, btn):
+        """Open stream chooser to switch torrent streams on the fly."""
+        from kinema.ui.stream_dialogs import TorrentStreamChooserDialog
+        window = self.get_root()
+        movie = self._stream_data.get('movie', {})
+        season = self._stream_data.get('season')
+        episode = self._stream_data.get('episode')
+
+        def _on_picked(stream_info):
+            info_hash = stream_info.get('infoHash')
+            if not info_hash:
+                return
+            from kinema.services.torrent import get_torrent_streamer
+            streamer = get_torrent_streamer()
+            http_url = streamer.start_stream(
+                info_hash,
+                torrent_url=stream_info.get('torrent_url'),
+                file_idx=stream_info.get('fileIdx'),
+                season=season,
+                episode=episode,
+            )
+            if http_url:
+                new_data = dict(self._stream_data)
+                new_data['direct_url'] = http_url
+                new_data['provider'] = 'torrent'
+                new_data['stream_info'] = stream_info
+                self.load_stream(new_data)
+
+        dialog = TorrentStreamChooserDialog(
+            parent_window=window,
+            movie_data=movie,
+            season=season,
+            episode=episode,
+            on_stream_selected=_on_picked
+        )
+        dialog.present()

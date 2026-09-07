@@ -1,5 +1,6 @@
 """Main application window for Kinema using Komikku-style Adw.NavigationView."""
 
+import time
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -22,6 +23,8 @@ class KinemaWindow(Adw.ApplicationWindow):
 
         self.set_title('Kinema')
         self.set_default_size(1200, 720)
+        self._last_tab_cycle_time = 0.0
+        self._pending_tab_focus_id = None
 
         self._setup_ui()
         self._setup_actions()
@@ -76,7 +79,7 @@ class KinemaWindow(Adw.ApplicationWindow):
         p_library.set_icon_name('emblem-favorite-symbolic')
         self._view_stack.connect(
             'notify::visible-child-name',
-            lambda s, p: self._library_page.refresh() if s.get_visible_child_name() == 'library' and hasattr(self, '_library_page') else None
+            lambda s, p: self._library_page.schedule_refresh() if s.get_visible_child_name() == 'library' and hasattr(self, '_library_page') else None
         )
 
         # 2. Movies Page (Trending/Popular Movies + integrated search)
@@ -133,7 +136,7 @@ class KinemaWindow(Adw.ApplicationWindow):
     def _on_nav_page_changed(self, nav_view, pspec):
         vis = nav_view.get_visible_page()
         if vis and vis.get_tag() == 'main' and hasattr(self, '_library_page'):
-            self._library_page.refresh()
+            self._library_page.schedule_refresh(100)
 
     def _on_window_key_pressed(self, controller, keyval, keycode, state):
         focus = self.get_focus()
@@ -249,12 +252,21 @@ class KinemaWindow(Adw.ApplicationWindow):
             self._nav_view.pop()
         self._view_stack.set_visible_child_name(tab_name)
 
-        if tab_name == 'library' and hasattr(self, '_library_page'):
-            GLib.idle_add(self._library_page.focus_first)
-        elif tab_name == 'movies' and hasattr(self, '_movies_page'):
-            GLib.idle_add(self._movies_page._search_entry.grab_focus)
-        elif tab_name == 'series' and hasattr(self, '_series_page'):
-            GLib.idle_add(self._series_page._search_entry.grab_focus)
+        if self._pending_tab_focus_id:
+            GLib.source_remove(self._pending_tab_focus_id)
+            self._pending_tab_focus_id = None
+
+        def _do_focus():
+            self._pending_tab_focus_id = None
+            if tab_name == 'library' and hasattr(self, '_library_page'):
+                self._library_page.focus_first()
+            elif tab_name == 'movies' and hasattr(self, '_movies_page'):
+                self._movies_page._search_entry.grab_focus()
+            elif tab_name == 'series' and hasattr(self, '_series_page'):
+                self._series_page._search_entry.grab_focus()
+            return False
+
+        self._pending_tab_focus_id = GLib.timeout_add(50, _do_focus)
 
     def _cycle_tab(self, step: int):
         visible = self._nav_view.get_visible_page()
