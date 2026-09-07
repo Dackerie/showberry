@@ -1,0 +1,26 @@
+pkgbase = showberry
+	pkgdesc = An elegant, modern movie and TV series streaming application for GNOME
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/showberry-app/showberry
+	arch = any
+	license = GPL-3.0-or-later
+	makedepends = python-build
+	makedepends = python-installer
+	makedepends = python-setuptools
+	makedepends = python-wheel
+	depends = gtk4
+	depends = libadwaita
+	depends = python-gobject
+	depends = mpv
+	depends = python-requests
+	depends = python-pillow
+	depends = python-pycryptodome
+	depends = libtorrent-rasterbar
+	optdepends = python-curl-cffi: Enhanced TLS anti-bot evasion for streaming providers
+	optdepends = python-opengl: Fast OpenGL display widget
+	optdepends = python-mpv: Direct libmpv Python API bindings
+	source = showberry-0.1.0.tar.gz::https://github.com/showberry-app/showberry/archive/refs/tags/v0.1.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = showberry

@@ -26,6 +26,21 @@
     <name>Showberry Contributors</name>
   </developer>
   <content_rating type="oars-1.1" />
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>Player</category>
+  </categories>
+  <branding>
+    <color type="primary" scheme_preference="light">#e01b24</color>
+    <color type="primary" scheme_preference="dark">#c01c28</color>
+  </branding>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/showberry-app/showberry/master/data/screenshots/browse.png</image>
+      <caption>Browse trending movies and series</caption>
+    </screenshot>
+  </screenshots>
   <releases>
     <release version="0.1.0" date="2026-09-06">
       <description>
