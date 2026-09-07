@@ -88,12 +88,13 @@ class KinemaApplication(Adw.Application):
 
         # Restore window state
         if self.settings:
-            width = self.settings.get_int('window-width')
-            height = self.settings.get_int('window-height')
-            maximized = self.settings.get_boolean('is-maximized')
-
-            win.set_default_size(width, height)
-            if maximized:
+            schema = self.settings.get_property('settings-schema')
+            keys = schema.list_keys() if schema else []
+            if 'window-width' in keys and 'window-height' in keys:
+                width = self.settings.get_int('window-width')
+                height = self.settings.get_int('window-height')
+                win.set_default_size(width, height)
+            if 'is-maximized' in keys and self.settings.get_boolean('is-maximized'):
                 win.maximize()
 
         win.present()

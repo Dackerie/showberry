@@ -1014,6 +1014,36 @@ class TestUINavigation(unittest.TestCase):
         handled = mp._on_actions_key_pressed(None, Gdk.KEY_Down, 0, 0)
         self.assertIsInstance(handled, bool)
 
+    def test_application_activation_and_gschema_keys(self):
+        """KinemaApplication initializes, validates gschema keys including is-maximized, and do_activate works."""
+        from kinema.application import KinemaApplication
+        app = KinemaApplication()
+        self.assertIsNotNone(app.settings)
+        schema = app.settings.get_property('settings-schema')
+        keys = schema.list_keys() if schema else []
+        required_keys = [
+            'is-maximized',
+            'window-width',
+            'window-height',
+            'tmdb-api-key',
+            'default-provider',
+            'theme-variant',
+            'preferred-torrent-quality',
+            'max-torrent-size-gb',
+            'torrent-cache-size-gb',
+        ]
+        for key in required_keys:
+            self.assertIn(key, keys, f"Missing required GSettings key: {key}")
+
+        # Verify get_boolean / set_boolean on is-maximized works without crash
+        initial_val = app.settings.get_boolean('is-maximized')
+        self.assertIsInstance(initial_val, bool)
+        app.settings.set_boolean('is-maximized', initial_val)
+
+        # Test do_activate does not crash
+        app.do_activate()
+        self.assertIsNotNone(app.window)
+
 
 if __name__ == '__main__':
     unittest.main()
