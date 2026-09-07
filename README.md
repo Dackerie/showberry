@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="data/icons/com.github.showberry.Showberry.png" width="128" height="128" alt="Showberry Logo" />
+  <img src="data/icons/io.github.Dackerie.Showberry.png" width="128" height="128" alt="Showberry Logo" />
   <h1>Showberry</h1>
   <p><strong>A modern, native, and hardware-accelerated movie and TV series streaming application for GNOME.</strong></p>
 
@@ -97,8 +97,8 @@ paru -S showberry
 
 ### Flatpak (Flathub)
 ```bash
-flatpak install flathub com.github.showberry.Showberry
-flatpak run com.github.showberry.Showberry
+flatpak install flathub io.github.Dackerie.Showberry
+flatpak run io.github.Dackerie.Showberry
 ```
 
 ### Run Directly (Development / Portable)

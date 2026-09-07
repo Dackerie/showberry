@@ -38,13 +38,13 @@ package() {
     python -m installer --destdir="$pkgdir" dist/*.whl
 
     # Desktop entry
-    install -Dm644 data/com.github.showberry.Showberry.desktop "$pkgdir/usr/share/applications/com.github.showberry.Showberry.desktop"
+    install -Dm644 data/io.github.Dackerie.Showberry.desktop "$pkgdir/usr/share/applications/io.github.Dackerie.Showberry.desktop"
 
     # AppStream Metainfo
-    install -Dm644 data/com.github.showberry.Showberry.metainfo.xml "$pkgdir/usr/share/metainfo/com.github.showberry.Showberry.metainfo.xml"
+    install -Dm644 data/io.github.Dackerie.Showberry.metainfo.xml "$pkgdir/usr/share/metainfo/io.github.Dackerie.Showberry.metainfo.xml"
 
     # GSettings Schema
-    install -Dm644 data/com.github.showberry.Showberry.gschema.xml "$pkgdir/usr/share/glib-2.0/schemas/com.github.showberry.Showberry.gschema.xml"
+    install -Dm644 data/io.github.Dackerie.Showberry.gschema.xml "$pkgdir/usr/share/glib-2.0/schemas/io.github.Dackerie.Showberry.gschema.xml"
 
     # Style CSS
     install -Dm644 data/style.css "$pkgdir/usr/share/showberry/style.css"

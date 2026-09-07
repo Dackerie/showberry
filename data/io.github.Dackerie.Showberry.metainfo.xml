@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.github.showberry.Showberry</id>
+  <id>io.github.Dackerie.Showberry</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>Showberry</name>
@@ -19,7 +19,7 @@
       <li>Clean, adaptive GNOME interface</li>
     </ul>
   </description>
-  <launchable type="desktop-id">com.github.showberry.Showberry.desktop</launchable>
+  <launchable type="desktop-id">io.github.Dackerie.Showberry.desktop</launchable>
   <url type="homepage">https://github.com/Dackerie/showberry</url>
   <url type="bugtracker">https://github.com/Dackerie/showberry/issues</url>
   <developer id="com.github.showberry">

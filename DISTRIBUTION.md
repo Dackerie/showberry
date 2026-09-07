@@ -88,31 +88,31 @@ Flathub is the standard app distribution platform for the Linux desktop, enablin
    ```bash
    curl -sL "https://github.com/<YOUR_GITHUB_USERNAME>/showberry/archive/refs/tags/v0.1.0.tar.gz" | sha256sum
    ```
-   Update `packaging/flathub/com.github.showberry.Showberry.json`:
+   Update `packaging/flathub/io.github.Dackerie.Showberry.json`:
    - Replace `<YOUR_GITHUB_USERNAME>` with your GitHub username.
    - Replace `PLACEHOLDER_SHA256` with the calculated hash.
 
 4. **Add and Commit the Manifest**:
    ```bash
-   cp /home/vishwam/code/showberry/packaging/flathub/com.github.showberry.Showberry.json .
-   git add com.github.showberry.Showberry.json
-   git commit -m "Add com.github.showberry.Showberry"
+   cp /home/vishwam/code/showberry/packaging/flathub/io.github.Dackerie.Showberry.json .
+   git add io.github.Dackerie.Showberry.json
+   git commit -m "Add io.github.Dackerie.Showberry"
    git push -u origin add-showberry
    ```
 
 5. **Submit the Pull Request**:
    - Go to your fork on GitHub and click **Compare & pull request** against `flathub/flathub:master`.
-   - Title: `Add com.github.showberry.Showberry`
+   - Title: `Add io.github.Dackerie.Showberry`
    - Description: Brief summary explaining Showberry and linking to your upstream repository.
    - The `@flathubbot` will trigger test builds for `x86_64` and `aarch64`.
-   - Once approved by Flathub reviewers, they will merge the PR and invite you to the newly created `flathub/com.github.showberry.Showberry` repository.
+   - Once approved by Flathub reviewers, they will merge the PR and invite you to the newly created `flathub/io.github.Dackerie.Showberry` repository.
 
 ### How Users Install via Flatpak
 Once published on Flathub:
 ```bash
 # Command line:
-flatpak install flathub com.github.showberry.Showberry
-flatpak run com.github.showberry.Showberry
+flatpak install flathub io.github.Dackerie.Showberry
+flatpak run io.github.Dackerie.Showberry
 
 # GUI:
 # Users can simply search "Showberry" inside GNOME Software, KDE Discover, or Flathub.org!
