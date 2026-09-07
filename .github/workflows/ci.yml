@@ -28,16 +28,20 @@ jobs:
             gir1.2-adw-1 \
             desktop-file-utils \
             appstream \
-            libglib2.0-dev-bin
+            libglib2.0-dev-bin \
+            python3-venv \
+            python3-pip \
+            xvfb \
+            xauth
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Set up Python virtual environment
+        run: |
+          python3 -m venv --system-site-packages .venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install build pytest requests pillow curl_cffi pycryptodome PyOpenGL python-mpv
 
       - name: Validate GSettings Schema
@@ -55,8 +59,10 @@ jobs:
       - name: Run Test Suite
         env:
           GSK_RENDERER: cairo
+          GSETTINGS_SCHEMA_DIR: data
+          PYTHONPATH: .
         run: |
-          python -m pytest tests/ -v
+          xvfb-run -a -s "-screen 0 1920x1080x24" pytest tests/ -v
 
       - name: Build Python Wheel
         run: |
