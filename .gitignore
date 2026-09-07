@@ -11,3 +11,5 @@ dist/
 env/
 venv/
 *.db
+*.pkg.tar.zst
+pkg/
