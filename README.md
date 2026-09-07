@@ -85,21 +85,7 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 
 ---
 
-## 📦 Installation
-
-### Arch Linux / EndeavourOS (AUR)
-Showberry is available on the Arch User Repository:
-```bash
-yay -S showberry
-# or
-paru -S showberry
-```
-
-### Flatpak (Flathub)
-```bash
-flatpak install flathub io.github.Dackerie.Showberry
-flatpak run io.github.Dackerie.Showberry
-```
+## 📦 Running & Installation
 
 ### Run Directly (Development / Portable)
 Showberry can be executed without installation:
