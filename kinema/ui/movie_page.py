@@ -100,6 +100,7 @@ class MoviePage(Adw.NavigationPage):
     __gsignals__ = {
         'play-movie': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         'movie-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'watchlist-toggled': (GObject.SignalFlags.RUN_FIRST, None, (object, bool)),
     }
 
     def __init__(self, movie=None):
@@ -301,6 +302,10 @@ class MoviePage(Adw.NavigationPage):
         self._actions_row.set_margin_top(10)
         self._actions_row.set_margin_bottom(4)
 
+        actions_key = Gtk.EventControllerKey.new()
+        actions_key.connect('key-pressed', self._on_actions_key_pressed)
+        self._actions_row.add_controller(actions_key)
+
         self._play_button = Gtk.Button(label='▶  Play')
         self._play_button.add_css_class('suggested-action')
         self._play_button.add_css_class('pill')
@@ -359,6 +364,9 @@ class MoviePage(Adw.NavigationPage):
 
         self._season_dropdown = Gtk.DropDown()
         self._season_dropdown.connect('notify::selected', self._on_season_changed)
+        season_key = Gtk.EventControllerKey.new()
+        season_key.connect('key-pressed', self._on_season_key_pressed)
+        self._season_dropdown.add_controller(season_key)
         tv_header.append(self._season_dropdown)
 
         self._tv_box.append(tv_header)
@@ -367,6 +375,9 @@ class MoviePage(Adw.NavigationPage):
         self._episodes_listbox = Gtk.ListBox()
         self._episodes_listbox.add_css_class('boxed-list')
         self._episodes_listbox.connect('row-activated', self._on_episode_row_activated)
+        ep_key = Gtk.EventControllerKey.new()
+        ep_key.connect('key-pressed', self._on_episodes_key_pressed)
+        self._episodes_listbox.add_controller(ep_key)
         self._tv_box.append(self._episodes_listbox)
 
         content.append(self._tv_box)
@@ -590,9 +601,83 @@ class MoviePage(Adw.NavigationPage):
             card = MovieCard(rec)
             card.connect('play-movie', lambda c, sd: self.emit('play-movie', sd))
             card.connect('clicked-movie', lambda c, md: self.emit('movie-selected', md))
+            card.connect('navigate-grid', self._on_rec_navigate)
             self._recs_row.append(card)
 
         self._recs_box.set_visible(True)
+
+    def _on_actions_key_pressed(self, controller, keyval, keycode, state):
+        if keyval == Gdk.KEY_Down:
+            if self._media_type == 'tv' and hasattr(self, '_season_dropdown') and self._tv_box.get_visible():
+                self._season_dropdown.grab_focus()
+                return True
+            elif hasattr(self, '_recs_box') and self._recs_box.get_visible():
+                first_card = self._recs_row.get_first_child()
+                if first_card and hasattr(first_card, 'grab_focus'):
+                    first_card.grab_focus()
+                    return True
+        return False
+
+    def _on_season_key_pressed(self, controller, keyval, keycode, state):
+        if keyval == Gdk.KEY_Up:
+            if hasattr(self, '_play_button'):
+                self._play_button.grab_focus()
+                return True
+        elif keyval == Gdk.KEY_Down:
+            if hasattr(self, '_episodes_listbox'):
+                first_row = self._episodes_listbox.get_row_at_index(0)
+                if first_row and hasattr(first_row, 'grab_focus'):
+                    first_row.grab_focus()
+                    return True
+        return False
+
+    def _on_episodes_key_pressed(self, controller, keyval, keycode, state):
+        sel = self._episodes_listbox.get_selected_row()
+        if not sel:
+            root = self.get_root()
+            focus = root.get_focus() if root else None
+            if focus and isinstance(focus, Gtk.ListBoxRow):
+                sel = focus
+            elif focus and focus.get_ancestor(Gtk.ListBoxRow):
+                sel = focus.get_ancestor(Gtk.ListBoxRow)
+
+        if keyval == Gdk.KEY_Up:
+            if sel and sel.get_index() == 0:
+                if hasattr(self, '_season_dropdown') and self._season_dropdown.get_visible():
+                    self._season_dropdown.grab_focus()
+                    return True
+                elif hasattr(self, '_play_button'):
+                    self._play_button.grab_focus()
+                    return True
+        elif keyval == Gdk.KEY_Down:
+            total_rows = len(self._episodes_data)
+            if sel and sel.get_index() >= max(0, total_rows - 1):
+                if hasattr(self, '_recs_box') and self._recs_box.get_visible():
+                    first_card = self._recs_row.get_first_child()
+                    if first_card and hasattr(first_card, 'grab_focus'):
+                        first_card.grab_focus()
+                        return True
+        return False
+
+    def _on_rec_navigate(self, card, direction: str):
+        if direction == 'up':
+            if self._media_type == 'tv' and hasattr(self, '_episodes_listbox') and self._tv_box.get_visible():
+                total_rows = len(self._episodes_data)
+                last_row = self._episodes_listbox.get_row_at_index(max(0, total_rows - 1))
+                if last_row and hasattr(last_row, 'grab_focus'):
+                    last_row.grab_focus()
+                    return
+            if hasattr(self, '_play_button'):
+                self._play_button.grab_focus()
+                return
+        elif direction == 'left':
+            prev_sibling = card.get_prev_sibling()
+            if prev_sibling and hasattr(prev_sibling, 'grab_focus'):
+                prev_sibling.grab_focus()
+        elif direction == 'right':
+            next_sibling = card.get_next_sibling()
+            if next_sibling and hasattr(next_sibling, 'grab_focus'):
+                next_sibling.grab_focus()
 
     def _format_runtime_ends_at(self, runtime_minutes: int) -> str:
         """Format runtime as '2h 19m • Ends at 9:55 PM'."""
@@ -623,6 +708,7 @@ class MoviePage(Adw.NavigationPage):
             return
 
         window = self.get_root()
+        is_added = False
         if self._db.is_in_watchlist(tmdb_id):
             self._db.remove_from_watchlist(tmdb_id)
             if hasattr(window, 'show_toast'):
@@ -636,9 +722,11 @@ class MoviePage(Adw.NavigationPage):
                 release_date=self._movie.get('release_date'),
                 vote_average=self._movie.get('vote_average', 0.0),
             )
+            is_added = True
             if hasattr(window, 'show_toast'):
                 window.show_toast("Added to Watchlist")
         self._update_watchlist_btn_state()
+        self.emit('watchlist-toggled', self._movie, is_added)
 
     def _load_images_async(self):
         """Load poster and backdrop asynchronously from cache (instant if already in disk cache)."""

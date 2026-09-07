@@ -20,6 +20,33 @@ YTS_MIRRORS = [
 ]
 
 
+def parse_stream_size_gb(stream: Dict[str, Any]) -> Optional[float]:
+    """Parse torrent file size in gigabytes from metadata or title."""
+    if 'size_bytes' in stream and stream['size_bytes']:
+        try:
+            return float(stream['size_bytes']) / (1024 ** 3)
+        except (ValueError, TypeError):
+            pass
+
+    title = stream.get('title', '')
+    match = re.search(r'💾\s*([\d.]+)\s*(GB|MB|TB)', title, re.IGNORECASE)
+    if not match:
+        match = re.search(r'\b([\d.]+)\s*(GB|MB|TB)\b', title, re.IGNORECASE)
+    if match:
+        try:
+            val = float(match.group(1))
+            unit = match.group(2).upper()
+            if unit == 'GB':
+                return val
+            elif unit == 'MB':
+                return val / 1024.0
+            elif unit == 'TB':
+                return val * 1024.0
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 class TorrentProvider(BaseProvider):
     """Provider that discovers torrents via Torrentio, MediaFusion & YTS and streams them sequentially via libtorrent."""
 
@@ -84,8 +111,16 @@ class TorrentProvider(BaseProvider):
             logger.info(f"Selected torrent {info_hash} ({quality}) for streaming: {title}")
 
             # Start sequential torrent streaming server
+            file_idx = best_stream.get('fileIdx')
             streamer = get_torrent_streamer()
-            http_url = streamer.start_stream(info_hash, torrent_url=torrent_url, timeout=35)
+            http_url = streamer.start_stream(
+                info_hash,
+                torrent_url=torrent_url,
+                file_idx=file_idx,
+                season=season,
+                episode=episode,
+                timeout=35
+            )
 
             return StreamResult(
                 url=http_url,
@@ -116,12 +151,15 @@ class TorrentProvider(BaseProvider):
                             if h:
                                 q = t.get('quality', '720p')
                                 seeds = t.get('seeds', 0)
+                                size_str = t.get('size', '')
+                                size_part = f" 💾 {size_str}" if size_str else ""
                                 torrents.append({
                                     'infoHash': h,
-                                    'title': f"YTS {q} 👤 {seeds}",
+                                    'title': f"YTS {q} 👤 {seeds}{size_part}",
                                     'name': f"YTS {t.get('type', 'bluray')}",
                                     'quality': q,
                                     'seeds': seeds,
+                                    'size_bytes': t.get('size_bytes'),
                                     'torrent_url': t.get('url'),
                                 })
                         break
@@ -164,7 +202,12 @@ class TorrentProvider(BaseProvider):
         return []
 
     def _select_best_stream(self, streams: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Rank streams based on seeders and resolution."""
+        """Rank streams based on user quality preferences, max size limits, seeds, and release health."""
+        from kinema.services.settings import SettingsService
+        settings = SettingsService()
+        pref_quality = (settings.preferred_torrent_quality or '1080p').lower()
+        max_size_gb = settings.max_torrent_size_gb or 0
+
         def score(stream):
             title = stream.get('title', '')
             tl = title.lower()
@@ -176,15 +219,50 @@ class TorrentProvider(BaseProvider):
             # Cap seeds contribution to avoid huge multi-movie packs overpowering single movies
             seeds_score = min(seeds, 150)
 
+            # Check size limits: if configured, penalize oversized torrents to preserve user data
+            size_penalty = 0
+            if max_size_gb > 0:
+                stream_size = parse_stream_size_gb(stream)
+                if stream_size is not None and stream_size > max_size_gb:
+                    size_penalty = -20000  # Disqualify streams exceeding user's size threshold
+
+            # Resolution detection
+            is_1080 = '1080p' in tl or stream.get('quality') == '1080p'
+            is_720 = '720p' in tl or stream.get('quality') == '720p'
+            is_4k = '4k' in tl or '2160p' in tl or stream.get('quality') in ('4k', '2160p')
+
             res_bonus = 0
-            if '1080p' in tl or stream.get('quality') == '1080p':
-                res_bonus = 500
-            elif '720p' in tl or stream.get('quality') == '720p':
-                res_bonus = 300
-            elif '4k' in tl or '2160p' in tl:
-                res_bonus = 200
-            elif 'cam' in tl or 'telesync' in tl:
-                res_bonus = -2000
+            if pref_quality == '720p':
+                if is_720:
+                    res_bonus = 1000
+                elif is_1080:
+                    res_bonus = 200
+                elif is_4k:
+                    res_bonus = -500
+            elif pref_quality == '4k':
+                if is_4k:
+                    res_bonus = 1000
+                elif is_1080:
+                    res_bonus = 300
+                elif is_720:
+                    res_bonus = 100
+            elif pref_quality == 'auto':
+                if is_1080:
+                    res_bonus = 500
+                elif is_720:
+                    res_bonus = 300
+                elif is_4k:
+                    res_bonus = 200
+            else:  # Default '1080p'
+                if is_1080:
+                    res_bonus = 1000
+                elif is_720:
+                    res_bonus = 300
+                elif is_4k:
+                    res_bonus = 100
+
+            if 'cam' in tl or 'telesync' in tl:
+                res_bonus -= 2000
 
             source_bonus = 100 if 'yts' in tl else 0
             # Direct .torrent download URLs resolve immediately without DHT overhead
@@ -193,7 +271,7 @@ class TorrentProvider(BaseProvider):
             # Penalize box sets / collection packs that have slow multi-file downloads
             pack_penalty = -1500 if re.search(r'\b(pack|complete|collection|anthology|movies)\b', tl) else 0
 
-            return seeds_score + res_bonus + source_bonus + direct_torrent_bonus + pack_penalty
+            return seeds_score + res_bonus + source_bonus + direct_torrent_bonus + pack_penalty + size_penalty
 
         sorted_streams = sorted(streams, key=score, reverse=True)
         return sorted_streams[0] if sorted_streams else None

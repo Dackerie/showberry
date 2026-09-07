@@ -26,10 +26,20 @@
       <summary>Window Height</summary>
       <description>The last used window height</description>
     </key>
-    <key name="is-maximized" type="b">
-      <default>false</default>
-      <summary>Window Maximized</summary>
-      <description>Whether the window was maximized</description>
+    <key name="preferred-torrent-quality" type="s">
+      <default>'1080p'</default>
+      <summary>Preferred Torrent Quality</summary>
+      <description>Preferred quality for torrent streams (1080p, 720p, 4k, auto)</description>
+    </key>
+    <key name="max-torrent-size-gb" type="i">
+      <default>0</default>
+      <summary>Max Torrent File Size</summary>
+      <description>Maximum allowed torrent size in GB (0 for unlimited)</description>
+    </key>
+    <key name="torrent-cache-size-gb" type="i">
+      <default>10</default>
+      <summary>Torrent Disk Cache Size</summary>
+      <description>Maximum disk space in GB for cached torrents (0 for stream only)</description>
     </key>
   </schema>
 </schemalist>

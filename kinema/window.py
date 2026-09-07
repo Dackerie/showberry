@@ -4,7 +4,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Adw, Gio, GLib
+from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
 from kinema.ui.library_page import LibraryPage
 from kinema.ui.movies_page import MoviesPage
@@ -42,7 +42,13 @@ class KinemaWindow(Adw.ApplicationWindow):
 
         # Root Navigation View (Komikku pattern)
         self._nav_view = Adw.NavigationView()
+        self._nav_view.connect('notify::visible-page', self._on_nav_page_changed)
         self._toast_overlay.set_child(self._nav_view)
+
+        # Global key controller (e.g. quick search via '/')
+        key_ctrl = Gtk.EventControllerKey.new()
+        key_ctrl.connect('key-pressed', self._on_window_key_pressed)
+        self.add_controller(key_ctrl)
 
         # 1. Main navigation page (tag="main")
         main_page = self._create_main_page()
@@ -68,6 +74,10 @@ class KinemaWindow(Adw.ApplicationWindow):
         self._library_page.connect('play-movie', self._on_play_movie)
         p_library = self._view_stack.add_titled(self._library_page, 'library', 'Library')
         p_library.set_icon_name('emblem-favorite-symbolic')
+        self._view_stack.connect(
+            'notify::visible-child-name',
+            lambda s, p: self._library_page.refresh() if s.get_visible_child_name() == 'library' and hasattr(self, '_library_page') else None
+        )
 
         # 2. Movies Page (Trending/Popular Movies + integrated search)
         self._movies_page = MoviesPage()
@@ -120,11 +130,26 @@ class KinemaWindow(Adw.ApplicationWindow):
         main_page.set_tag('main')
         return main_page
 
+    def _on_nav_page_changed(self, nav_view, pspec):
+        vis = nav_view.get_visible_page()
+        if vis and vis.get_tag() == 'main' and hasattr(self, '_library_page'):
+            self._library_page.refresh()
+
+    def _on_window_key_pressed(self, controller, keyval, keycode, state):
+        focus = self.get_focus()
+        if focus and isinstance(focus, (Gtk.Editable, Gtk.Entry)):
+            return False
+        if keyval == Gdk.KEY_slash:
+            self._on_search_action(None, None)
+            return True
+        return False
+
     def _on_movie_selected(self, page, movie_data):
         """Push movie detail page onto navigation view."""
         movie_page = MoviePage(movie=movie_data)
         movie_page.connect('play-movie', self._on_play_movie)
         movie_page.connect('movie-selected', self._on_movie_selected)
+        movie_page.connect('watchlist-toggled', lambda p, m, a: self._library_page.refresh() if hasattr(self, '_library_page') else None)
         self._nav_view.push(movie_page)
 
     def _on_play_movie(self, page, stream_data):
@@ -268,11 +293,12 @@ class KinemaWindow(Adw.ApplicationWindow):
 
         g_gen = Gtk.ShortcutsGroup(title="General")
         g_gen.append(Gtk.ShortcutsShortcut(title="Search", accelerator="<Ctrl>F"))
+        g_gen.append(Gtk.ShortcutsShortcut(title="Quick Search", accelerator="slash"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Keyboard Shortcuts", accelerator="<Ctrl>question"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Preferences", accelerator="<Ctrl>comma"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="F11"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Go Back / Exit Player", accelerator="Escape"))
-        sec_app.append(g_gen)
+        sec_app.add_group(g_gen)
 
         g_nav = Gtk.ShortcutsGroup(title="Navigation")
         g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Library", accelerator="<Ctrl>1"))
@@ -283,7 +309,7 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_nav.append(Gtk.ShortcutsShortcut(title="Open Details", accelerator="Return"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Play Directly", accelerator="space"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Toggle Watchlist", accelerator="w"))
-        sec_app.append(g_nav)
+        sec_app.add_group(g_nav)
 
         win.add_section(sec_app)
 
@@ -303,7 +329,7 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_play.append(Gtk.ShortcutsShortcut(title="Increase Subtitle Delay", accelerator="x"))
         g_play.append(Gtk.ShortcutsShortcut(title="Subtitles Menu", accelerator="s"))
         g_play.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="f"))
-        sec_player.append(g_play)
+        sec_player.add_group(g_play)
 
         win.add_section(sec_player)
 
