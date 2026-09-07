@@ -1,7 +1,7 @@
 """Tests for streaming providers and ProviderManager."""
 
 import unittest
-from kinema.providers import get_all_providers, StreamResult, ProviderManager
+from showberry.providers import get_all_providers, StreamResult, ProviderManager
 
 
 class TestProviders(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestProviders(unittest.TestCase):
         self.assertIsNone(nonexistent)
 
     def test_videasy_cipher_structure(self):
-        from kinema.providers.videasy import _init_state, _gen_keystream
+        from showberry.providers.videasy import _init_state, _gen_keystream
         state = _init_state('test_seed_123', 278)
         self.assertIn('S', state)
         self.assertIn('acc', state)
@@ -68,7 +68,7 @@ class TestProviders(unittest.TestCase):
             self.assertEqual(names[i], exp, f"Expected {exp} at index {i}, got {names[i]}")
 
     def test_vidy_cipher_decryption(self):
-        from kinema.providers.vidy import _decrypt_vidy
+        from showberry.providers.vidy import _decrypt_vidy
         # Known test vector from Node.js/Python cross-validation
         # Seed: 'test_seed_123', media_id: 550
         # Keystream begins with [61, 173, 199, 215, 139, 235, 236, 197, 189, 186, 125, 65, 102, 102, 226, 54]
@@ -78,7 +78,7 @@ class TestProviders(unittest.TestCase):
         payload = b'{"test":true}'
         plain = bytes(magic) + payload
         import base64
-        from kinema.providers.vidy import _imul, _p_fn, _g_fn
+        from showberry.providers.vidy import _imul, _p_fn, _g_fn
         # Create encrypted ciphertext using the cipher keystream
         seed = 'test_seed_123'
         media_id = 550
@@ -130,13 +130,13 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(decrypted, '{"test":true}')
 
     def test_vidrift_provider_properties(self):
-        from kinema.providers.vidrift import VidRiftProvider
+        from showberry.providers.vidrift import VidRiftProvider
         p = VidRiftProvider()
         self.assertEqual(p.name, 'VidRift')
         self.assertEqual(p.base_url, 'https://embed.vidrift.in')
 
     def test_vidking_provider_properties(self):
-        from kinema.providers.vidking import VidKingProvider
+        from showberry.providers.vidking import VidKingProvider
         p = VidKingProvider()
         self.assertEqual(p.name, 'VidKing')
         self.assertEqual(p.base_url, 'https://vidking.net')

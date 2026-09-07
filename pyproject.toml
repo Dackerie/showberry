@@ -15,8 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-showberry = "kinema.main:main"
-kinema = "kinema.main:main"
+showberry = "showberry.main:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]
@@ -24,4 +23,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["kinema*"]
+include = ["showberry*"]

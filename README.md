@@ -54,7 +54,7 @@ makepkg -si
 
 ### Build with Flatpak
 ```bash
-flatpak-builder --user --install --force-clean build-dir data/com.github.kinema.Kinema.json
+flatpak-builder --user --install --force-clean build-dir data/com.github.showberry.Showberry.json
 ```
 
 ## License

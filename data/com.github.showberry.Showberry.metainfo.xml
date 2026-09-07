@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.github.showberry.Showberry</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Showberry</name>
+  <summary>Browse and stream movies and TV series</summary>
+  <description>
+    <p>
+      Showberry is a modern movie and TV series streaming application for GNOME. It uses TMDB for movie
+      and series metadata and supports multiple streaming providers with MPV playback.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Browse trending and popular movies and series from TMDB</li>
+      <li>Search for any title with instant results</li>
+      <li>Stream movies and TV series using MPV with hardware acceleration</li>
+      <li>Torrent P2P streaming with background buffering and file selection</li>
+      <li>Clean, adaptive GNOME interface</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.github.showberry.Showberry.desktop</launchable>
+  <url type="homepage">https://github.com/showberry-app/showberry</url>
+  <url type="bugtracker">https://github.com/showberry-app/showberry/issues</url>
+  <developer id="com.github.showberry">
+    <name>Showberry Contributors</name>
+  </developer>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.1.0" date="2026-09-06">
+      <description>
+        <p>Initial release of Showberry.</p>
+      </description>
+    </release>
+  </releases>
+</component>

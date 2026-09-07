@@ -1,7 +1,7 @@
 """Tests for TMDBClient."""
 
 import unittest
-from kinema.services.tmdb import TMDBClient
+from showberry.services.tmdb import TMDBClient
 
 
 class TestTMDBClient(unittest.TestCase):

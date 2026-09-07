@@ -3,7 +3,7 @@
 import os
 import tempfile
 import unittest
-from kinema.services.database import DatabaseService
+from showberry.services.database import DatabaseService
 
 
 class TestDatabaseService(unittest.TestCase):
@@ -76,6 +76,39 @@ class TestDatabaseService(unittest.TestCase):
 
         self.db.remove_from_watchlist(1396)
         self.assertFalse(self.db.is_in_watchlist(1396))
+
+    def test_legacy_migration(self):
+        """Verify automatic migration from kinema.db to showberry.db."""
+        from unittest.mock import patch
+        from pathlib import Path
+        import shutil
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            legacy_dir = Path(tmpdir) / 'kinema'
+            legacy_dir.mkdir()
+            legacy_db_path = legacy_dir / 'kinema.db'
+
+            # Populate legacy DB
+            DatabaseService._instance = None
+            legacy_service = DatabaseService(db_path=str(legacy_db_path))
+            legacy_service.add_to_watchlist(
+                tmdb_id=999,
+                title="Migrated Movie",
+                media_type="movie",
+                vote_average=8.0,
+                overview="A test migration movie"
+            )
+
+            # Reset singleton and mock data dir
+            DatabaseService._instance = None
+            with patch('gi.repository.GLib.get_user_data_dir', return_value=tmpdir):
+                migrated_service = DatabaseService(db_path=None)
+                new_db_file = Path(tmpdir) / 'showberry' / 'showberry.db'
+                self.assertTrue(new_db_file.exists())
+                self.assertTrue(migrated_service.is_in_watchlist(999))
+                items = migrated_service.get_watchlist()
+                self.assertEqual(len(items), 1)
+                self.assertEqual(items[0]['title'], "Migrated Movie")
 
 
 if __name__ == '__main__':
