@@ -37,8 +37,28 @@
   </branding>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/browse.png</image>
-      <caption>Browse trending movies and series</caption>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/02-movies.png</image>
+      <caption>Browse trending and popular movies with release info and ratings</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/01-library.png</image>
+      <caption>Library view featuring continue watching progress and custom watchlist</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/03-movie-details.png</image>
+      <caption>Rich movie details with high-resolution backdrops, cast, and overview</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/04-series.png</image>
+      <caption>TV series catalogue with network badges and season counts</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/05-series-details.png</image>
+      <caption>Season and episode picker with detailed synopsis and direct streaming</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/06-preferences.png</image>
+      <caption>Preferences dialog for custom TMDB keys, providers, and torrent caching</caption>
     </screenshot>
   </screenshots>
   <releases>
