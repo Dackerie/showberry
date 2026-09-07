@@ -84,6 +84,9 @@ class DatabaseService:
                 "ALTER TABLE watchlist ADD COLUMN overview TEXT",
                 "ALTER TABLE watchlist ADD COLUMN backdrop_url TEXT",
                 "ALTER TABLE watch_history ADD COLUMN overview TEXT",
+                "ALTER TABLE watch_history ADD COLUMN stream_provider TEXT",
+                "ALTER TABLE watch_history ADD COLUMN info_hash TEXT",
+                "ALTER TABLE watch_history ADD COLUMN file_idx INTEGER",
             ]:
                 try:
                     cursor.execute(migration)
@@ -106,6 +109,9 @@ class DatabaseService:
         progress_seconds: float = 0,
         duration_seconds: float = 0,
         overview: Optional[str] = None,
+        stream_provider: Optional[str] = None,
+        info_hash: Optional[str] = None,
+        file_idx: Optional[int] = None,
     ):
         """Record or update watch progress."""
         with self._get_connection() as conn:
@@ -113,8 +119,9 @@ class DatabaseService:
             cursor.execute("""
                 INSERT INTO watch_history (
                     tmdb_id, media_type, title, poster_url, backdrop_url,
-                    season, episode, progress_seconds, duration_seconds, updated_at, overview
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    season, episode, progress_seconds, duration_seconds, updated_at, overview,
+                    stream_provider, info_hash, file_idx
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(tmdb_id) DO UPDATE SET
                     media_type = excluded.media_type,
                     title = excluded.title,
@@ -125,10 +132,14 @@ class DatabaseService:
                     progress_seconds = excluded.progress_seconds,
                     duration_seconds = excluded.duration_seconds,
                     updated_at = excluded.updated_at,
-                    overview = COALESCE(excluded.overview, watch_history.overview)
+                    overview = COALESCE(excluded.overview, watch_history.overview),
+                    stream_provider = COALESCE(excluded.stream_provider, watch_history.stream_provider),
+                    info_hash = COALESCE(excluded.info_hash, watch_history.info_hash),
+                    file_idx = COALESCE(excluded.file_idx, watch_history.file_idx)
             """, (
                 tmdb_id, media_type, title, poster_url, backdrop_url,
-                season, episode, progress_seconds, duration_seconds, time.time(), overview
+                season, episode, progress_seconds, duration_seconds, time.time(), overview,
+                stream_provider, info_hash, file_idx
             ))
             conn.commit()
 

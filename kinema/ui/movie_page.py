@@ -547,6 +547,8 @@ class MoviePage(Adw.NavigationPage):
                 self._resume_button.set_label(f"Resume ({mins}:{secs:02d})")
                 self._resume_button.set_visible(True)
                 self._resume_pos = pos
+                self._resume_info_hash = progress.get('info_hash')
+                self._resume_file_idx = progress.get('file_idx')
 
         # Render cast & recommendations if already available
         if movie.get('cast'):
@@ -865,6 +867,8 @@ class MoviePage(Adw.NavigationPage):
                 self._resume_button.set_label(f"Resume ({mins}:{secs:02d})")
                 self._resume_button.set_visible(True)
                 self._resume_pos = pos
+                self._resume_info_hash = progress.get('info_hash')
+                self._resume_file_idx = progress.get('file_idx')
 
         self._load_images_async()
 
@@ -924,6 +928,8 @@ class MoviePage(Adw.NavigationPage):
                 self._resume_pos = pos
                 self._resume_season = s
                 self._resume_episode = ep
+                self._resume_info_hash = progress.get('info_hash')
+                self._resume_file_idx = progress.get('file_idx')
 
         self._load_images_async()
 
@@ -995,9 +1001,14 @@ class MoviePage(Adw.NavigationPage):
         start_pos = getattr(self, '_resume_pos', 0)
         season = getattr(self, '_resume_season', None)
         episode = getattr(self, '_resume_episode', None)
-        self._start_playback(season=season, episode=episode, start_pos=start_pos)
+        info_hash = getattr(self, '_resume_info_hash', None)
+        file_idx = getattr(self, '_resume_file_idx', None)
+        chosen_stream = None
+        if info_hash:
+            chosen_stream = {'infoHash': info_hash, 'fileIdx': file_idx}
+        self._start_playback(season=season, episode=episode, start_pos=start_pos, chosen_stream=chosen_stream)
 
-    def _start_playback(self, season=None, episode=None, start_pos=0):
+    def _start_playback(self, season=None, episode=None, start_pos=0, chosen_stream=None):
         selected = self._provider_dropdown.get_selected()
         pref_name = None
         if hasattr(self, '_provider_names') and 0 < selected < len(self._provider_names):
@@ -1020,6 +1031,9 @@ class MoviePage(Adw.NavigationPage):
             'episode': episode,
             'start_position': start_pos,
         }
+        if chosen_stream:
+            stream_data['chosen_stream'] = chosen_stream
+            stream_data['provider'] = 'torrent'
         self.emit('play-movie', stream_data)
 
     def _on_select_stream_clicked(self, button):

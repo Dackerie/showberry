@@ -49,10 +49,13 @@ class ImageCache:
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
                     path, width, height, True
                 )
-                return Gdk.Texture.new_for_pixbuf(pixbuf)
+                succ, data = pixbuf.save_to_bufferv('png', [], [])
+                if succ:
+                    return Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
+                return None
             else:
                 return Gdk.Texture.new_from_filename(path)
-        except GLib.Error:
+        except (GLib.Error, Exception):
             return None
 
     def _download_and_cache(self, url, cache_path, width=None, height=None):

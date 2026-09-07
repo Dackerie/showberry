@@ -1,6 +1,7 @@
 """Main application window for Kinema using Komikku-style Adw.NavigationView."""
 
 import time
+import warnings
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -310,7 +311,7 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_gen.append(Gtk.ShortcutsShortcut(title="Preferences", accelerator="<Ctrl>comma"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="F11"))
         g_gen.append(Gtk.ShortcutsShortcut(title="Go Back / Exit Player", accelerator="Escape"))
-        sec_app.add_group(g_gen)
+        sec_app.append(g_gen)
 
         g_nav = Gtk.ShortcutsGroup(title="Navigation")
         g_nav.append(Gtk.ShortcutsShortcut(title="Switch to Library", accelerator="<Ctrl>1"))
@@ -321,9 +322,7 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_nav.append(Gtk.ShortcutsShortcut(title="Open Details", accelerator="Return"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Play Directly", accelerator="space"))
         g_nav.append(Gtk.ShortcutsShortcut(title="Toggle Watchlist", accelerator="w"))
-        sec_app.add_group(g_nav)
-
-        win.add_section(sec_app)
+        sec_app.append(g_nav)
 
         # ── Section 2: Player Controls ─────────────────────────────────────
         sec_player = Gtk.ShortcutsSection(title="Player Controls", section_name="playback", max_height=10)
@@ -343,9 +342,12 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_play.append(Gtk.ShortcutsShortcut(title="Choose Torrent Stream", accelerator="t"))
         g_play.append(Gtk.ShortcutsShortcut(title="Stream Info / Stats", accelerator="i"))
         g_play.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="f"))
-        sec_player.add_group(g_play)
+        sec_player.append(g_play)
 
-        win.add_section(sec_player)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', DeprecationWarning)
+            win.add_section(sec_app)
+            win.add_section(sec_player)
 
         win.present()
 

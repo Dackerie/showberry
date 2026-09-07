@@ -123,6 +123,8 @@ class TorrentStreamer:
         self.handle: Optional[lt.torrent_handle] = None
         self.httpd: Optional[ThreadedHTTPServer] = None
         self.http_thread: Optional[threading.Thread] = None
+        self.current_info_hash: Optional[str] = None
+        self.current_file_idx: Optional[int] = None
         self.http_port: int = 0
 
         self.video_file_path: Optional[str] = None
@@ -180,6 +182,8 @@ class TorrentStreamer:
         self._init_session()
 
         info_hash = magnet_or_hash.strip().lower() if not magnet_or_hash.startswith('magnet:') else None
+        self.current_info_hash = info_hash
+        self.current_file_idx = file_idx
 
         # 1. Attempt instantaneous direct .torrent fetch (bypassing DHT metadata wait)
         torrent_bytes = None
@@ -427,7 +431,15 @@ class TorrentStreamer:
     def get_status(self) -> Dict[str, Any]:
         """Return live torrent status dictionary."""
         if not self.handle or not self.handle.is_valid():
-            return {'state': 'idle', 'progress': 0.0, 'download_rate': 0, 'peers': 0, 'seeds': 0}
+            return {
+                'state': 'idle',
+                'progress': 0.0,
+                'download_rate': 0,
+                'peers': 0,
+                'seeds': 0,
+                'info_hash': self.current_info_hash,
+                'file_idx': self.current_file_idx,
+            }
 
         st = self.handle.status()
         return {
@@ -439,6 +451,9 @@ class TorrentStreamer:
             'seeds': st.num_seeds,
             'total_done': st.total_done,
             'total_size': self.video_file_size,
+            'video_file_name': os.path.basename(self.video_file_path) if self.video_file_path else None,
+            'info_hash': self.current_info_hash,
+            'file_idx': self.current_file_idx,
         }
 
     def stop(self):

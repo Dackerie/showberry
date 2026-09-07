@@ -1189,6 +1189,92 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(res_i)
         mock_open_details.assert_called_once()
 
+    def test_torrent_resume_continuity_and_stream_details_progress(self):
+        """Watch progress stores torrent info_hash and resumes exact stream release."""
+        import tempfile
+        import os
+        from kinema.services.database import DatabaseService
+        from kinema.ui.movie_page import MoviePage
+        from kinema.ui.stream_dialogs import StreamDetailsDialog
+        from unittest.mock import MagicMock
+
+        with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+            temp_db_path = f.name
+
+        orig_instance = DatabaseService._instance
+        DatabaseService._instance = None
+        try:
+            db = DatabaseService(temp_db_path)
+
+            # 1. Store watch progress with stream provider and info_hash
+            db.update_watch_progress(
+                tmdb_id=88888,
+                title="Continuous Stream Movie",
+                media_type="movie",
+                progress_seconds=120,
+                duration_seconds=7200,
+                stream_provider="torrent",
+                info_hash="deadbeef1234567890",
+                file_idx=2,
+            )
+
+            prog = db.get_item_progress(88888)
+            self.assertIsNotNone(prog)
+            self.assertEqual(prog['info_hash'], "deadbeef1234567890")
+            self.assertEqual(prog['file_idx'], 2)
+            self.assertEqual(prog['stream_provider'], "torrent")
+
+            # 2. MoviePage resume preserves chosen_stream
+            movie = {'id': 88888, 'title': 'Continuous Stream Movie'}
+            mp = MoviePage(movie=movie)
+            mp._db = db
+            mp._resume_pos = 120
+            mp._resume_info_hash = "deadbeef1234567890"
+            mp._resume_file_idx = 2
+
+            signals = []
+            mp.connect('play-movie', lambda emitter, data: signals.append(data))
+            mp._on_resume_clicked(None)
+
+            self.assertEqual(len(signals), 1)
+            self.assertEqual(signals[0]['provider'], 'torrent')
+            self.assertEqual(signals[0]['start_position'], 120)
+            self.assertIn('chosen_stream', signals[0])
+            self.assertEqual(signals[0]['chosen_stream']['infoHash'], "deadbeef1234567890")
+            self.assertEqual(signals[0]['chosen_stream']['fileIdx'], 2)
+
+            # 3. StreamDetailsDialog progress bar calculation
+            pp = MagicMock()
+            pp._stream_data = {'movie': movie, 'provider': 'torrent'}
+            pp.get_root.return_value = None
+            dialog = StreamDetailsDialog(parent_window=None, player_page=pp)
+
+            mock_streamer = MagicMock()
+            mock_streamer.is_running = True
+            mock_streamer.get_status.return_value = {
+                'progress': 0.5,
+                'total_done': 500 * 1024 * 1024,
+                'total_size': 1000 * 1024 * 1024,
+                'download_rate': 2 * 1024 * 1024,
+                'upload_rate': 512 * 1024,
+                'seeds': 25,
+                'peers': 10,
+                'video_file_name': 'movie.1080p.mkv',
+            }
+
+            from unittest.mock import patch
+            with patch('kinema.ui.stream_dialogs.get_torrent_streamer', return_value=mock_streamer):
+                dialog._update_stats()
+                self.assertEqual(dialog._progress_bar.get_fraction(), 0.5)
+                self.assertIn("500.0 / 1000.0 MB", dialog._progress_val.get_text())
+                self.assertEqual(dialog._file_val.get_text(), 'movie.1080p.mkv')
+            dialog.close()
+
+        finally:
+            DatabaseService._instance = orig_instance
+            if os.path.exists(temp_db_path):
+                os.remove(temp_db_path)
+
 
 if __name__ == '__main__':
     unittest.main()

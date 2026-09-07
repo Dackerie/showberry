@@ -11,18 +11,32 @@ run:
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+	rm -rf build dist *.egg-info .pytest_cache
+
+test:
+	$(PYTHON) -m pytest tests/ -v
+
+build:
+	$(PYTHON) -m build --wheel --no-isolation
+
+pkg:
+	makepkg -si
+
+flatpak:
+	flatpak-builder --user --install --force-clean build-dir data/com.github.kinema.Kinema.json
 
 lint:
-	$(PYTHON) -m flake8 kinema/
-	$(PYTHON) -m py_compile kinema/main.py
+	$(PYTHON) -m py_compile kinema/*.py kinema/*/*.py
 
 schema:
-	glib-compile-schemas data/
+	glib-compile-schemas --strict data/
 
 help:
 	@echo "Available targets:"
-	@echo "  install  - Install the app in development mode"
-	@echo "  run      - Run the app directly"
-	@echo "  clean    - Remove Python cache files"
-	@echo "  lint     - Run linter on the code"
-	@echo "  schema   - Compile GSettings schemas"
+	@echo "  run      - Run the app directly with local schema"
+	@echo "  test     - Run automated test suite"
+	@echo "  build    - Build Python wheel"
+	@echo "  pkg      - Build & install native Arch package via makepkg"
+	@echo "  flatpak  - Build & install user Flatpak bundle"
+	@echo "  clean    - Remove build artifacts and Python cache"
+	@echo "  schema   - Compile GSettings schemas strictly"
