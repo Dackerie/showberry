@@ -9,24 +9,24 @@ from gi.repository import Gtk, Adw
 
 Adw.init()
 
-from kinema.window import KinemaWindow
-from kinema.ui.watchlist_page import WatchlistPage
-from kinema.ui.movie_page import MoviePage
-from kinema.ui.player_page import PlayerPage
+from showberry.window import ShowberryWindow, KinemaWindow
+from showberry.ui.watchlist_page import WatchlistPage
+from showberry.ui.movie_page import MoviePage
+from showberry.ui.player_page import PlayerPage
 
 
 class TestUINavigation(unittest.TestCase):
 
     def setUp(self):
         super().setUp()
-        from kinema.services.settings import SettingsService
+        from showberry.services.settings import SettingsService
         s = SettingsService()
         s.preferred_torrent_quality = '1080p'
         s.max_torrent_size_gb = 0
         s.torrent_cache_size_gb = 10
 
     def tearDown(self):
-        from kinema.services.settings import SettingsService
+        from showberry.services.settings import SettingsService
         s = SettingsService()
         s.preferred_torrent_quality = '1080p'
         s.max_torrent_size_gb = 0
@@ -34,7 +34,7 @@ class TestUINavigation(unittest.TestCase):
         super().tearDown()
 
     def test_navigation_flow(self):
-        win = KinemaWindow()
+        win = ShowberryWindow()
         nav = win._nav_view
         self.assertEqual(nav.get_visible_page().get_tag(), 'main')
 
@@ -57,7 +57,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_more_like_this_navigation(self):
         """Clicking a movie/series card in 'More Like This' pushes new detail page onto navigation stack."""
-        win = KinemaWindow()
+        win = ShowberryWindow()
         nav = win._nav_view
 
         win._on_movie_selected(None, {
@@ -124,7 +124,7 @@ class TestUINavigation(unittest.TestCase):
         self.assertFalse(pp._cursor_hidden)
 
     def test_mpv_gl_proc_address_resolution(self):
-        from kinema.ui.player_page import get_proc_address_wrapper
+        from showberry.ui.player_page import get_proc_address_wrapper
         proc = get_proc_address_wrapper()
         self.assertTrue(callable(proc))
         # Verify it resolves standard core OpenGL symbols on Wayland / EGL / GLX without raising AttributeError
@@ -185,7 +185,7 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(mp._watchlist_btn.get_icon_name(), 'non-starred-symbolic')
 
     def test_torrent_selection_ranking(self):
-        from kinema.providers.torrent import TorrentProvider
+        from showberry.providers.torrent import TorrentProvider
         tp = TorrentProvider()
         streams = [
             {'infoHash': 'hash1', 'title': 'Movie 720p 👤 10', 'quality': '720p', 'seeds': 10},
@@ -212,7 +212,7 @@ class TestUINavigation(unittest.TestCase):
         controls._on_sub_timing_adjusted(0.5, "Subtitle delayed by +0.5s")
 
     def test_search_page_status_pages(self):
-        from kinema.ui.search_page import SearchPage
+        from showberry.ui.search_page import SearchPage
         sp = SearchPage()
         # Initial empty state
         self.assertTrue(sp._empty_state.get_visible())
@@ -237,7 +237,7 @@ class TestUINavigation(unittest.TestCase):
         self.assertFalse(sp._empty_state.get_visible())
 
     def test_provider_manager_fastest_first(self):
-        from kinema.providers.base import ProviderManager
+        from showberry.providers.base import ProviderManager
         providers = ProviderManager.get_providers()
         names = [p.name for p in providers]
         self.assertEqual(names[0], 'VidEasy')
@@ -254,14 +254,14 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(mp._tagline_label.get_text(), "")
 
     def test_library_page_instantiation(self):
-        from kinema.ui.library_page import LibraryPage
+        from showberry.ui.library_page import LibraryPage
         lp = LibraryPage()
         self.assertIsNotNone(lp)
         lp.refresh()
 
     def test_library_page_grid_alignment(self):
         """Watchlist FlowBox must align to START with matching margins to Continue Watching."""
-        from kinema.ui.library_page import LibraryPage
+        from showberry.ui.library_page import LibraryPage
         lp = LibraryPage()
         self.assertEqual(lp._cw_box.get_halign(), Gtk.Align.START)
         self.assertEqual(lp._wl_flowbox.get_halign(), Gtk.Align.START)
@@ -269,21 +269,21 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(lp._cw_box.get_margin_end(), lp._wl_flowbox.get_margin_end())
 
     def test_movies_page_instantiation(self):
-        from kinema.ui.movies_page import MoviesPage
+        from showberry.ui.movies_page import MoviesPage
         mp = MoviesPage()
         self.assertIsNotNone(mp)
         self.assertIsNotNone(mp._search_entry)
         self.assertIsNotNone(mp._flowbox)
 
     def test_series_page_instantiation(self):
-        from kinema.ui.series_page import SeriesPage
+        from showberry.ui.series_page import SeriesPage
         sp = SeriesPage()
         self.assertIsNotNone(sp)
         self.assertIsNotNone(sp._search_entry)
         self.assertIsNotNone(sp._flowbox)
 
     def test_movie_card_hover_play_icon(self):
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
         item = {'id': 278, 'title': 'The Shawshank Redemption', 'media_type': 'movie'}
         card = MovieCard(item)
         self.assertIsNotNone(card._play_overlay)
@@ -298,7 +298,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_play_movie_signal(self):
         """Clicking the play overlay emits play-movie with correct stream_data."""
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
         item = {'id': 278, 'title': 'The Shawshank Redemption', 'media_type': 'movie'}
         card = MovieCard(item)
         received = []
@@ -312,7 +312,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_remove_item_signal(self):
         """Delete button emits remove-item with correct tmdb_id."""
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
         item = {'id': 42, 'title': 'Test Movie', 'media_type': 'movie'}
         card = MovieCard(item, show_remove_button=True)
         received_ids = []
@@ -323,7 +323,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_network_badge_tv(self):
         """TV card with 'network' field gets a network badge."""
-        from kinema.ui.movie_card import _get_badge_label
+        from showberry.ui.movie_card import _get_badge_label
         item = {'media_type': 'tv', 'network': 'Netflix'}
         self.assertEqual(_get_badge_label(item), 'NETFLIX')
 
@@ -338,7 +338,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_in_theaters_badge(self):
         """Movies released within 60 days show IN THEATERS badge."""
-        from kinema.ui.movie_card import _get_badge_label
+        from showberry.ui.movie_card import _get_badge_label
         from datetime import datetime, timedelta
         recent = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
         item = {'media_type': 'movie', 'release_date': recent}
@@ -350,7 +350,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_runtime_display(self):
         """_format_runtime returns correct string."""
-        from kinema.ui.movie_card import _format_runtime
+        from showberry.ui.movie_card import _format_runtime
         self.assertEqual(_format_runtime(139), '2h 19m')
         self.assertEqual(_format_runtime(60), '1h')
         self.assertEqual(_format_runtime(45), '45m')
@@ -359,7 +359,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_tv_no_series_badge(self):
         """TV cards no longer show a 'SERIES' badge (deprecated)."""
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
         item = {'id': 1399, 'name': 'Game of Thrones', 'media_type': 'tv', 'first_air_date': '2011-04-17'}
         card = MovieCard(item)
         # The card should instantiate without errors
@@ -367,8 +367,8 @@ class TestUINavigation(unittest.TestCase):
 
     def test_library_page_remove_item(self):
         """LibraryPage remove-item deletes from DB and removes card from CW row."""
-        from kinema.ui.library_page import LibraryPage
-        from kinema.services.database import DatabaseService
+        from showberry.ui.library_page import LibraryPage
+        from showberry.services.database import DatabaseService
         db = DatabaseService()
         # Add a fake history item
         db.update_watch_progress(
@@ -388,7 +388,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movies_page_play_movie_signal(self):
         """MoviesPage forwards play-movie from card to parent."""
-        from kinema.ui.movies_page import MoviesPage
+        from showberry.ui.movies_page import MoviesPage
         mp = MoviesPage()
         self.assertIsNotNone(mp)
         # Verify play-movie signal is defined
@@ -401,7 +401,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_series_page_play_movie_signal(self):
         """SeriesPage forwards play-movie from card to parent."""
-        from kinema.ui.series_page import SeriesPage
+        from showberry.ui.series_page import SeriesPage
         sp = SeriesPage()
         received = []
         sp.connect('play-movie', lambda p, d: received.append(d))
@@ -411,7 +411,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_page_ends_at_calculation(self):
         """MoviePage _format_runtime_ends_at returns correct format."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage(movie={'id': 278, 'title': 'Test'})
         result = mp._format_runtime_ends_at(139)
         self.assertIn('2h 19m', result)
@@ -419,7 +419,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movies_page_infinite_scroll_attributes(self):
         """MoviesPage has pagination attributes."""
-        from kinema.ui.movies_page import MoviesPage
+        from showberry.ui.movies_page import MoviesPage
         mp = MoviesPage()
         self.assertTrue(hasattr(mp, '_current_page'))
         self.assertTrue(hasattr(mp, '_is_loading'))
@@ -428,7 +428,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_series_page_infinite_scroll_attributes(self):
         """SeriesPage has pagination attributes."""
-        from kinema.ui.series_page import SeriesPage
+        from showberry.ui.series_page import SeriesPage
         sp = SeriesPage()
         self.assertTrue(hasattr(sp, '_current_page'))
         self.assertTrue(hasattr(sp, '_is_loading'))
@@ -436,8 +436,8 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(hasattr(sp, '_seen_ids'))
 
     def test_window_play_movie_wired(self):
-        """KinemaWindow connects play-movie on all pages."""
-        win = KinemaWindow()
+        """ShowberryWindow connects play-movie on all pages."""
+        win = ShowberryWindow()
         # Simulate direct card play from library
         stream_data = {'movie': {'id': 278, 'title': 'Test'}, 'media_type': 'movie', 'start_position': 0}
         # Should not raise; player page should be pushed
@@ -447,7 +447,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_player_page_session_invalidation(self):
         """Closing player invalidates session ID, rendering stale resolver callbacks inert."""
-        from kinema.ui.player_page import PlayerPage
+        from showberry.ui.player_page import PlayerPage
         player = PlayerPage()
         initial_session = player._session_id
 
@@ -475,7 +475,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_tmdb_details_cache(self):
         """TMDBClient caches get_movie_details and get_tv_details in _details_cache."""
-        from kinema.services.tmdb import TMDBClient
+        from showberry.services.tmdb import TMDBClient
         client = TMDBClient()
         self.assertTrue(hasattr(client, '_details_cache'))
         client._details_cache['movie_123'] = {'id': 123, 'title': 'Cached Movie'}
@@ -486,15 +486,15 @@ class TestUINavigation(unittest.TestCase):
 
     def test_pages_footer_spinner_present(self):
         """Both MoviesPage and SeriesPage have footer spinners for infinite scrolling."""
-        from kinema.ui.movies_page import MoviesPage
-        from kinema.ui.series_page import SeriesPage
+        from showberry.ui.movies_page import MoviesPage
+        from showberry.ui.series_page import SeriesPage
         mp = MoviesPage()
         sp = SeriesPage()
         self.assertTrue(hasattr(mp, '_footer_spinner'))
         self.assertTrue(hasattr(sp, '_footer_spinner'))
 
     def test_window_actions_and_hamburger_menu(self):
-        win = KinemaWindow()
+        win = ShowberryWindow()
         self.assertTrue(win.has_action('preferences'))
         self.assertTrue(win.has_action('clear_history'))
         self.assertTrue(win.has_action('about'))
@@ -502,7 +502,7 @@ class TestUINavigation(unittest.TestCase):
     def test_is_stream_alive(self):
         """is_stream_alive correctly validates stream accessibility and rejects 429/403/404."""
         from unittest.mock import patch, MagicMock
-        from kinema.providers.base import is_stream_alive, StreamResult
+        from showberry.providers.base import is_stream_alive, StreamResult
 
         res = StreamResult(url='https://example.com/stream.m3u8')
 
@@ -533,7 +533,7 @@ class TestUINavigation(unittest.TestCase):
     def test_provider_manager_skips_unhealthy_streams(self):
         """ProviderManager automatically skips rate-limited/dead streams and cascades to next provider."""
         from unittest.mock import patch, MagicMock
-        from kinema.providers.base import ProviderManager, StreamResult, BaseProvider
+        from showberry.providers.base import ProviderManager, StreamResult, BaseProvider
 
         class BadProvider(BaseProvider):
             name = "BadProvider"
@@ -547,8 +547,8 @@ class TestUINavigation(unittest.TestCase):
             def get_stream_url(self, tmdb_id, season=None, episode=None):
                 return StreamResult(url="https://good.com/200.m3u8", provider_name="GoodProvider")
 
-        with patch('kinema.providers.base.get_all_providers', return_value=[BadProvider(), GoodProvider()]):
-            with patch('kinema.providers.base.is_stream_alive') as mock_alive:
+        with patch('showberry.providers.base.get_all_providers', return_value=[BadProvider(), GoodProvider()]):
+            with patch('showberry.providers.base.is_stream_alive') as mock_alive:
                 # First stream is dead/429, second stream is alive
                 mock_alive.side_effect = [False, True]
                 res = ProviderManager.resolve_stream(123)
@@ -558,7 +558,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_mpv_widget_deactivate_and_activate(self):
         """MpvWidget deactivate pauses, stops, and disables rendering callbacks without deadlock."""
-        from kinema.ui.player_page import MpvWidget
+        from showberry.ui.player_page import MpvWidget
         widget = MpvWidget()
         self.assertTrue(widget._is_active)
 
@@ -572,7 +572,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_mpv_widget_consecutive_playback_rendering(self):
         """MpvWidget recovers gracefully across playback cycles without raising GLError(err=1282)."""
-        from kinema.ui.player_page import MpvWidget
+        from showberry.ui.player_page import MpvWidget
         from OpenGL import GL
 
         widget = MpvWidget()
@@ -595,7 +595,7 @@ class TestUINavigation(unittest.TestCase):
 
         with unittest.mock.patch.object(widget, 'make_current'), \
              unittest.mock.patch.object(widget, 'get_context', return_value='gl-context-2'), \
-             unittest.mock.patch('kinema.ui.player_page.MpvRenderContext') as mock_render_cls:
+             unittest.mock.patch('showberry.ui.player_page.MpvRenderContext') as mock_render_cls:
             mock_new_ctx = unittest.mock.MagicMock()
             mock_render_cls.return_value = mock_new_ctx
 
@@ -610,7 +610,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_volume_zero_clamping_and_mute_slider(self):
         """Volume cleanly clamps at 0% without wrapping to 100%, and mute slider updates correctly."""
-        from kinema.ui.player_page import MpvWidget, PlayerControls
+        from showberry.ui.player_page import MpvWidget, PlayerControls
 
         widget = MpvWidget()
         widget.set_volume(0)
@@ -641,7 +641,7 @@ class TestUINavigation(unittest.TestCase):
     def test_movie_card_focusability_and_keyboard_activation(self):
         """MovieCard is focusable and handles Return (details), Space/P (play), and Delete (remove)."""
         from gi.repository import Gdk
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
 
         card = MovieCard({'id': 999, 'title': 'Test Movie'}, show_remove_button=True)
         self.assertTrue(card.get_focusable())
@@ -670,10 +670,10 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(removed, [999])
 
     def test_window_shortcuts_and_menu_items(self):
-        """KinemaWindow includes shortcuts and tab navigation actions, and hamburger menu has Keyboard Shortcuts."""
-        from kinema.window import KinemaWindow
+        """ShowberryWindow includes shortcuts and tab navigation actions, and hamburger menu has Keyboard Shortcuts."""
+        from showberry.window import ShowberryWindow, KinemaWindow
 
-        win = KinemaWindow()
+        win = ShowberryWindow()
         self.assertTrue(win.has_action('shortcuts'))
         self.assertTrue(win.has_action('search'))
         self.assertTrue(win.has_action('tab_library'))
@@ -692,16 +692,16 @@ class TestUINavigation(unittest.TestCase):
 
     def test_shortcuts_window_multi_section(self):
         """ShortcutsWindow is split into two sections with default size (680, 480) and max_height=10."""
-        from kinema.window import KinemaWindow
-        win = KinemaWindow()
+        from showberry.window import ShowberryWindow, KinemaWindow
+        win = ShowberryWindow()
         # Verify method runs without error and presents window
         win._show_shortcuts_window()
         self.assertTrue(True)
 
     def test_movies_page_grid_arrow_navigation(self):
         """MoviesPage handles 2D grid arrow navigation, with Up returning to search entry on row 0."""
-        from kinema.ui.movies_page import MoviesPage
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movies_page import MoviesPage
+        from showberry.ui.movie_card import MovieCard
 
         mp = MoviesPage()
         for i in range(12):
@@ -724,8 +724,8 @@ class TestUINavigation(unittest.TestCase):
 
     def test_library_page_focus_navigation(self):
         """LibraryPage focus_first focuses CW card, Down moves to WL, Up from WL moves back to CW."""
-        from kinema.ui.library_page import LibraryPage
-        from kinema.services.database import DatabaseService
+        from showberry.ui.library_page import LibraryPage
+        from showberry.services.database import DatabaseService
 
         db = DatabaseService()
         with db._get_connection() as conn:
@@ -751,7 +751,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_page_backdrop_dimensions(self):
         """MoviePage backdrop has responsive height scaling, can_shrink True, and START alignment."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage(movie={'id': 1, 'title': 'Test'})
         self.assertTrue(mp._backdrop.get_can_shrink())
         # Wide screen measurement (> 1400px) scales height up to ~450px
@@ -766,7 +766,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_play_overlay_and_alignment(self):
         """MovieCard play overlay is 64x64 with 34px icon, card has fixed 196px width without stretching."""
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
         card = MovieCard({'id': 1, 'title': 'Test'})
         w, h = card._play_overlay.get_size_request()
         self.assertEqual(w, 64)
@@ -778,14 +778,14 @@ class TestUINavigation(unittest.TestCase):
 
     def test_player_page_osd_pill_margin(self):
         """OSD notification pill is positioned >= 90px from top to clear top bar."""
-        from kinema.ui.player_page import PlayerPage
+        from showberry.ui.player_page import PlayerPage
         player = PlayerPage()
         self.assertGreaterEqual(player._osd_pill.get_margin_top(), 90)
 
     def test_flowbox_homogeneous_setting(self):
         """MoviesPage and SeriesPage flowboxes have set_homogeneous(True)."""
-        from kinema.ui.movies_page import MoviesPage
-        from kinema.ui.series_page import SeriesPage
+        from showberry.ui.movies_page import MoviesPage
+        from showberry.ui.series_page import SeriesPage
         mp = MoviesPage()
         sp = SeriesPage()
         self.assertTrue(mp._flowbox.get_homogeneous())
@@ -793,7 +793,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_card_enrichment(self):
         """_update_enriched_ui updates TV network badge and runtime labels."""
-        from kinema.ui.movie_card import MovieCard
+        from showberry.ui.movie_card import MovieCard
         tv_card = MovieCard({'id': 94997, 'media_type': 'tv', 'title': 'House of the Dragon'})
         self.assertFalse(tv_card._badge.get_visible())
 
@@ -804,21 +804,21 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_page_responsive_min_width(self):
         """MoviePage min width is <= 360px to support narrow mobile screens."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage({'id': 100, 'title': 'Responsive Mobile Test Movie', 'runtime': 120})
         min_w, _, _, _ = mp.measure(Gtk.Orientation.HORIZONTAL, -1)
         self.assertLessEqual(min_w, 360)
 
     def test_movie_page_instant_directors(self):
         """Director label renders instantly at 0ms if directors present in movie data."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage({'id': 550, 'title': 'Fight Club', 'directors': ['David Fincher']})
         self.assertTrue(mp._director_label.get_visible())
         self.assertEqual(mp._director_label.get_text(), 'Directed by David Fincher')
 
     def test_movie_page_cast_and_recommendations(self):
         """MoviePage renders cast chips and recommended cards when present."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage({'id': 100, 'title': 'Test Movie'})
         self.assertFalse(mp._cast_box.get_visible())
         self.assertFalse(mp._recs_box.get_visible())
@@ -840,15 +840,15 @@ class TestUINavigation(unittest.TestCase):
         self.assertIsNotNone(mp._recs_row.get_first_child())
 
     def test_window_mobile_switcher_bar(self):
-        """KinemaWindow includes Adw.ViewSwitcherBar bound to main stack for mobile view."""
-        win = KinemaWindow()
+        """ShowberryWindow includes Adw.ViewSwitcherBar bound to main stack for mobile view."""
+        win = ShowberryWindow()
         self.assertIsNotNone(win._switcher_bar)
         self.assertIsInstance(win._switcher_bar, Adw.ViewSwitcherBar)
         self.assertEqual(win._switcher_bar.get_stack(), win._view_stack)
 
     def test_movie_page_breakpoint_bin_size_request(self):
         """MoviePage breakpoint bin sets explicit size request to prevent GTK warnings."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage({'id': 100, 'title': 'Test Movie'})
         w, h = mp._breakpoint_bin.get_size_request()
         self.assertGreaterEqual(w, 320)
@@ -893,7 +893,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_page_gdk_key_shortcuts(self):
         """MoviePage key pressed handler must use Gdk without NameError."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         from gi.repository import Gdk
         mp = MoviePage({'id': 100, 'title': 'Test Movie'})
         # Trigger _on_key_pressed with Gdk.KEY_space, Gdk.KEY_p, Gdk.KEY_w, Gdk.KEY_Escape
@@ -917,7 +917,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_torrent_streamer_safe_stop_and_status(self):
         """TorrentStreamer get_status and stop handle None handles gracefully without crashes."""
-        from kinema.services.torrent import get_torrent_streamer
+        from showberry.services.torrent import get_torrent_streamer
         streamer = get_torrent_streamer()
         st = streamer.get_status()
         self.assertIsInstance(st, dict)
@@ -929,7 +929,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_is_stream_alive_extended_status(self):
         """is_stream_alive accepts localhost streams and handles valid status codes."""
-        from kinema.providers.base import is_stream_alive, StreamResult
+        from showberry.providers.base import is_stream_alive, StreamResult
         local_res = StreamResult(url='http://127.0.0.1:8080/stream', quality='1080p')
         self.assertTrue(is_stream_alive(local_res))
 
@@ -949,7 +949,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_settings_torrent_preferences(self):
         """SettingsService properly handles preferred_torrent_quality, max_torrent_size_gb, torrent_cache_size_gb."""
-        from kinema.services.settings import SettingsService
+        from showberry.services.settings import SettingsService
         s = SettingsService()
         s.preferred_torrent_quality = '720p'
         self.assertEqual(s.preferred_torrent_quality, '720p')
@@ -960,8 +960,8 @@ class TestUINavigation(unittest.TestCase):
 
     def test_torrent_size_limit_and_quality_selection(self):
         """TorrentProvider._select_best_stream penalizes streams exceeding max size and favors preferred quality."""
-        from kinema.providers.torrent import TorrentProvider
-        from kinema.services.settings import SettingsService
+        from showberry.providers.torrent import TorrentProvider
+        from showberry.services.settings import SettingsService
         settings = SettingsService()
         tp = TorrentProvider()
 
@@ -990,7 +990,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_watchlist_toggled_signal(self):
         """MoviePage emits watchlist-toggled when watchlist button is toggled."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         mp = MoviePage({'id': 12345, 'title': 'Test Movie', 'media_type': 'movie'})
         if mp._db.is_in_watchlist(12345):
             mp._db.remove_from_watchlist(12345)
@@ -1008,7 +1008,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_movie_page_navigation_traversal(self):
         """MoviePage arrow handlers transition focus properly."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         from gi.repository import Gdk
         mp = MoviePage({'id': 12345, 'title': 'Test Movie', 'media_type': 'movie'})
         handled = mp._on_actions_key_pressed(None, Gdk.KEY_Down, 0, 0)
@@ -1016,7 +1016,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_application_activation_and_gschema_keys(self):
         """KinemaApplication initializes, validates gschema keys including is-maximized, and do_activate works."""
-        from kinema.application import KinemaApplication
+        from showberry.application import KinemaApplication
         app = KinemaApplication()
         self.assertIsNotNone(app.settings)
         schema = app.settings.get_property('settings-schema')
@@ -1046,7 +1046,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_library_page_debounced_schedule_refresh(self):
         """LibraryPage debounces rapid schedule_refresh calls."""
-        from kinema.ui.library_page import LibraryPage
+        from showberry.ui.library_page import LibraryPage
         lp = LibraryPage()
         lp.schedule_refresh(delay_ms=200)
         self.assertIsNotNone(lp._refresh_timer)
@@ -1059,7 +1059,7 @@ class TestUINavigation(unittest.TestCase):
 
     def test_details_page_up_down_focus_navigation(self):
         """MoviePage allows navigating Up to watchlist_btn and Down back to play_button."""
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
         from gi.repository import Gdk
         mp = MoviePage({'id': 5555, 'title': 'Test Movie', 'media_type': 'movie'})
         # Press Up from actions row
@@ -1086,8 +1086,8 @@ class TestUINavigation(unittest.TestCase):
 
     def test_torrent_stream_choices_and_dialogs(self):
         """TorrentProvider.fetch_stream_choices ranks streams, and dialogs instantiate cleanly."""
-        from kinema.providers.torrent import TorrentProvider
-        from kinema.ui.stream_dialogs import TorrentStreamChooserDialog, StreamDetailsDialog
+        from showberry.providers.torrent import TorrentProvider
+        from showberry.ui.stream_dialogs import TorrentStreamChooserDialog, StreamDetailsDialog
 
         tp = TorrentProvider()
         test_streams = [
@@ -1097,7 +1097,7 @@ class TestUINavigation(unittest.TestCase):
         sorted_streams = sorted(test_streams, key=tp._calculate_stream_score, reverse=True)
         self.assertEqual(sorted_streams[0]['infoHash'], 'h2')
 
-        win = KinemaWindow()
+        win = ShowberryWindow()
         movie = {'id': 999, 'title': 'Test Dialog Movie'}
         chooser = TorrentStreamChooserDialog(parent_window=win, movie_data=movie)
         self.assertIsNotNone(chooser)
@@ -1114,10 +1114,10 @@ class TestUINavigation(unittest.TestCase):
         """Showberry window branding and asynchronous torrent stream switching."""
         from unittest.mock import patch, MagicMock
         from gi.repository import Gdk
-        from kinema.ui.movie_page import MoviePage
+        from showberry.ui.movie_page import MoviePage
 
         # 1. Branding
-        win = KinemaWindow()
+        win = ShowberryWindow()
         self.assertEqual(win.get_title(), "Showberry")
 
         # 2. MoviePage stream selection emits play-movie with chosen_stream
@@ -1141,7 +1141,7 @@ class TestUINavigation(unittest.TestCase):
         mock_streamer.start_stream.return_value = 'http://127.0.0.1:8888/stream'
 
         with patch('threading.Thread') as mock_thread, \
-             patch('kinema.services.torrent.get_torrent_streamer', return_value=mock_streamer):
+             patch('showberry.services.torrent.get_torrent_streamer', return_value=mock_streamer):
             mock_thread_instance = MagicMock()
             mock_thread.return_value = mock_thread_instance
 
@@ -1193,9 +1193,9 @@ class TestUINavigation(unittest.TestCase):
         """Watch progress stores torrent info_hash and resumes exact stream release."""
         import tempfile
         import os
-        from kinema.services.database import DatabaseService
-        from kinema.ui.movie_page import MoviePage
-        from kinema.ui.stream_dialogs import StreamDetailsDialog
+        from showberry.services.database import DatabaseService
+        from showberry.ui.movie_page import MoviePage
+        from showberry.ui.stream_dialogs import StreamDetailsDialog
         from unittest.mock import MagicMock
 
         with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
@@ -1263,7 +1263,7 @@ class TestUINavigation(unittest.TestCase):
             }
 
             from unittest.mock import patch
-            with patch('kinema.ui.stream_dialogs.get_torrent_streamer', return_value=mock_streamer):
+            with patch('showberry.ui.stream_dialogs.get_torrent_streamer', return_value=mock_streamer):
                 dialog._update_stats()
                 self.assertEqual(dialog._progress_bar.get_fraction(), 0.5)
                 self.assertIn("500.0 / 1000.0 MB", dialog._progress_val.get_text())

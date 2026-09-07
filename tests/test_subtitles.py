@@ -1,7 +1,7 @@
 """Tests for SubtitleService."""
 
 import unittest
-from kinema.services.subtitles import SubtitleService
+from showberry.services.subtitles import SubtitleService
 
 
 class TestSubtitleService(unittest.TestCase):

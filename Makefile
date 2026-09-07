@@ -6,7 +6,7 @@ install:
 	$(PYTHON) -m pip install -e .
 
 run:
-	GSETTINGS_SCHEMA_DIR=data $(PYTHON) -m kinema.main
+	GSETTINGS_SCHEMA_DIR=data $(PYTHON) -m showberry.main
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -23,10 +23,10 @@ pkg:
 	makepkg -si
 
 flatpak:
-	flatpak-builder --user --install --force-clean build-dir data/com.github.kinema.Kinema.json
+	flatpak-builder --user --install --force-clean build-dir data/com.github.showberry.Showberry.json
 
 lint:
-	$(PYTHON) -m py_compile kinema/*.py kinema/*/*.py
+	$(PYTHON) -m py_compile showberry/*.py showberry/*/*.py
 
 schema:
 	glib-compile-schemas --strict data/

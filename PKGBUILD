@@ -38,13 +38,13 @@ package() {
     python -m installer --destdir="$pkgdir" dist/*.whl
 
     # Desktop entry
-    install -Dm644 data/com.github.kinema.Kinema.desktop "$pkgdir/usr/share/applications/com.github.kinema.Kinema.desktop"
+    install -Dm644 data/com.github.showberry.Showberry.desktop "$pkgdir/usr/share/applications/com.github.showberry.Showberry.desktop"
 
     # AppStream Metainfo
-    install -Dm644 data/com.github.kinema.Kinema.metainfo.xml "$pkgdir/usr/share/metainfo/com.github.kinema.Kinema.metainfo.xml"
+    install -Dm644 data/com.github.showberry.Showberry.metainfo.xml "$pkgdir/usr/share/metainfo/com.github.showberry.Showberry.metainfo.xml"
 
     # GSettings Schema
-    install -Dm644 data/com.github.kinema.Kinema.gschema.xml "$pkgdir/usr/share/glib-2.0/schemas/com.github.kinema.Kinema.gschema.xml"
+    install -Dm644 data/com.github.showberry.Showberry.gschema.xml "$pkgdir/usr/share/glib-2.0/schemas/com.github.showberry.Showberry.gschema.xml"
 
     # Style CSS
     install -Dm644 data/style.css "$pkgdir/usr/share/showberry/style.css"
