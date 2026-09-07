@@ -57,25 +57,7 @@
         }
       ]
     },
-    {
-      "name": "python3-dependencies",
-      "buildsystem": "simple",
-      "build-commands": [
-        "pip3 install --no-index --find-links=\"file://${PWD}\" --prefix=/app python-mpv PyOpenGL curl_cffi pycryptodome requests"
-      ],
-      "sources": [
-        {
-          "type": "file",
-          "url": "https://files.pythonhosted.org/packages/source/p/python-mpv/python-mpv-1.0.7.tar.gz",
-          "sha256": "443c5b8b933a39e80f2d56a29d5b49749ef154b2006ff2d250c6ca716b509f6e"
-        },
-        {
-          "type": "file",
-          "url": "https://files.pythonhosted.org/packages/source/P/PyOpenGL/PyOpenGL-3.1.7.tar.gz",
-          "sha256": "62eb74aa2d6b38c0379201f11c750ef944b209a3fc9187313a7c644efb5ef6bc"
-        }
-      ]
-    },
+    "python3-dependencies.json",
     {
       "name": "showberry",
       "buildsystem": "simple",
@@ -91,7 +73,7 @@
         {
           "type": "archive",
           "url": "https://github.com/Dackerie/showberry/archive/refs/tags/v0.1.0.tar.gz",
-          "sha256": "011ff4ce5b8b2b9c8f8210d4ef1b94df2b0f54e9146eef6fd06ca284a6da5f82"
+          "sha256": "5eba138636ecd5adbd7003ea10677c91e3cf7aab46532ebb2a8a24da36da1b6d"
         }
       ]
     }
