@@ -192,6 +192,9 @@ class MoviePage(Adw.NavigationPage):
         self._watchlist_btn.set_tooltip_text("Toggle Watchlist")
         self._update_watchlist_btn_state()
         self._watchlist_btn.connect('clicked', self._on_watchlist_toggled)
+        wl_key = Gtk.EventControllerKey.new()
+        wl_key.connect('key-pressed', self._on_watchlist_key_pressed)
+        self._watchlist_btn.add_controller(wl_key)
         header_bar.pack_end(self._watchlist_btn)
 
         # Scrollable content
@@ -331,6 +334,13 @@ class MoviePage(Adw.NavigationPage):
         self._provider_dropdown.set_size_request(160, -1)
         self._provider_box.append(self._provider_dropdown)
         self._actions_row.append(self._provider_box)
+
+        # Select specific torrent stream button
+        self._select_stream_btn = Gtk.Button.new_from_icon_name('view-list-bullet-symbolic')
+        self._select_stream_btn.add_css_class('flat')
+        self._select_stream_btn.set_tooltip_text("Browse and select torrent stream")
+        self._select_stream_btn.connect('clicked', self._on_select_stream_clicked)
+        self._actions_row.append(self._select_stream_btn)
 
         self._details.append(self._actions_row)
 
@@ -606,8 +616,19 @@ class MoviePage(Adw.NavigationPage):
 
         self._recs_box.set_visible(True)
 
-    def _on_actions_key_pressed(self, controller, keyval, keycode, state):
+    def _on_watchlist_key_pressed(self, controller, keyval, keycode, state):
         if keyval == Gdk.KEY_Down:
+            if hasattr(self, '_play_button') and self._play_button.get_visible():
+                self._play_button.grab_focus()
+                return True
+        return False
+
+    def _on_actions_key_pressed(self, controller, keyval, keycode, state):
+        if keyval == Gdk.KEY_Up:
+            if hasattr(self, '_watchlist_btn') and self._watchlist_btn.get_visible():
+                self._watchlist_btn.grab_focus()
+                return True
+        elif keyval == Gdk.KEY_Down:
             if self._media_type == 'tv' and hasattr(self, '_season_dropdown') and self._tv_box.get_visible():
                 self._season_dropdown.grab_focus()
                 return True
@@ -995,6 +1016,70 @@ class MoviePage(Adw.NavigationPage):
             'season': season,
             'episode': episode,
             'start_position': start_pos,
+        }
+        self.emit('play-movie', stream_data)
+
+    def _on_select_stream_clicked(self, button):
+        from kinema.ui.stream_dialogs import TorrentStreamChooserDialog
+        window = self.get_root()
+        season = None
+        episode = None
+        if self._media_type == 'tv':
+            sel = self._episodes_listbox.get_selected_row() if hasattr(self, '_episodes_listbox') else None
+            if sel and hasattr(sel, '_episode_data'):
+                episode = sel._episode_data.get('episode_number')
+                season = getattr(sel, '_season_num', 1)
+            else:
+                season = 1
+                episode = 1
+
+        dialog = TorrentStreamChooserDialog(
+            parent_window=window,
+            movie_data=self._movie,
+            season=season,
+            episode=episode,
+            on_stream_selected=self._on_custom_stream_selected
+        )
+        dialog.present()
+
+    def _on_custom_stream_selected(self, stream_info: Dict[str, Any]):
+        """Stream a specific chosen torrent."""
+        info_hash = stream_info.get('infoHash')
+        if not info_hash:
+            return
+
+        from kinema.services.torrent import get_torrent_streamer
+        season = None
+        episode = None
+        if self._media_type == 'tv':
+            sel = self._episodes_listbox.get_selected_row() if hasattr(self, '_episodes_listbox') else None
+            if sel and hasattr(sel, '_episode_data'):
+                episode = sel._episode_data.get('episode_number')
+                season = getattr(sel, '_season_num', 1)
+            else:
+                season = 1
+                episode = 1
+
+        streamer = get_torrent_streamer()
+        http_url = streamer.start_stream(
+            info_hash,
+            torrent_url=stream_info.get('torrent_url'),
+            file_idx=stream_info.get('fileIdx'),
+            season=season,
+            episode=episode,
+        )
+        if not http_url:
+            return
+
+        stream_data = {
+            'movie': self._movie,
+            'provider': 'torrent',
+            'media_type': self._media_type,
+            'season': season,
+            'episode': episode,
+            'start_position': 0,
+            'direct_url': http_url,
+            'stream_info': stream_info,
         }
         self.emit('play-movie', stream_data)
 

@@ -6,7 +6,7 @@ from typing import Dict, Any
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GObject
+from gi.repository import Gtk, Adw, GObject, GLib
 
 from kinema.services.database import DatabaseService
 from kinema.ui.movie_card import MovieCard
@@ -95,10 +95,25 @@ class LibraryPage(Gtk.Box):
         self._empty_status.set_visible(False)
         self.append(self._empty_status)
 
+        self._refresh_timer = None
         self.refresh()
+
+    def schedule_refresh(self, delay_ms: int = 200):
+        """Debounce refresh requests so rapid tab switching doesn't thrash DB and widgets."""
+        if self._refresh_timer:
+            GLib.source_remove(self._refresh_timer)
+        self._refresh_timer = GLib.timeout_add(delay_ms, self._on_scheduled_refresh)
+
+    def _on_scheduled_refresh(self):
+        self._refresh_timer = None
+        self.refresh()
+        return False
 
     def refresh(self):
         """Reload watch history and watchlist from SQLite."""
+        if self._refresh_timer:
+            GLib.source_remove(self._refresh_timer)
+            self._refresh_timer = None
         history = self._db.get_watch_history(limit=20)
         watchlist = self._db.get_watchlist(limit=50)
 

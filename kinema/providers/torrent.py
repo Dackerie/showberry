@@ -61,46 +61,12 @@ class TorrentProvider(BaseProvider):
             return None
 
         try:
-            is_tv = (season is not None and episode is not None)
-            imdb_id = self._tmdb.get_imdb_id(tmdb_id, is_tv=is_tv)
-
-            if not imdb_id:
-                logger.warning(f"Could not find IMDB ID for TMDB {tmdb_id}")
+            unique_streams = self.fetch_stream_choices(tmdb_id, season=season, episode=episode)
+            if not unique_streams:
+                logger.info(f"No torrent streams found for TMDB {tmdb_id}")
                 return None
 
-            all_streams: List[Dict[str, Any]] = []
-
-            # 1. For movies, query YTS high-seed torrents
-            if not is_tv:
-                yts_streams = self._fetch_yts_torrents(imdb_id)
-                all_streams.extend(yts_streams)
-
-            # 2. Query Torrentio multi-tracker streams (movies and TV series)
-            torrentio_streams = self._fetch_torrentio_streams(imdb_id, is_tv, season, episode)
-            all_streams.extend(torrentio_streams)
-
-            # 3. Query MediaFusion streams (additional tracker sources)
-            mediafusion_streams = self._fetch_mediafusion_streams(imdb_id, is_tv, season, episode)
-            all_streams.extend(mediafusion_streams)
-
-            if not all_streams:
-                logger.info(f"No torrent streams found for {imdb_id}")
-                return None
-
-            # Deduplicate by infoHash
-            seen_hashes = set()
-            unique_streams = []
-            for s in all_streams:
-                h = (s.get('infoHash') or '').lower()
-                if h and h not in seen_hashes:
-                    seen_hashes.add(h)
-                    unique_streams.append(s)
-
-            # Pick best stream based on resolution, seeders, and release health
-            best_stream = self._select_best_stream(unique_streams)
-            if not best_stream or not best_stream.get('infoHash'):
-                return None
-
+            best_stream = unique_streams[0]
             info_hash = best_stream['infoHash']
             title = best_stream.get('title', '')
             quality = best_stream.get('quality')
@@ -201,77 +167,111 @@ class TorrentProvider(BaseProvider):
             logger.debug(f"MediaFusion query failed: {e}")
         return []
 
-    def _select_best_stream(self, streams: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Rank streams based on user quality preferences, max size limits, seeds, and release health."""
+    def fetch_stream_choices(
+        self,
+        tmdb_id: int,
+        season: Optional[int] = None,
+        episode: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch and return all discovered torrent streams ranked by user preference and health."""
+        is_tv = (season is not None and episode is not None)
+        imdb_id = self._tmdb.get_imdb_id(tmdb_id, is_tv=is_tv)
+        if not imdb_id:
+            logger.warning(f"Could not find IMDB ID for TMDB {tmdb_id}")
+            return []
+
+        all_streams: List[Dict[str, Any]] = []
+        if not is_tv:
+            all_streams.extend(self._fetch_yts_torrents(imdb_id))
+        all_streams.extend(self._fetch_torrentio_streams(imdb_id, is_tv, season, episode))
+        all_streams.extend(self._fetch_mediafusion_streams(imdb_id, is_tv, season, episode))
+
+        seen_hashes = set()
+        unique_streams = []
+        for s in all_streams:
+            h = (s.get('infoHash') or '').lower()
+            if h and h not in seen_hashes:
+                seen_hashes.add(h)
+                title = s.get('title', '')
+                tl = title.lower()
+                if not s.get('quality'):
+                    s['quality'] = '4K' if any(k in tl for k in ('4k', '2160', 'uhd')) else ('1080p' if '1080' in tl else ('720p' if '720' in tl else 'HD'))
+                if 'size_gb' not in s:
+                    s['size_gb'] = parse_stream_size_gb(s)
+                if 'seeds' not in s or s['seeds'] is None:
+                    seeds_match = re.search(r'👤\s*(\d+)', title)
+                    s['seeds'] = int(seeds_match.group(1)) if seeds_match else 0
+                unique_streams.append(s)
+
+        return sorted(unique_streams, key=self._calculate_stream_score, reverse=True)
+
+    def _calculate_stream_score(self, stream: Dict[str, Any]) -> float:
         from kinema.services.settings import SettingsService
         settings = SettingsService()
         pref_quality = (settings.preferred_torrent_quality or '1080p').lower()
         max_size_gb = settings.max_torrent_size_gb or 0
 
-        def score(stream):
-            title = stream.get('title', '')
-            tl = title.lower()
-            seeds = stream.get('seeds')
-            if seeds is None:
-                seeds_match = re.search(r'👤\s*(\d+)', title)
-                seeds = int(seeds_match.group(1)) if seeds_match else 0
+        title = stream.get('title', '')
+        tl = title.lower()
+        seeds = stream.get('seeds')
+        if seeds is None:
+            seeds_match = re.search(r'👤\s*(\d+)', title)
+            seeds = int(seeds_match.group(1)) if seeds_match else 0
 
-            # Cap seeds contribution to avoid huge multi-movie packs overpowering single movies
-            seeds_score = min(seeds, 150)
+        seeds_score = min(seeds, 150)
 
-            # Check size limits: if configured, penalize oversized torrents to preserve user data
-            size_penalty = 0
-            if max_size_gb > 0:
-                stream_size = parse_stream_size_gb(stream)
-                if stream_size is not None and stream_size > max_size_gb:
-                    size_penalty = -20000  # Disqualify streams exceeding user's size threshold
+        size_penalty = 0
+        if max_size_gb > 0:
+            stream_size = parse_stream_size_gb(stream)
+            if stream_size is not None and stream_size > max_size_gb:
+                size_penalty = -20000
 
-            # Resolution detection
-            is_1080 = '1080p' in tl or stream.get('quality') == '1080p'
-            is_720 = '720p' in tl or stream.get('quality') == '720p'
-            is_4k = '4k' in tl or '2160p' in tl or stream.get('quality') in ('4k', '2160p')
+        is_1080 = '1080p' in tl or stream.get('quality') == '1080p'
+        is_720 = '720p' in tl or stream.get('quality') == '720p'
+        is_4k = '4k' in tl or '2160p' in tl or stream.get('quality') in ('4k', '2160p')
 
-            res_bonus = 0
-            if pref_quality == '720p':
-                if is_720:
-                    res_bonus = 1000
-                elif is_1080:
-                    res_bonus = 200
-                elif is_4k:
-                    res_bonus = -500
-            elif pref_quality == '4k':
-                if is_4k:
-                    res_bonus = 1000
-                elif is_1080:
-                    res_bonus = 300
-                elif is_720:
-                    res_bonus = 100
-            elif pref_quality == 'auto':
-                if is_1080:
-                    res_bonus = 500
-                elif is_720:
-                    res_bonus = 300
-                elif is_4k:
-                    res_bonus = 200
-            else:  # Default '1080p'
-                if is_1080:
-                    res_bonus = 1000
-                elif is_720:
-                    res_bonus = 300
-                elif is_4k:
-                    res_bonus = 100
+        res_bonus = 0
+        if pref_quality == '720p':
+            if is_720:
+                res_bonus = 1000
+            elif is_1080:
+                res_bonus = 200
+            elif is_4k:
+                res_bonus = -500
+        elif pref_quality == '4k':
+            if is_4k:
+                res_bonus = 1000
+            elif is_1080:
+                res_bonus = 300
+            elif is_720:
+                res_bonus = 100
+        elif pref_quality == 'auto':
+            if is_1080:
+                res_bonus = 500
+            elif is_720:
+                res_bonus = 300
+            elif is_4k:
+                res_bonus = 200
+        else:  # Default '1080p'
+            if is_1080:
+                res_bonus = 1000
+            elif is_720:
+                res_bonus = 300
+            elif is_4k:
+                res_bonus = 100
 
-            if 'cam' in tl or 'telesync' in tl:
-                res_bonus -= 2000
+        if 'cam' in tl or 'telesync' in tl:
+            res_bonus -= 2000
 
-            source_bonus = 100 if 'yts' in tl else 0
-            # Direct .torrent download URLs resolve immediately without DHT overhead
-            direct_torrent_bonus = 1000 if stream.get('torrent_url') else 0
+        source_bonus = 100 if 'yts' in tl else 0
+        direct_torrent_bonus = 1000 if stream.get('torrent_url') else 0
+        pack_penalty = -1500 if re.search(r'\b(pack|complete|collection|anthology|movies)\b', tl) else 0
 
-            # Penalize box sets / collection packs that have slow multi-file downloads
-            pack_penalty = -1500 if re.search(r'\b(pack|complete|collection|anthology|movies)\b', tl) else 0
+        return seeds_score + res_bonus + source_bonus + direct_torrent_bonus + pack_penalty + size_penalty
 
-            return seeds_score + res_bonus + source_bonus + direct_torrent_bonus + pack_penalty + size_penalty
-
-        sorted_streams = sorted(streams, key=score, reverse=True)
+    def _select_best_stream(self, streams: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Rank streams based on user quality preferences, max size limits, seeds, and release health."""
+        if not streams:
+            return None
+        sorted_streams = sorted(streams, key=self._calculate_stream_score, reverse=True)
         return sorted_streams[0] if sorted_streams else None

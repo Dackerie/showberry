@@ -1044,6 +1044,72 @@ class TestUINavigation(unittest.TestCase):
         app.do_activate()
         self.assertIsNotNone(app.window)
 
+    def test_library_page_debounced_schedule_refresh(self):
+        """LibraryPage debounces rapid schedule_refresh calls."""
+        from kinema.ui.library_page import LibraryPage
+        lp = LibraryPage()
+        lp.schedule_refresh(delay_ms=200)
+        self.assertIsNotNone(lp._refresh_timer)
+        old_timer = lp._refresh_timer
+        lp.schedule_refresh(delay_ms=200)
+        self.assertIsNotNone(lp._refresh_timer)
+        # Calling refresh directly clears timer
+        lp.refresh()
+        self.assertIsNone(lp._refresh_timer)
+
+    def test_details_page_up_down_focus_navigation(self):
+        """MoviePage allows navigating Up to watchlist_btn and Down back to play_button."""
+        from kinema.ui.movie_page import MoviePage
+        from gi.repository import Gdk
+        mp = MoviePage({'id': 5555, 'title': 'Test Movie', 'media_type': 'movie'})
+        # Press Up from actions row
+        up_handled = mp._on_actions_key_pressed(None, Gdk.KEY_Up, 0, 0)
+        self.assertTrue(up_handled)
+        # Press Down from watchlist button
+        down_handled = mp._on_watchlist_key_pressed(None, Gdk.KEY_Down, 0, 0)
+        self.assertTrue(down_handled)
+
+    def test_mpv_widget_first_frame_stream_active_guard(self):
+        """MpvWidget does not emit stream-ready or mark first frame drawn if stream is not active."""
+        pp = PlayerPage()
+        mpv_w = pp._mpv_widget
+        self.assertFalse(mpv_w._is_stream_active)
+        self.assertFalse(mpv_w._has_drawn_first_frame)
+
+        # Triggering render before play() must NOT emit stream-ready or set _has_drawn_first_frame
+        emitted = []
+        mpv_w.connect('stream-ready', lambda w: emitted.append(True))
+        # Call _on_render with (area, gl_context)
+        mpv_w._on_render(None, None)
+        self.assertFalse(mpv_w._has_drawn_first_frame)
+        self.assertEqual(len(emitted), 0)
+
+    def test_torrent_stream_choices_and_dialogs(self):
+        """TorrentProvider.fetch_stream_choices ranks streams, and dialogs instantiate cleanly."""
+        from kinema.providers.torrent import TorrentProvider
+        from kinema.ui.stream_dialogs import TorrentStreamChooserDialog, StreamDetailsDialog
+
+        tp = TorrentProvider()
+        test_streams = [
+            {'infoHash': 'h1', 'title': 'Movie 720p 👤 15', 'quality': '720p', 'seeds': 15},
+            {'infoHash': 'h2', 'title': 'Movie 1080p 👤 40', 'quality': '1080p', 'seeds': 40},
+        ]
+        sorted_streams = sorted(test_streams, key=tp._calculate_stream_score, reverse=True)
+        self.assertEqual(sorted_streams[0]['infoHash'], 'h2')
+
+        win = KinemaWindow()
+        movie = {'id': 999, 'title': 'Test Dialog Movie'}
+        chooser = TorrentStreamChooserDialog(parent_window=win, movie_data=movie)
+        self.assertIsNotNone(chooser)
+        chooser.close()
+
+        pp = PlayerPage()
+        pp._stream_data = {'movie': movie, 'provider': 'torrent'}
+        details = StreamDetailsDialog(parent_window=win, player_page=pp)
+        self.assertIsNotNone(details)
+        details._update_stats()
+        details.close()
+
 
 if __name__ == '__main__':
     unittest.main()
