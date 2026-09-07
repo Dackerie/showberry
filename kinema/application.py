@@ -1,4 +1,4 @@
-"""Main application class for Kinema."""
+"""Main application class for Showberry."""
 
 import gi
 gi.require_version('Gtk', '4.0')

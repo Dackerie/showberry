@@ -174,6 +174,9 @@ class MoviePage(Adw.NavigationPage):
         elif keyval in (Gdk.KEY_w, Gdk.KEY_W):
             self._on_watchlist_toggled(None)
             return True
+        elif keyval in (Gdk.KEY_s, Gdk.KEY_S, Gdk.KEY_t, Gdk.KEY_T):
+            self._on_select_stream_clicked(None)
+            return True
         elif keyval in (Gdk.KEY_Escape, Gdk.KEY_BackSpace):
             if root and hasattr(root, '_nav_view'):
                 root._nav_view.pop()
@@ -1043,12 +1046,11 @@ class MoviePage(Adw.NavigationPage):
         dialog.present()
 
     def _on_custom_stream_selected(self, stream_info: Dict[str, Any]):
-        """Stream a specific chosen torrent."""
+        """Stream a specific chosen torrent using background resolver pipeline."""
         info_hash = stream_info.get('infoHash')
         if not info_hash:
             return
 
-        from kinema.services.torrent import get_torrent_streamer
         season = None
         episode = None
         if self._media_type == 'tv':
@@ -1060,17 +1062,6 @@ class MoviePage(Adw.NavigationPage):
                 season = 1
                 episode = 1
 
-        streamer = get_torrent_streamer()
-        http_url = streamer.start_stream(
-            info_hash,
-            torrent_url=stream_info.get('torrent_url'),
-            file_idx=stream_info.get('fileIdx'),
-            season=season,
-            episode=episode,
-        )
-        if not http_url:
-            return
-
         stream_data = {
             'movie': self._movie,
             'provider': 'torrent',
@@ -1078,8 +1069,7 @@ class MoviePage(Adw.NavigationPage):
             'season': season,
             'episode': episode,
             'start_position': 0,
-            'direct_url': http_url,
-            'stream_info': stream_info,
+            'chosen_stream': stream_info,
         }
         self.emit('play-movie', stream_data)
 

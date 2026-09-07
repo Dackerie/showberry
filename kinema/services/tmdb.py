@@ -1,6 +1,7 @@
 """TMDB API client for movie metadata."""
 
 import os
+import time
 import requests
 from gi.repository import Gio, GLib
 
@@ -41,17 +42,25 @@ class TMDBClient:
         else:
             headers['Authorization'] = f'Bearer {self._api_key.strip()}'
 
-        try:
-            response = self._session.get(
-                url,
-                headers=headers,
-                params=query_params,
-                timeout=10,
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException:
-            return None
+        for attempt in range(2):
+            try:
+                response = self._session.get(
+                    url,
+                    headers=headers,
+                    params=query_params,
+                    timeout=10,
+                )
+                if response.status_code == 429 and attempt == 0:
+                    time.sleep(1.0)
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except requests.RequestException:
+                if attempt == 0:
+                    time.sleep(0.5)
+                    continue
+                return None
+        return None
 
     def search_movies(self, query, page=1):
         """Search for movies by title."""

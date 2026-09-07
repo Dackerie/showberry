@@ -173,8 +173,8 @@ class SettingsPage(Gtk.Box):
 
         # App name
         app_row = Adw.ActionRow()
-        app_row.set_title('Kinema')
-        app_row.set_subtitle('A movie browser and player for GNOME')
+        app_row.set_title('Showberry')
+        app_row.set_subtitle('A modern movie and TV series streaming application for GNOME')
         group.add(app_row)
 
         # Version

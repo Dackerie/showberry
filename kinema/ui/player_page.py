@@ -1232,7 +1232,11 @@ class PlayerPage(Adw.NavigationPage):
             sign = "+" if new_delay > 0 else ""
             self.show_osd_notification(f"Subtitle Delay: {sign}{new_delay:.2f}s ({sign}{int(new_delay * 1000)}ms)")
             self._controls._sub_popover.refresh_delay_label()
-            self._show_controls_briefly()
+        elif keyname in ['t', 'T']:
+            self._on_open_stream_chooser(None)
+            return True
+        elif keyname in ['i', 'I']:
+            self._on_open_stream_details(None)
             return True
 
         return False
@@ -1262,6 +1266,8 @@ class PlayerPage(Adw.NavigationPage):
             pass
 
         if hasattr(self, '_mpv_widget') and self._mpv_widget:
+            self._mpv_widget.stop()
+            self._mpv_widget._is_stream_active = False
             self._mpv_widget._has_drawn_first_frame = False
             self._mpv_widget._wait_first_frame = True
 
@@ -1285,33 +1291,46 @@ class PlayerPage(Adw.NavigationPage):
         self._session_id += 1
         current_session = self._session_id
 
-        # Direct pre-resolved stream URL (e.g. chosen from TorrentStreamChooserDialog)
-        if stream_data.get('direct_url'):
-            from kinema.providers.base import StreamResult
-            stream_info = stream_data.get('stream_info') or {}
-            res = StreamResult(
-                url=stream_data['direct_url'],
-                provider_name='torrent',
-                quality=stream_info.get('quality', '1080p'),
-            )
-            GLib.idle_add(self._on_stream_resolved, res, [], current_session)
-            return
-
+        chosen_stream = stream_data.get('chosen_stream')
         threading.Thread(
             target=self._resolve_thread,
-            args=(tmdb_id, season, episode, provider_name, movie, current_session),
+            args=(tmdb_id, season, episode, provider_name, movie, current_session, chosen_stream),
             daemon=True
         ).start()
 
-    def _resolve_thread(self, tmdb_id, season, episode, provider_name, movie, session_id: int):
+    def _resolve_thread(self, tmdb_id, season, episode, provider_name, movie, session_id: int, chosen_stream=None):
         """Background thread: resolve stream first, start playback ASAP, then fetch subs in parallel."""
         try:
-            result = ProviderManager.resolve_stream(
-                tmdb_id=tmdb_id,
-                season=season,
-                episode=episode,
-                preferred_provider_name=provider_name
-            )
+            if chosen_stream:
+                from kinema.services.torrent import get_torrent_streamer
+                from kinema.providers.base import StreamResult
+                info_hash = chosen_stream.get('infoHash')
+                torrent_url = chosen_stream.get('torrent_url')
+                file_idx = chosen_stream.get('fileIdx')
+                streamer = get_torrent_streamer()
+                http_url = streamer.start_stream(
+                    info_hash,
+                    torrent_url=torrent_url,
+                    file_idx=file_idx,
+                    season=season,
+                    episode=episode,
+                )
+                if session_id != self._session_id:
+                    return
+                if not http_url:
+                    raise RuntimeError("Could not start torrent stream server for chosen release.")
+                result = StreamResult(
+                    url=http_url,
+                    provider_name='torrent',
+                    quality=chosen_stream.get('quality', '1080p')
+                )
+            else:
+                result = ProviderManager.resolve_stream(
+                    tmdb_id=tmdb_id,
+                    season=season,
+                    episode=episode,
+                    preferred_provider_name=provider_name
+                )
 
             if session_id != self._session_id:
                 return
@@ -1727,21 +1746,10 @@ class PlayerPage(Adw.NavigationPage):
             info_hash = stream_info.get('infoHash')
             if not info_hash:
                 return
-            from kinema.services.torrent import get_torrent_streamer
-            streamer = get_torrent_streamer()
-            http_url = streamer.start_stream(
-                info_hash,
-                torrent_url=stream_info.get('torrent_url'),
-                file_idx=stream_info.get('fileIdx'),
-                season=season,
-                episode=episode,
-            )
-            if http_url:
-                new_data = dict(self._stream_data)
-                new_data['direct_url'] = http_url
-                new_data['provider'] = 'torrent'
-                new_data['stream_info'] = stream_info
-                self.load_stream(new_data)
+            new_data = dict(self._stream_data)
+            new_data['provider'] = 'torrent'
+            new_data['chosen_stream'] = stream_info
+            self.load_stream(new_data)
 
         dialog = TorrentStreamChooserDialog(
             parent_window=window,

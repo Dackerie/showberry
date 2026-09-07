@@ -21,7 +21,7 @@ class KinemaWindow(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        self.set_title('Kinema')
+        self.set_title('Showberry')
         self.set_default_size(1200, 720)
         self._last_tab_cycle_time = 0.0
         self._pending_tab_focus_id = None
@@ -122,14 +122,14 @@ class KinemaWindow(Adw.ApplicationWindow):
         menu.append("Preferences", "win.preferences")
         menu.append("Keyboard Shortcuts", "win.shortcuts")
         menu.append("Clear Watch History", "win.clear_history")
-        menu.append("About Kinema", "win.about")
+        menu.append("About Showberry", "win.about")
         menu_button.set_menu_model(menu)
         header_bar.pack_end(menu_button)
 
         toolbar_view.add_top_bar(header_bar)
         toolbar_view.set_content(self._view_stack)
 
-        main_page = Adw.NavigationPage.new(toolbar_view, 'Kinema')
+        main_page = Adw.NavigationPage.new(toolbar_view, 'Showberry')
         main_page.set_tag('main')
         return main_page
 
@@ -340,6 +340,8 @@ class KinemaWindow(Adw.ApplicationWindow):
         g_play.append(Gtk.ShortcutsShortcut(title="Decrease Subtitle Delay", accelerator="z"))
         g_play.append(Gtk.ShortcutsShortcut(title="Increase Subtitle Delay", accelerator="x"))
         g_play.append(Gtk.ShortcutsShortcut(title="Subtitles Menu", accelerator="s"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Choose Torrent Stream", accelerator="t"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Stream Info / Stats", accelerator="i"))
         g_play.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="f"))
         sec_player.add_group(g_play)
 
@@ -372,9 +374,9 @@ class KinemaWindow(Adw.ApplicationWindow):
     def _on_about_action(self, action, param):
         """Show About Kinema dialog."""
         dialog = Adw.AboutDialog.new()
-        dialog.set_application_name("Kinema")
+        dialog.set_application_name("Showberry")
         dialog.set_version("0.1.0")
-        dialog.set_developer_name("Kinema Contributors")
+        dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://codeberg.org/valos/Komikku")
         dialog.set_license_type(Gtk.License.GPL_3_0)

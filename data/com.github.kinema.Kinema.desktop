@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Kinema
-Comment=Browse and play movies
+Name=Showberry
+Comment=Browse and stream movies and TV series
 Exec=kinema
 Icon=com.github.kinema.Kinema
 Terminal=false

@@ -160,6 +160,12 @@ class TorrentStreamChooserDialog(Adw.Window):
             if seeds is not None:
                 seeds_badge = Gtk.Label(label=f"👤 {seeds}")
                 seeds_badge.add_css_class('badge')
+                if seeds >= 30:
+                    seeds_badge.add_css_class('suggested-action')
+                elif seeds >= 10:
+                    seeds_badge.add_css_class('warning')
+                else:
+                    seeds_badge.add_css_class('dim-label')
                 suffixes.append(seeds_badge)
 
             # Play action button
