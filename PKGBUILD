@@ -4,7 +4,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="An elegant, modern movie and TV series streaming application for GNOME"
 arch=('any')
-url="https://github.com/showberry-app/showberry"
+url="https://github.com/Dackerie/showberry"
 license=('GPL-3.0-or-later')
 depends=(
     'gtk4'
