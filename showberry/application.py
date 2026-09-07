@@ -4,7 +4,7 @@ import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Gio, Adw, Gdk
+from gi.repository import Gtk, Gio, Adw, Gdk, GLib
 from pathlib import Path
 
 from showberry.window import ShowberryWindow, KinemaWindow
@@ -22,6 +22,15 @@ class ShowberryApplication(Adw.Application):
 
         schema_source = Gio.SettingsSchemaSource.get_default()
         schema = schema_source.lookup('com.github.showberry.Showberry', True) if schema_source else None
+        if not schema:
+            user_schemas = Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas'
+            if (user_schemas / 'gschemas.compiled').exists():
+                schema_source = Gio.SettingsSchemaSource.new_from_directory(
+                    str(user_schemas),
+                    schema_source,
+                    False
+                )
+                schema = schema_source.lookup('com.github.showberry.Showberry', True) if schema_source else None
         if not schema:
             local_data = Path(__file__).parent.parent / 'data'
             if (local_data / 'gschemas.compiled').exists():
@@ -59,6 +68,7 @@ class ShowberryApplication(Adw.Application):
         """Load application CSS stylesheet."""
         candidate_paths = [
             Path(__file__).parent.parent / 'data' / 'style.css',
+            Path(GLib.get_user_data_dir()) / 'showberry' / 'style.css',
             Path('/app/share/showberry/style.css'),
             Path('/usr/share/showberry/style.css'),
             Path('/usr/local/share/showberry/style.css'),
