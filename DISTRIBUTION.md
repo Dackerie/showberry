@@ -34,7 +34,7 @@ Since Showberry does not yet have a remote git repository, the first step is pus
 5. Click **Create repository**.
 
 ### 2. Push Your Local Commits
-In your terminal inside `/home/vishwam/code/kinema`:
+In your terminal inside `/home/vishwam/code/showberry`:
 
 ```bash
 # If using SSH (recommended):
@@ -94,7 +94,7 @@ Flathub is the standard app distribution platform for the Linux desktop, enablin
 
 4. **Add and Commit the Manifest**:
    ```bash
-   cp /home/vishwam/code/kinema/packaging/flathub/com.github.showberry.Showberry.json .
+   cp /home/vishwam/code/showberry/packaging/flathub/com.github.showberry.Showberry.json .
    git add com.github.showberry.Showberry.json
    git commit -m "Add com.github.showberry.Showberry"
    git push -u origin add-showberry
