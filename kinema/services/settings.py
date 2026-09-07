@@ -68,6 +68,45 @@ class SettingsService:
         else:
             self._fallback_store['theme-variant'] = value
 
+    @property
+    def preferred_torrent_quality(self) -> str:
+        if self._settings:
+            return self._settings.get_string('preferred-torrent-quality')
+        return self._fallback_store.get('preferred-torrent-quality', '1080p')
+
+    @preferred_torrent_quality.setter
+    def preferred_torrent_quality(self, value: str):
+        if self._settings:
+            self._settings.set_string('preferred-torrent-quality', value)
+        else:
+            self._fallback_store['preferred-torrent-quality'] = value
+
+    @property
+    def max_torrent_size_gb(self) -> int:
+        if self._settings:
+            return self._settings.get_int('max-torrent-size-gb')
+        return self._fallback_store.get('max-torrent-size-gb', 0)
+
+    @max_torrent_size_gb.setter
+    def max_torrent_size_gb(self, value: int):
+        if self._settings:
+            self._settings.set_int('max-torrent-size-gb', value)
+        else:
+            self._fallback_store['max-torrent-size-gb'] = value
+
+    @property
+    def torrent_cache_size_gb(self) -> int:
+        if self._settings:
+            return self._settings.get_int('torrent-cache-size-gb')
+        return self._fallback_store.get('torrent-cache-size-gb', 10)
+
+    @torrent_cache_size_gb.setter
+    def torrent_cache_size_gb(self, value: int):
+        if self._settings:
+            self._settings.set_int('torrent-cache-size-gb', value)
+        else:
+            self._fallback_store['torrent-cache-size-gb'] = value
+
     def get_settings(self):
         """Get the underlying GSettings object."""
         return self._settings

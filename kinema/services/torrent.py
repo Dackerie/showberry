@@ -159,7 +159,15 @@ class TorrentStreamer:
             except Exception:
                 pass
 
-    def start_stream(self, magnet_or_hash: str, torrent_url: Optional[str] = None, timeout: int = 35) -> str:
+    def start_stream(
+        self,
+        magnet_or_hash: str,
+        torrent_url: Optional[str] = None,
+        file_idx: Optional[int] = None,
+        season: Optional[int] = None,
+        episode: Optional[int] = None,
+        timeout: int = 35
+    ) -> str:
         """
         Start downloading torrent sequentially and return streaming HTTP URL.
         Supports instant metadata loading via direct .torrent URLs and cache mirrors.
@@ -245,17 +253,41 @@ class TorrentStreamer:
 
         info = self.handle.torrent_file()
         num_files = info.num_files()
+        files = info.files()
 
-        # Find largest video file
         best_idx = -1
         max_size = -1
-        files = info.files()
-        for i in range(num_files):
-            fn = files.file_path(i).lower()
-            sz = files.file_size(i)
-            if sz > max_size and any(fn.endswith(ext) for ext in VIDEO_EXTS):
-                max_size = sz
-                best_idx = i
+
+        # 1. Exact file_idx from Torrentio/MediaFusion
+        if file_idx is not None and 0 <= file_idx < num_files:
+            best_idx = file_idx
+            max_size = files.file_size(best_idx)
+
+        # 2. Match TV episode patterns (e.g. S01E03, 1x03, E03)
+        if best_idx == -1 and season is not None and episode is not None:
+            patterns = [
+                re.compile(rf'\b[sS]{season:02d}[eE]{episode:02d}\b', re.IGNORECASE),
+                re.compile(rf'\b{season}[xX]{episode:02d}\b', re.IGNORECASE),
+                re.compile(rf'\b[eE]{episode:02d}\b', re.IGNORECASE),
+            ]
+            for pat in patterns:
+                for i in range(num_files):
+                    fn = files.file_path(i).lower()
+                    if pat.search(fn) and any(fn.endswith(ext) for ext in VIDEO_EXTS):
+                        best_idx = i
+                        max_size = files.file_size(i)
+                        break
+                if best_idx != -1:
+                    break
+
+        # 3. Fallback: Find largest video file
+        if best_idx == -1:
+            for i in range(num_files):
+                fn = files.file_path(i).lower()
+                sz = files.file_size(i)
+                if sz > max_size and any(fn.endswith(ext) for ext in VIDEO_EXTS):
+                    max_size = sz
+                    best_idx = i
 
         if best_idx == -1:
             # Fallback to absolute largest file
@@ -328,37 +360,64 @@ class TorrentStreamer:
         self.http_thread.start()
 
     def stream_bytes(self, wfile, offset: int, length: int, chunk_size: int = 65536):
-        """Read bytes from disk and wait for pieces to download if needed."""
+        """Read bytes from disk, strictly verifying piece completion before sending to prevent player corruption."""
+        if not self.handle or not self.handle.is_valid():
+            return
+
         info = self.handle.torrent_file()
         bytes_sent = 0
 
         while bytes_sent < length and not self._stop_event.is_set():
             curr_pos = offset + bytes_sent
-            piece_req = info.map_file(self.video_file_idx, curr_pos, 1)
-            piece_idx = piece_req.piece
+            chunk_to_read = min(chunk_size, length - bytes_sent)
 
-            # Prioritize current piece and upcoming pieces
-            if not self.handle.have_piece(piece_idx):
-                for p in range(piece_idx, min(piece_idx + 8, self.end_piece + 1)):
+            # Map byte range to piece range
+            p_start = info.map_file(self.video_file_idx, curr_pos, 1).piece
+            p_end = info.map_file(self.video_file_idx, curr_pos + chunk_to_read - 1, 1).piece
+
+            # Verify all required pieces for this chunk are downloaded
+            missing_pieces = [p for p in range(p_start, p_end + 1) if not self.handle.have_piece(p)]
+            if missing_pieces:
+                # Prioritize missing pieces with immediate deadline 0
+                for p in missing_pieces:
                     self.handle.piece_priority(p, 7)
-                    self.handle.set_piece_deadline(p, (p - piece_idx) * 100)
+                    self.handle.set_piece_deadline(p, 0)
 
-                # Wait for piece with timeout
+                # Prioritize next 16 pieces with graduated deadlines
+                ahead_deadlines = min(p_start + 16, self.end_piece + 1)
+                for idx, p in enumerate(range(p_start, ahead_deadlines)):
+                    self.handle.piece_priority(p, 7)
+                    self.handle.set_piece_deadline(p, idx * 50)
+
+                # Prefetch next 48 pieces (priority 7) for smooth continuous streaming
+                ahead_prefetch = min(p_start + 48, self.end_piece + 1)
+                for p in range(ahead_deadlines, ahead_prefetch):
+                    self.handle.piece_priority(p, 7)
+
+                # Wait for required pieces with timeout (never read unverified bytes!)
                 wait_count = 0
-                while not self.handle.have_piece(piece_idx) and not self._stop_event.is_set():
-                    time.sleep(0.1)
+                all_have = False
+                while not self._stop_event.is_set():
+                    if all(self.handle.have_piece(p) for p in range(p_start, p_end + 1)):
+                        all_have = True
+                        break
+                    time.sleep(0.08)
                     wait_count += 1
-                    if wait_count > 300:  # 30s timeout
+                    if wait_count > 375:  # 30s timeout
                         break
 
-            # Read chunk from file
-            chunk_to_read = min(chunk_size, length - bytes_sent)
+                if not all_have:
+                    # Timeout waiting for piece from swarm; abort chunk rather than sending corrupt null bytes
+                    logger.warning(f"Timeout waiting for piece(s) {missing_pieces} at offset {curr_pos}")
+                    break
+
+            # Read chunk from file now that we are 100% sure the pieces are verified by libtorrent
             try:
                 with open(self.video_file_path, 'rb') as f:
                     f.seek(curr_pos)
                     data = f.read(chunk_to_read)
                     if not data:
-                        time.sleep(0.1)
+                        time.sleep(0.05)
                         continue
                     wfile.write(data)
                     bytes_sent += len(data)
@@ -405,6 +464,90 @@ class TorrentStreamer:
 
         if self.session:
             self.session = None
+
+        # Prune cache according to user's settings
+        try:
+            from kinema.services.settings import SettingsService
+            settings = SettingsService()
+            max_cache_gb = settings.torrent_cache_size_gb
+            video_path = self.video_file_path
+            if max_cache_gb == 0 and video_path and os.path.exists(video_path):
+                # Clean up immediately for stream-only mode
+                try:
+                    p = Path(video_path)
+                    if p.parent != self.cache_dir and p.parent.parent == self.cache_dir:
+                        import shutil
+                        shutil.rmtree(p.parent)
+                    elif p.exists():
+                        p.unlink()
+                except Exception:
+                    pass
+            else:
+                prune_torrent_cache(self.cache_dir, max_cache_gb)
+        except Exception as e:
+            logger.debug(f"Cache cleanup error: {e}")
+
+
+def prune_torrent_cache(cache_dir: Path, max_size_gb: int, current_file: Optional[str] = None):
+    """Prune oldest torrent files/directories to adhere to configured cache size."""
+    try:
+        if max_size_gb < 0:  # Unlimited
+            return
+        if not cache_dir.exists():
+            return
+
+        import shutil
+        if max_size_gb == 0:
+            # Stream only: remove any files not currently active
+            for item in cache_dir.iterdir():
+                if current_file and str(item) in current_file:
+                    continue
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+                except Exception as ex:
+                    logger.debug(f"Failed to clean stream-only cache {item}: {ex}")
+            return
+
+        max_bytes = max_size_gb * (1024 ** 3)
+        entries = []
+        total_size = 0
+        for item in cache_dir.iterdir():
+            if item.is_dir():
+                sz = sum(f.stat().st_size for f in item.rglob('*') if f.is_file())
+                mt = item.stat().st_mtime
+                entries.append((mt, sz, item))
+                total_size += sz
+            elif item.is_file():
+                sz = item.stat().st_size
+                mt = item.stat().st_mtime
+                entries.append((mt, sz, item))
+                total_size += sz
+
+        if total_size <= max_bytes:
+            return
+
+        # Oldest first
+        entries.sort(key=lambda x: x[0])
+        for mt, sz, item in entries:
+            if total_size <= max_bytes:
+                break
+            if current_file and str(item) in current_file:
+                continue
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                else:
+                    item.unlink()
+                total_size -= sz
+                logger.info(f"Evicted old torrent cache: {item.name} ({sz / (1024**2):.1f} MB)")
+            except Exception as ex:
+                logger.debug(f"Failed to evict {item}: {ex}")
+    except Exception as e:
+        logger.warning(f"Error during torrent cache pruning: {e}")
+
 
 
 _streamer_instance: Optional[TorrentStreamer] = None

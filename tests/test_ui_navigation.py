@@ -17,6 +17,22 @@ from kinema.ui.player_page import PlayerPage
 
 class TestUINavigation(unittest.TestCase):
 
+    def setUp(self):
+        super().setUp()
+        from kinema.services.settings import SettingsService
+        s = SettingsService()
+        s.preferred_torrent_quality = '1080p'
+        s.max_torrent_size_gb = 0
+        s.torrent_cache_size_gb = 10
+
+    def tearDown(self):
+        from kinema.services.settings import SettingsService
+        s = SettingsService()
+        s.preferred_torrent_quality = '1080p'
+        s.max_torrent_size_gb = 0
+        s.torrent_cache_size_gb = 10
+        super().tearDown()
+
     def test_navigation_flow(self):
         win = KinemaWindow()
         nav = win._nav_view
@@ -858,10 +874,11 @@ class TestUINavigation(unittest.TestCase):
         pp = PlayerPage()
         self.assertFalse(pp._controls._play_button.get_focusable())
         self.assertFalse(pp._controls._fullscreen_button.get_focusable())
-        self.assertFalse(pp._controls._close_button.get_focusable())
         self.assertFalse(pp._controls._volume_btn.get_focusable())
         self.assertFalse(pp._controls._sub_btn.get_focusable())
         self.assertTrue(pp.get_focusable())
+        # Redundant exit button is removed from bottom controls
+        self.assertFalse(hasattr(pp._controls, '_close_button'))
 
     def test_player_key_controller_capture_phase(self):
         """PlayerPage key controller must use CAPTURE propagation phase so Space/F keys are never eaten by children."""
@@ -918,6 +935,84 @@ class TestUINavigation(unittest.TestCase):
 
         magnet_res = StreamResult(url='magnet:?xt=urn:btih:abc', quality='1080p')
         self.assertTrue(is_stream_alive(magnet_res))
+
+    def test_player_no_redundant_buttons_and_top_docked(self):
+        """Fullscreen button on top bar and exit button on bottom controls are removed, top bar is docked."""
+        pp = PlayerPage()
+        self.assertFalse(hasattr(pp._controls, '_close_button'))
+        # Top bar margins are 0
+        self.assertEqual(pp._top_bar.get_margin_top(), 0)
+        self.assertEqual(pp._top_bar.get_margin_start(), 0)
+        self.assertEqual(pp._top_bar.get_margin_end(), 0)
+        # Spinner box has styling class
+        self.assertTrue(pp._spinner_box.has_css_class('player-spinner-box'))
+
+    def test_settings_torrent_preferences(self):
+        """SettingsService properly handles preferred_torrent_quality, max_torrent_size_gb, torrent_cache_size_gb."""
+        from kinema.services.settings import SettingsService
+        s = SettingsService()
+        s.preferred_torrent_quality = '720p'
+        self.assertEqual(s.preferred_torrent_quality, '720p')
+        s.max_torrent_size_gb = 4
+        self.assertEqual(s.max_torrent_size_gb, 4)
+        s.torrent_cache_size_gb = 20
+        self.assertEqual(s.torrent_cache_size_gb, 20)
+
+    def test_torrent_size_limit_and_quality_selection(self):
+        """TorrentProvider._select_best_stream penalizes streams exceeding max size and favors preferred quality."""
+        from kinema.providers.torrent import TorrentProvider
+        from kinema.services.settings import SettingsService
+        settings = SettingsService()
+        tp = TorrentProvider()
+
+        streams = [
+            {'infoHash': 'h1', 'title': 'Movie 1080p 👤 50 💾 18.5 GB', 'quality': '1080p', 'seeds': 50},
+            {'infoHash': 'h2', 'title': 'Movie 720p 👤 40 💾 2.1 GB', 'quality': '720p', 'seeds': 40},
+            {'infoHash': 'h3', 'title': 'Movie 1080p 👤 30 💾 3.2 GB', 'quality': '1080p', 'seeds': 30},
+        ]
+
+        # 1. With max size 4GB and preferred 1080p: should select h3 (under 4GB 1080p)
+        settings.max_torrent_size_gb = 4
+        settings.preferred_torrent_quality = '1080p'
+        best = tp._select_best_stream(streams)
+        self.assertEqual(best['infoHash'], 'h3')
+
+        # 2. With max size 4GB and preferred 720p: should select h2
+        settings.preferred_torrent_quality = '720p'
+        best = tp._select_best_stream(streams)
+        self.assertEqual(best['infoHash'], 'h2')
+
+        # 3. With unlimited size and preferred 1080p: should select h1 (higher seeds 1080p)
+        settings.max_torrent_size_gb = 0
+        settings.preferred_torrent_quality = '1080p'
+        best = tp._select_best_stream(streams)
+        self.assertEqual(best['infoHash'], 'h1')
+
+    def test_watchlist_toggled_signal(self):
+        """MoviePage emits watchlist-toggled when watchlist button is toggled."""
+        from kinema.ui.movie_page import MoviePage
+        mp = MoviePage({'id': 12345, 'title': 'Test Movie', 'media_type': 'movie'})
+        if mp._db.is_in_watchlist(12345):
+            mp._db.remove_from_watchlist(12345)
+        emitted = []
+        mp.connect('watchlist-toggled', lambda p, m, a: emitted.append((m, a)))
+        mp._on_watchlist_toggled(None)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0][0]['id'], 12345)
+        self.assertTrue(emitted[0][1])  # is_added == True
+
+        # Toggle again to remove and clean up
+        mp._on_watchlist_toggled(None)
+        self.assertEqual(len(emitted), 2)
+        self.assertFalse(emitted[1][1])  # is_added == False
+
+    def test_movie_page_navigation_traversal(self):
+        """MoviePage arrow handlers transition focus properly."""
+        from kinema.ui.movie_page import MoviePage
+        from gi.repository import Gdk
+        mp = MoviePage({'id': 12345, 'title': 'Test Movie', 'media_type': 'movie'})
+        handled = mp._on_actions_key_pressed(None, Gdk.KEY_Down, 0, 0)
+        self.assertIsInstance(handled, bool)
 
 
 if __name__ == '__main__':

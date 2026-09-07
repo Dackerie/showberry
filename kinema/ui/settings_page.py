@@ -30,6 +30,7 @@ class SettingsPage(Gtk.Box):
 
         self._setup_general_group()
         self._setup_player_group()
+        self._setup_torrent_group()
         self._setup_about_group()
 
         scroll.set_child(self._prefs_page)
@@ -83,6 +84,87 @@ class SettingsPage(Gtk.Box):
         group.add(provider_row)
 
         self._prefs_page.add(group)
+
+    def _setup_torrent_group(self):
+        """Setup torrent & P2P streaming settings group."""
+        group = Adw.PreferencesGroup()
+        group.set_title('Torrent & P2P Streaming')
+        group.set_description('Configure BitTorrent playback, bandwidth limits, and local cache')
+
+        # 1. Preferred Quality
+        quality_row = Adw.ComboRow()
+        quality_row.set_title('Preferred Torrent Quality')
+        quality_labels = [
+            '1080p (Full HD - Recommended)',
+            '720p (HD - Data Saver)',
+            '4K (Ultra HD)',
+            'Auto (Best Available / Highest Seeded)'
+        ]
+        self._quality_keys = ['1080p', '720p', '4k', 'auto']
+        quality_row.set_model(Gtk.StringList.new(quality_labels))
+
+        curr_q = self._settings.preferred_torrent_quality
+        q_idx = self._quality_keys.index(curr_q) if curr_q in self._quality_keys else 0
+        quality_row.set_selected(q_idx)
+        quality_row.connect('notify::selected', self._on_torrent_quality_changed)
+        group.add(quality_row)
+
+        # 2. Maximum File Size Limit
+        size_row = Adw.ComboRow()
+        size_row.set_title('Max Torrent File Size')
+        size_row.set_subtitle('Filter out massive torrents to preserve laptop storage & network data')
+        size_labels = [
+            'Unlimited (Default)',
+            '2 GB (Mobile / Highly Constrained)',
+            '4 GB (Laptop / Standard Data Saver)',
+            '8 GB (High Quality 1080p)',
+            '15 GB'
+        ]
+        self._size_values = [0, 2, 4, 8, 15]
+        size_row.set_model(Gtk.StringList.new(size_labels))
+
+        curr_sz = self._settings.max_torrent_size_gb
+        sz_idx = self._size_values.index(curr_sz) if curr_sz in self._size_values else 0
+        size_row.set_selected(sz_idx)
+        size_row.connect('notify::selected', self._on_torrent_size_changed)
+        group.add(size_row)
+
+        # 3. Disk Cache Size Limit
+        cache_row = Adw.ComboRow()
+        cache_row.set_title('Torrent Disk Cache Limit')
+        cache_row.set_subtitle('Amount of disk space used to cache downloaded videos before LRU cleanup')
+        cache_labels = [
+            '10 GB (Recommended)',
+            '5 GB',
+            '20 GB',
+            'Stream Only (Clean on exit)',
+            'Unlimited'
+        ]
+        self._cache_values = [10, 5, 20, 0, -1]
+        cache_row.set_model(Gtk.StringList.new(cache_labels))
+
+        curr_c = self._settings.torrent_cache_size_gb
+        c_idx = self._cache_values.index(curr_c) if curr_c in self._cache_values else 0
+        cache_row.set_selected(c_idx)
+        cache_row.connect('notify::selected', self._on_torrent_cache_changed)
+        group.add(cache_row)
+
+        self._prefs_page.add(group)
+
+    def _on_torrent_quality_changed(self, row, pspec):
+        idx = row.get_selected()
+        if 0 <= idx < len(self._quality_keys):
+            self._settings.preferred_torrent_quality = self._quality_keys[idx]
+
+    def _on_torrent_size_changed(self, row, pspec):
+        idx = row.get_selected()
+        if 0 <= idx < len(self._size_values):
+            self._settings.max_torrent_size_gb = self._size_values[idx]
+
+    def _on_torrent_cache_changed(self, row, pspec):
+        idx = row.get_selected()
+        if 0 <= idx < len(self._cache_values):
+            self._settings.torrent_cache_size_gb = self._cache_values[idx]
 
     def _setup_about_group(self):
         """Setup about group."""

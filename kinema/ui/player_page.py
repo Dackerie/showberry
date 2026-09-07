@@ -80,6 +80,7 @@ class MpvWidget(Gtk.GLArea):
 
     __gsignals__ = {
         'stream-ready': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        'buffering': (GObject.SignalFlags.RUN_FIRST, None, (bool,)),
     }
 
     def __init__(self, **properties):
@@ -105,6 +106,12 @@ class MpvWidget(Gtk.GLArea):
             cache_secs=120,
             network_timeout=15,
         )
+
+        @self._mpv.property_observer('paused-for-cache')
+        def _on_paused_for_cache(name, value):
+            if getattr(self, '_is_active', False):
+                GLib.idle_add(self.emit, 'buffering', bool(value))
+
         self._ctx = None
         self._gl_context_ref = None
         self._redraw_pending = False
@@ -804,14 +811,6 @@ class PlayerControls(Gtk.Box):
         self._fullscreen_button.connect('clicked', lambda b: self.emit('fullscreen-toggle'))
         controls.append(self._fullscreen_button)
 
-        # Close button
-        self._close_button = Gtk.Button.new_from_icon_name('window-close-symbolic')
-        self._close_button.add_css_class('flat')
-        self._close_button.set_tooltip_text("Exit Player (Esc)")
-        self._close_button.set_focusable(False)
-        self._close_button.connect('clicked', lambda b: self.emit('close'))
-        controls.append(self._close_button)
-
         self.append(controls)
         self._update_id = None
 
@@ -1024,10 +1023,12 @@ class PlayerPage(Adw.NavigationPage):
 
         self._mpv_widget = MpvWidget()
         self._mpv_widget.connect('stream-ready', self._on_stream_ready)
+        self._mpv_widget.connect('buffering', self._on_buffering)
         self._overlay.set_child(self._mpv_widget)
 
         # Loading spinner
         self._spinner_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self._spinner_box.add_css_class('player-spinner-box')
         self._spinner_box.set_halign(Gtk.Align.CENTER)
         self._spinner_box.set_valign(Gtk.Align.CENTER)
         self._spinner = Gtk.Spinner()
@@ -1038,13 +1039,13 @@ class PlayerPage(Adw.NavigationPage):
         self._spinner_box.append(self._spinner_label)
         self._overlay.add_overlay(self._spinner_box)
 
-        # Floating Top Bar (Back button, Media Title, Provider badge, Fullscreen)
+        # Docked Top Bar (Back button, Media Title, Provider badge)
         self._top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self._top_bar.add_css_class('player-top-bar')
         self._top_bar.set_valign(Gtk.Align.START)
-        self._top_bar.set_margin_start(20)
-        self._top_bar.set_margin_end(20)
-        self._top_bar.set_margin_top(16)
+        self._top_bar.set_margin_start(0)
+        self._top_bar.set_margin_end(0)
+        self._top_bar.set_margin_top(0)
 
         back_btn = Gtk.Button.new_from_icon_name('go-previous-symbolic')
         back_btn.add_css_class('circular')
@@ -1069,14 +1070,6 @@ class PlayerPage(Adw.NavigationPage):
         self._provider_badge.add_css_class('genre-pill')
         self._provider_badge.set_visible(False)
         self._top_bar.append(self._provider_badge)
-
-        top_fs_btn = Gtk.Button.new_from_icon_name('view-fullscreen-symbolic')
-        top_fs_btn.add_css_class('circular')
-        top_fs_btn.add_css_class('flat')
-        top_fs_btn.set_tooltip_text("Toggle Fullscreen (F)")
-        top_fs_btn.set_focusable(False)
-        top_fs_btn.connect('clicked', lambda b: self._on_fullscreen_toggle(None))
-        self._top_bar.append(top_fs_btn)
 
         self._overlay.add_overlay(self._top_bar)
 
@@ -1238,6 +1231,10 @@ class PlayerPage(Adw.NavigationPage):
         except (ValueError, TypeError):
             pass
 
+        if hasattr(self, '_mpv_widget') and self._mpv_widget:
+            self._mpv_widget._has_drawn_first_frame = False
+            self._mpv_widget._wait_first_frame = True
+
         self._spinner_box.set_visible(True)
         self._spinner.start()
         title = movie.get('title', 'Media')
@@ -1387,6 +1384,19 @@ class PlayerPage(Adw.NavigationPage):
                 return False
 
             GLib.timeout_add_seconds(3, _delayed_fetch)
+
+    def _on_buffering(self, widget, is_buffering: bool):
+        """Called when MPV paused-for-cache property changes."""
+        if not getattr(self, '_mpv_widget', None) or not getattr(self._mpv_widget, '_is_active', False):
+            return
+        if is_buffering:
+            self._spinner_label.set_text("Buffering stream...")
+            self._spinner_box.set_visible(True)
+            self._spinner.start()
+        else:
+            if getattr(self._mpv_widget, '_has_drawn_first_frame', False):
+                self._spinner.stop()
+                self._spinner_box.set_visible(False)
 
     def _on_stream_resolved(self, result: Optional[StreamResult], extra_subs: List[Dict[str, Any]], session_id: int = 0):
         """Executed on main GTK UI thread when stream result is available."""

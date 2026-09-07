@@ -185,6 +185,8 @@ class SeriesPage(Gtk.Box):
                     target_child.grab_focus()
 
     def _on_search_key_pressed(self, controller, keyval, keycode, state):
+        if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):
+            return False
         if keyval == Gdk.KEY_Down:
             self._focus_first_card()
             return True
