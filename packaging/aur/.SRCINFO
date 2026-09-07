@@ -21,6 +21,6 @@ pkgbase = showberry
 	optdepends = python-opengl: Fast OpenGL display widget
 	optdepends = python-mpv: Direct libmpv Python API bindings
 	source = showberry-0.1.0.tar.gz::https://github.com/Dackerie/showberry/archive/refs/tags/v0.1.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = c47648cb4cac4a71ca207267272794e26eb3336e59afc84ba5d325188880761e
 
 pkgname = showberry

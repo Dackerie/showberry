@@ -28,7 +28,7 @@ makedepends=(
     'python-wheel'
 )
 source=("$pkgname-$pkgver.tar.gz::https://github.com/Dackerie/showberry/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('c47648cb4cac4a71ca207267272794e26eb3336e59afc84ba5d325188880761e')
 
 build() {
     cd "$pkgname-$pkgver"
