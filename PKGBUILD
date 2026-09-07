@@ -1,4 +1,4 @@
-# Maintainer: Showberry Contributors
+# Maintainer: Dackerie <dackerie@showberry.dev>
 pkgname=showberry
 pkgver=0.1.0
 pkgrel=1
