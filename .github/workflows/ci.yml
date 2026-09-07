@@ -31,6 +31,7 @@ jobs:
             libglib2.0-dev-bin \
             python3-venv \
             python3-pip \
+            python3-libtorrent \
             xvfb \
             xauth
 
@@ -62,6 +63,7 @@ jobs:
           GSETTINGS_SCHEMA_DIR: data
           PYTHONPATH: .
         run: |
+          set -o pipefail
           xvfb-run -a -s "-screen 0 1920x1080x24" pytest tests/ -v -ra --tb=short 2>&1 | tee pytest_output.log
 
       - name: Report Test Results

@@ -223,7 +223,7 @@ class StreamDetailsDialog(Adw.Window):
 
         # Status group
         group = Adw.PreferencesGroup()
-        group.set_title("Playback & Buffer Health")
+        group.set_title("Playback &amp; Buffer Health")
 
         # Row 1: Source
         self._source_row = Adw.ActionRow()
@@ -245,7 +245,7 @@ class StreamDetailsDialog(Adw.Window):
 
         # Row 3: Buffer & Download Progress
         self._progress_row = Adw.ActionRow()
-        self._progress_row.set_title("Buffer & Download")
+        self._progress_row.set_title("Buffer &amp; Download")
         p_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         p_box.set_valign(Gtk.Align.CENTER)
         self._progress_val = Gtk.Label(label="0%")
