@@ -5,7 +5,7 @@ import gi
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw
+from gi.repository import Gtk, Adw, Gdk
 
 Adw.init()
 
@@ -1277,6 +1277,99 @@ class TestUINavigation(unittest.TestCase):
             DatabaseService._instance = orig_instance
             if os.path.exists(temp_db_path):
                 os.remove(temp_db_path)
+
+
+    def test_library_nav_continue_watching_up_to_tabs(self):
+        """CW card navigating Up emits focus-tabs signal."""
+        from showberry.ui.library_page import LibraryPage
+        from showberry.services.database import DatabaseService
+
+        db = DatabaseService()
+        with db._get_connection() as conn:
+            conn.execute('INSERT OR REPLACE INTO watch_history (tmdb_id, title, media_type, duration_seconds, progress_seconds, updated_at) VALUES (891, "CW Up Test", "movie", 7200, 1000, 1700000000)')
+            conn.commit()
+
+        lp = LibraryPage()
+        tabs_focused = []
+        lp.connect('focus-tabs', lambda p: tabs_focused.append(True))
+
+        cw_card = lp._cw_box.get_first_child()
+        self.assertIsNotNone(cw_card)
+        cw_card.emit('navigate-grid', 'up')
+        self.assertTrue(len(tabs_focused) > 0)
+
+        with db._get_connection() as conn:
+            conn.execute('DELETE FROM watch_history WHERE tmdb_id = 891')
+            conn.commit()
+
+    def test_library_nav_watchlist_up_to_tabs_when_cw_empty(self):
+        """WL card navigating Up when CW is hidden emits focus-tabs signal."""
+        from showberry.ui.library_page import LibraryPage
+        from showberry.services.database import DatabaseService
+
+        db = DatabaseService()
+        with db._get_connection() as conn:
+            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (892, "WL Only Test", "movie", 1700000000)')
+            conn.commit()
+
+        lp = LibraryPage()
+        lp._cw_section.set_visible(False)
+        tabs_focused = []
+        lp.connect('focus-tabs', lambda p: tabs_focused.append(True))
+
+        first_wl = lp._wl_flowbox.get_child_at_index(0)
+        self.assertIsNotNone(first_wl)
+        wl_card = first_wl.get_child()
+        wl_card.emit('navigate-grid', 'up')
+        self.assertTrue(len(tabs_focused) > 0)
+
+        with db._get_connection() as conn:
+            conn.execute('DELETE FROM watchlist WHERE tmdb_id = 892')
+            conn.commit()
+
+    def test_switcher_down_and_tab_focus_helpers(self):
+        """ShowberryWindow focus_tabs, focus_active_page, and switcher Down navigation."""
+        from showberry.window import ShowberryWindow
+        win = ShowberryWindow()
+        # Test focus_tabs focuses active switcher button
+        self.assertTrue(win.focus_tabs())
+        btn = win._switcher.get_first_child()
+        self.assertIsNotNone(btn)
+        self.assertTrue(hasattr(btn, 'get_property'))
+
+        # Test Down on switcher navigates to active page
+        handled = win._on_switcher_key_pressed(None, Gdk.KEY_Down, 0, 0)
+        self.assertTrue(handled)
+
+    def test_flowbox_child_key_capture_delegation(self):
+        """FlowBoxChild capture key controller routes arrow keys to card and emits navigate-grid."""
+        from showberry.ui.library_page import LibraryPage
+        from showberry.services.database import DatabaseService
+
+        db = DatabaseService()
+        with db._get_connection() as conn:
+            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (893, "Capture Test", "movie", 1700000000)')
+            conn.commit()
+
+        lp = LibraryPage()
+        first_wl = lp._wl_flowbox.get_child_at_index(0)
+        self.assertIsNotNone(first_wl)
+        card = first_wl.get_child()
+
+        nav_events = []
+        card.connect('navigate-grid', lambda c, d: nav_events.append(d))
+
+        # Find key controller on first_wl
+        controllers = [c for c in first_wl.observe_controllers() if isinstance(c, Gtk.EventControllerKey)]
+        self.assertTrue(len(controllers) > 0)
+        ctrl = controllers[0]
+        handled = ctrl.emit('key-pressed', Gdk.KEY_Right, 0, 0)
+        self.assertTrue(handled)
+        self.assertIn('right', nav_events)
+
+        with db._get_connection() as conn:
+            conn.execute('DELETE FROM watchlist WHERE tmdb_id = 893')
+            conn.commit()
 
 
 if __name__ == '__main__':

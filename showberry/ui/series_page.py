@@ -187,9 +187,14 @@ class SeriesPage(Gtk.Box):
     def _on_search_key_pressed(self, controller, keyval, keycode, state):
         if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):
             return False
-        if keyval == Gdk.KEY_Down:
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
             self._focus_first_card()
             return True
+        elif keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            root = self.get_root()
+            if root and hasattr(root, 'focus_tabs'):
+                root.focus_tabs()
+                return True
         elif keyval == Gdk.KEY_Escape:
             self._search_entry.set_text("")
             self._focus_first_card()
@@ -301,6 +306,12 @@ class SeriesPage(Gtk.Box):
             card.connect('navigate-grid', self._on_card_navigate)
             card.connect('toggle-watchlist', self._on_card_watchlist)
             self._flowbox.append(card)
+            child = card.get_parent()
+            if child:
+                child_key = Gtk.EventControllerKey.new()
+                child_key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+                child_key.connect('key-pressed', lambda ctrl, val, code, st, c=card: c._on_key_pressed(ctrl, val, code, st))
+                child.add_controller(child_key)
 
         self._current_page = page + 1
         return False

@@ -20,6 +20,7 @@ class LibraryPage(Gtk.Box):
     __gsignals__ = {
         'movie-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         'play-movie':     (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'focus-tabs':     (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self):
@@ -164,6 +165,12 @@ class LibraryPage(Gtk.Box):
                 card.connect('navigate-grid', self._on_wl_navigate)
                 card.connect('toggle-watchlist', self._on_wl_card_toggled)
                 self._wl_flowbox.append(card)
+                child = card.get_parent()
+                if child:
+                    child_key = Gtk.EventControllerKey.new()
+                    child_key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+                    child_key.connect('key-pressed', lambda ctrl, val, code, st, c=card: c._on_key_pressed(ctrl, val, code, st))
+                    child.add_controller(child_key)
 
     def focus_first(self) -> bool:
         """Focus the first item in Continue Watching, or first item in Watchlist."""
@@ -191,15 +198,28 @@ class LibraryPage(Gtk.Box):
             sib = card.get_prev_sibling()
             if sib and hasattr(sib, 'grab_focus'):
                 sib.grab_focus()
+        elif direction == 'up':
+            root = self.get_root()
+            if root and hasattr(root, 'focus_tabs'):
+                root.focus_tabs()
+            self.emit('focus-tabs')
         elif direction == 'down':
-            # Move down into the first item of the Watchlist
-            first_wl = self._wl_flowbox.get_child_at_index(0)
-            if first_wl:
-                wl_card = first_wl.get_child()
+            # Move down into the matching column in Watchlist if available
+            cw_idx = 0
+            curr = self._cw_box.get_first_child()
+            while curr and curr != card:
+                cw_idx += 1
+                curr = curr.get_next_sibling()
+
+            target_child = self._wl_flowbox.get_child_at_index(cw_idx)
+            if not target_child:
+                target_child = self._wl_flowbox.get_child_at_index(0)
+            if target_child:
+                wl_card = target_child.get_child()
                 if wl_card and hasattr(wl_card, 'grab_focus'):
                     wl_card.grab_focus()
                 else:
-                    first_wl.grab_focus()
+                    target_child.grab_focus()
 
     def _on_wl_navigate(self, card, direction: str):
         parent = card.get_parent()
@@ -215,12 +235,25 @@ class LibraryPage(Gtk.Box):
 
         if direction == 'up':
             if idx < cols:
-                # First row of Watchlist -> navigate up to Continue Watching
+                # First row of Watchlist -> navigate up to Continue Watching if visible
                 if self._cw_section.get_visible():
-                    first_cw = self._cw_box.get_first_child()
-                    if first_cw and hasattr(first_cw, 'grab_focus'):
-                        first_cw.grab_focus()
-                        return
+                    cw_children = []
+                    curr = self._cw_box.get_first_child()
+                    while curr:
+                        cw_children.append(curr)
+                        curr = curr.get_next_sibling()
+                    if cw_children:
+                        target_cw = cw_children[min(idx, len(cw_children) - 1)]
+                        if hasattr(target_cw, 'grab_focus'):
+                            target_cw.grab_focus()
+                            return
+
+                # Continue Watching is not visible (or has no children) -> navigate up to tabs
+                root = self.get_root()
+                if root and hasattr(root, 'focus_tabs'):
+                    root.focus_tabs()
+                self.emit('focus-tabs')
+                return
             else:
                 target_idx = max(0, idx - cols)
                 target_child = self._wl_flowbox.get_child_at_index(target_idx)
@@ -296,6 +329,13 @@ class LibraryPage(Gtk.Box):
                     wl_card = first_wl.get_child()
                     if wl_card and hasattr(wl_card, 'grab_focus'):
                         wl_card.grab_focus()
+                    else:
+                        first_wl.grab_focus()
+                else:
+                    root = self.get_root()
+                    if root and hasattr(root, 'focus_tabs'):
+                        root.focus_tabs()
+                    self.emit('focus-tabs')
 
         # Find and remove the card from the CW box immediately (instant feedback)
         child = self._cw_box.get_first_child()
