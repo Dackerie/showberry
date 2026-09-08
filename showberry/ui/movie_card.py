@@ -359,6 +359,7 @@ class MovieCard(Gtk.Box):
         """Card body click → navigate to detail page."""
         if gesture:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
+        self.grab_focus()
         self.emit('clicked-movie', self._movie)
 
     def _on_play_released(self, gesture, n_press, x, y):

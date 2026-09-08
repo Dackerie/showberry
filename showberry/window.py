@@ -64,6 +64,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self._player_page.connect('stream-failed', self._on_stream_failed)
 
         self.set_content(self._toast_overlay)
+        GLib.timeout_add(150, self.focus_active_page)
 
     def _create_main_page(self) -> Adw.NavigationPage:
         toolbar_view = Adw.ToolbarView()
@@ -76,6 +77,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self._library_page = LibraryPage()
         self._library_page.connect('movie-selected', self._on_movie_selected)
         self._library_page.connect('play-movie', self._on_play_movie)
+        self._library_page.connect('focus-tabs', lambda p: self.focus_tabs())
         p_library = self._view_stack.add_titled(self._library_page, 'library', 'Library')
         p_library.set_icon_name('emblem-favorite-symbolic')
         self._view_stack.connect(
@@ -102,11 +104,21 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self._switcher.set_policy(Adw.ViewSwitcherPolicy.WIDE)
         header_bar.set_title_widget(self._switcher)
 
+        switcher_key = Gtk.EventControllerKey.new()
+        switcher_key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        switcher_key.connect('key-pressed', self._on_switcher_key_pressed)
+        self._switcher.add_controller(switcher_key)
+
         # Bottom ViewSwitcherBar for narrow/mobile screens
         self._switcher_bar = Adw.ViewSwitcherBar()
         self._switcher_bar.set_stack(self._view_stack)
         self._switcher_bar.set_reveal(False)
         toolbar_view.add_bottom_bar(self._switcher_bar)
+
+        switcher_bar_key = Gtk.EventControllerKey.new()
+        switcher_bar_key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        switcher_bar_key.connect('key-pressed', self._on_switcher_key_pressed)
+        self._switcher_bar.add_controller(switcher_bar_key)
 
         # Breakpoint for narrow/mobile screens (< 600px)
         mobile_bp = Adw.Breakpoint.new(Adw.breakpoint_condition_parse("max-width: 600px"))
@@ -133,6 +145,41 @@ class ShowberryWindow(Adw.ApplicationWindow):
         main_page = Adw.NavigationPage.new(toolbar_view, 'Showberry')
         main_page.set_tag('main')
         return main_page
+
+    def _on_switcher_key_pressed(self, controller, keyval, keycode, state):
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            return self.focus_active_page()
+        return False
+
+    def focus_tabs(self) -> bool:
+        """Focus the active tab in the ViewSwitcher."""
+        switcher = self._switcher if self._switcher.get_visible() else self._switcher_bar
+        child = switcher.get_first_child()
+        active_btn = None
+        first_btn = child
+        while child:
+            if hasattr(child, 'get_property') and child.get_property('active'):
+                active_btn = child
+                break
+            child = child.get_next_sibling()
+        target = active_btn or first_btn
+        if target and hasattr(target, 'grab_focus'):
+            target.grab_focus()
+            return True
+        return False
+
+    def focus_active_page(self) -> bool:
+        """Focus the primary entry element in the active page."""
+        curr = self._view_stack.get_visible_child_name()
+        if curr == 'library' and hasattr(self, '_library_page'):
+            return self._library_page.focus_first()
+        elif curr == 'movies' and hasattr(self, '_movies_page'):
+            self._movies_page._search_entry.grab_focus()
+            return True
+        elif curr == 'series' and hasattr(self, '_series_page'):
+            self._series_page._search_entry.grab_focus()
+            return True
+        return False
 
     def _on_nav_page_changed(self, nav_view, pspec):
         vis = nav_view.get_visible_page()
