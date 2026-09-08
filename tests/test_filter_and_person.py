@@ -242,6 +242,16 @@ class TestFilterSortPopover(unittest.TestCase):
 class TestUpcomingBadges(unittest.TestCase):
     """Test upcoming badges on cards and movie detail pages."""
 
+    def setUp(self):
+        self._details_patcher = patch.object(MoviePage, '_load_details_async')
+        self._details_patcher.start()
+        self._card_data_patcher = patch.object(MovieCard, '_load_card_data')
+        self._card_data_patcher.start()
+
+    def tearDown(self):
+        self._details_patcher.stop()
+        self._card_data_patcher.stop()
+
     def test_get_badge_label_upcoming(self):
         future_date = (datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d')
         past_date_in_theaters = (datetime.now() - timedelta(days=20)).strftime('%Y-%m-%d')
@@ -283,6 +293,10 @@ class TestPersonPage(unittest.TestCase):
     """Test PersonPage filmography UI, tabs, and interactions."""
 
     def setUp(self):
+        self._load_patcher = patch.object(PersonPage, '_load_person_info')
+        self._load_patcher.start()
+        self._avatar_patcher = patch.object(PersonPage, '_load_avatar')
+        self._avatar_patcher.start()
         self.person_data = {
             'id': 999,
             'name': 'Florence Pugh',
@@ -290,6 +304,10 @@ class TestPersonPage(unittest.TestCase):
             'character': 'Yelena Belova',
         }
         self.page = PersonPage(self.person_data)
+
+    def tearDown(self):
+        self._load_patcher.stop()
+        self._avatar_patcher.stop()
 
     def test_page_structure(self):
         self.assertEqual(self.page.get_title(), 'Florence Pugh')
@@ -379,6 +397,16 @@ class TestPersonPage(unittest.TestCase):
 class TestCastClickToPersonIntegration(unittest.TestCase):
     """Test clicking cast member chips in MoviePage and navigation in ShowberryWindow."""
 
+    def setUp(self):
+        self._details_patcher = patch.object(MoviePage, '_load_details_async')
+        self._details_patcher.start()
+        self._load_patcher = patch.object(PersonPage, '_load_person_info')
+        self._load_patcher.start()
+
+    def tearDown(self):
+        self._details_patcher.stop()
+        self._load_patcher.stop()
+
     def test_movie_page_cast_click_emits_person_selected(self):
         mp = MoviePage({'id': 500, 'title': 'Interstellar'})
         cast = [{'id': 102, 'name': 'Matthew McConaughey', 'character': 'Cooper'}]
@@ -407,6 +435,13 @@ class TestCastClickToPersonIntegration(unittest.TestCase):
 
 class TestMoviePageDirectorChips(unittest.TestCase):
     """Test MoviePage clickable director & creator chips."""
+
+    def setUp(self):
+        self._details_patcher = patch.object(MoviePage, '_load_details_async')
+        self._details_patcher.start()
+
+    def tearDown(self):
+        self._details_patcher.stop()
 
     def test_movie_page_single_director_chip(self):
         mp = MoviePage({
@@ -464,6 +499,23 @@ class TestMoviePageDirectorChips(unittest.TestCase):
 class TestPersonPageKeyboardNav(unittest.TestCase):
     """Test PersonPage tab counts, keyboard navigation, and search fallback."""
 
+    def setUp(self):
+        self._load_patcher = patch.object(PersonPage, '_load_person_info')
+        self._load_patcher.start()
+
+    def tearDown(self):
+        self._load_patcher.stop()
+
+    def test_load_person_info_spawns_thread(self):
+        with patch('threading.Thread') as mock_thread:
+            page = PersonPage({'id': 525, 'name': 'Christopher Nolan'})
+            self._load_patcher.stop()
+            try:
+                page._load_person_info(525)
+                mock_thread.assert_called_once()
+            finally:
+                self._load_patcher.start()
+
     def test_tab_counts_update(self):
         page = PersonPage({'id': 525, 'name': 'Christopher Nolan'})
         credits = [
@@ -520,12 +572,11 @@ class TestPersonPageKeyboardNav(unittest.TestCase):
         mock_details.return_value = {'name': 'Christopher Nolan', 'known_for_department': 'Directing'}
         mock_credits.return_value = [{'id': 1, 'title': 'Inception', 'media_type': 'movie'}]
 
-        with patch.object(PersonPage, '_load_person_info'):
-            page = PersonPage({'id': None, 'name': 'Christopher Nolan'})
-            page._fetch_data_worker(0)
-            mock_search.assert_called_once_with('Christopher Nolan')
-            mock_details.assert_called_once_with(525)
-            mock_credits.assert_called_once_with(525)
+        page = PersonPage({'id': None, 'name': 'Christopher Nolan'})
+        page._fetch_data_worker(0)
+        mock_search.assert_called_once_with('Christopher Nolan')
+        mock_details.assert_called_once_with(525)
+        mock_credits.assert_called_once_with(525)
 
 
 if __name__ == '__main__':
