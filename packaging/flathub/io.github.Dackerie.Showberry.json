@@ -72,8 +72,8 @@
       "sources": [
         {
           "type": "archive",
-          "url": "https://github.com/Dackerie/showberry/archive/refs/tags/v0.1.1.tar.gz",
-          "sha256": "8be361ef45fea140ce5186c5d7b258cc7730018d892ac2e4a736fa0fa566ecf2"
+          "url": "https://github.com/Dackerie/showberry/archive/refs/tags/v0.2.0.tar.gz",
+          "sha256": "5b9df5ab664b168a953f4a759260ea5feafd379cbb2b7d79217959cc2935884e"
         }
       ]
     }
