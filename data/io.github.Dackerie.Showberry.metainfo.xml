@@ -16,7 +16,9 @@
       <li>Search for any title with instant results</li>
       <li>Stream movies and TV series using MPV with hardware acceleration</li>
       <li>Torrent P2P streaming with background buffering and file selection</li>
-      <li>Clean, adaptive GNOME interface</li>
+      <li>Filter and sort catalogues by genre, release year, language, and rating</li>
+      <li>Explore actor and director filmographies with complete credit timelines</li>
+      <li>Clean, adaptive GNOME interface with full keyboard navigation</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.Dackerie.Showberry.desktop</launchable>
@@ -38,7 +40,7 @@
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/02-movies.png</image>
-      <caption>Browse trending and popular movies with release info and ratings</caption>
+      <caption>Browse trending and popular movies with release info, filter &amp; sort, and badges</caption>
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/01-library.png</image>
@@ -46,7 +48,7 @@
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/03-movie-details.png</image>
-      <caption>Rich movie details with high-resolution backdrops, cast, and overview</caption>
+      <caption>Rich movie details with high-resolution backdrops, clickable director chip, cast, and overview</caption>
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/04-series.png</image>
@@ -57,11 +59,28 @@
       <caption>Season and episode picker with detailed synopsis and direct streaming</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/06-preferences.png</image>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/06-person.png</image>
+      <caption>Actor and director filmography page with biography and work credits</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/07-preferences.png</image>
       <caption>Preferences dialog for custom TMDB keys, providers, and torrent caching</caption>
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.0" date="2026-09-08">
+      <description>
+        <p>Major feature release introducing advanced discovery filters, person filmographies, and UX refinements:</p>
+        <ul>
+          <li>Interactive Filter &amp; Sort popover for Movies and Series with genre, decade/year, language, and vote count thresholds</li>
+          <li>New Person filmography page featuring actor/director biographies, formatted bio expansion, and categorized credit tabs</li>
+          <li>Clickable Director and Creator chips directly on Movie and TV details pages</li>
+          <li>Contextual release status badges including Upcoming, In Theaters, and Director chips</li>
+          <li>Full 4-way keyboard navigation support across PersonPage credits, tabs, and navigation views</li>
+          <li>Clean hover and click-outside popover dismissal for smoother browsing</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-09-08">
       <description>
         <p>Bugfix release restoring smooth keyboard navigation:</p>

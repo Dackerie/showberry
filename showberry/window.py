@@ -12,6 +12,7 @@ from showberry.ui.library_page import LibraryPage
 from showberry.ui.movies_page import MoviesPage
 from showberry.ui.series_page import SeriesPage
 from showberry.ui.movie_page import MoviePage
+from showberry.ui.person_page import PersonPage
 from showberry.ui.settings_page import SettingsPage
 from showberry.ui.player_page import PlayerPage
 
@@ -200,8 +201,16 @@ class ShowberryWindow(Adw.ApplicationWindow):
         movie_page = MoviePage(movie=movie_data)
         movie_page.connect('play-movie', self._on_play_movie)
         movie_page.connect('movie-selected', self._on_movie_selected)
+        movie_page.connect('person-selected', self._on_person_selected)
         movie_page.connect('watchlist-toggled', lambda p, m, a: self._library_page.refresh() if hasattr(self, '_library_page') else None)
         self._nav_view.push(movie_page)
+
+    def _on_person_selected(self, page, person_data):
+        """Push person filmography page onto navigation view."""
+        person_page = PersonPage(person_data=person_data)
+        person_page.connect('movie-selected', self._on_movie_selected)
+        person_page.connect('play-movie', self._on_play_movie)
+        self._nav_view.push(person_page)
 
     def _on_play_movie(self, page, stream_data):
         """Start playback and push player page (occupies 100% of the window)."""
@@ -424,7 +433,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         """Show About Showberry dialog."""
         dialog = Adw.AboutDialog.new()
         dialog.set_application_name("Showberry")
-        dialog.set_version("0.1.1")
+        dialog.set_version("0.2.0")
         dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://github.com/Dackerie/showberry")

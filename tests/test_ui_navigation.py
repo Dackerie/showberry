@@ -835,9 +835,13 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(mp._cast_box.get_visible())
         self.assertIsNotNone(mp._cast_row.get_first_child())
 
-        # Verify cast pill labels are single-line and non-wrapping
-        cast_pill = mp._cast_row.get_first_child()
-        name_lbl = cast_pill.get_first_child()
+        # Verify cast button hierarchy and non-wrapping labels
+        cast_btn = mp._cast_row.get_first_child()
+        self.assertIsInstance(cast_btn, Gtk.Button)
+        chip_box = cast_btn.get_child()
+        avatar = chip_box.get_first_child()
+        text_box = avatar.get_next_sibling()
+        name_lbl = text_box.get_first_child()
         self.assertFalse(name_lbl.get_wrap())
         self.assertTrue(name_lbl.get_single_line_mode())
 
@@ -912,6 +916,9 @@ class TestUINavigation(unittest.TestCase):
             mp._on_key_pressed(None, Gdk.KEY_Escape, 0, 0)
         except NameError as ne:
             self.fail(f"_on_key_pressed raised NameError: {ne}")
+        finally:
+            if hasattr(mp, '_db'):
+                mp._db.remove_from_watchlist(100)
 
     def test_player_controls_docked_margins(self):
         """PlayerControls must be docked to bottom edge with 0 margins."""

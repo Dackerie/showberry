@@ -214,6 +214,16 @@ flowboxchild:focus .movie-card {
     padding: 2px 8px;
 }
 
+.card-badge.badge-upcoming {
+    background-color: rgba(28, 113, 216, 0.88);
+    color: #ffffff;
+    font-size: 0.70rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
 /* Remove / delete button overlay on Continue Watching cards */
 .card-remove-button {
     background-color: rgba(0, 0, 0, 0.72);
@@ -228,4 +238,91 @@ flowboxchild:focus .movie-card {
     background-color: rgba(220, 50, 50, 0.85);
     border-color: rgba(255, 255, 255, 0.7);
 }
+
+/* Cast member clickable chips */
+.cast-card {
+    background-color: alpha(@window_fg_color, 0.06);
+    border: 1px solid alpha(@window_fg_color, 0.12);
+    border-radius: 24px;
+    padding: 2px 6px;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.cast-card:hover {
+    background-color: alpha(@window_fg_color, 0.14);
+    border-color: alpha(@accent_color, 0.45);
+}
+
+.cast-card:focus {
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+}
+
+.cast-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.cast-character {
+    font-size: 0.78rem;
+}
+
+/* Filter & Sort Popover */
+.filter-sort-popover {
+    border-radius: 12px;
+}
+
+.card-badge.badge-director {
+    background-color: rgba(145, 65, 172, 0.90);
+    color: #ffffff;
+    font-size: 0.70rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* Director clickable chip */
+.director-chip {
+    background-color: alpha(@window_fg_color, 0.08);
+    border: 1px solid alpha(@window_fg_color, 0.15);
+    border-radius: 18px;
+    padding: 3px 10px;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.director-chip:hover {
+    background-color: alpha(@window_fg_color, 0.16);
+    border-color: alpha(@accent_color, 0.55);
+}
+
+.director-chip:focus {
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+}
+
+/* PersonPage Bio expand/collapse button */
+.bio-expand-btn {
+    background-color: alpha(@window_fg_color, 0.08);
+    border: 1px solid alpha(@window_fg_color, 0.18);
+    border-radius: 9999px;
+    padding: 4px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 4px;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.bio-expand-btn:hover {
+    background-color: alpha(@window_fg_color, 0.18);
+    border-color: alpha(@accent_color, 0.6);
+}
+
+.bio-expand-btn:focus {
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+}
+
+
+
 

@@ -29,7 +29,7 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 
 ## 📸 Screenshots
 
-| Movies Discovery | Movie Details & Cast |
+| Movies Discovery & Badges | Movie Details & Director Chip |
 | :---: | :---: |
 | [![Movies](data/screenshots/02-movies.png)](data/screenshots/02-movies.png) | [![Movie Details](data/screenshots/03-movie-details.png)](data/screenshots/03-movie-details.png) |
 
@@ -37,9 +37,13 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 | :---: | :---: |
 | [![TV Series](data/screenshots/04-series.png)](data/screenshots/04-series.png) | [![Series Details](data/screenshots/05-series-details.png)](data/screenshots/05-series-details.png) |
 
-| Library & Continue Watching | App Preferences |
+| Cast & Director Filmography | Library & Continue Watching |
 | :---: | :---: |
-| [![Library](data/screenshots/01-library.png)](data/screenshots/01-library.png) | [![Preferences](data/screenshots/06-preferences.png)](data/screenshots/06-preferences.png) |
+| [![Person Filmography](data/screenshots/06-person.png)](data/screenshots/06-person.png) | [![Library](data/screenshots/01-library.png)](data/screenshots/01-library.png) |
+
+| App Preferences |
+| :---: |
+| [![Preferences](data/screenshots/07-preferences.png)](data/screenshots/07-preferences.png) |
 
 ---
 
@@ -49,9 +53,13 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 - **Hardware-Accelerated MPV Playback**: Low-latency video presentation rendered directly via OpenGL shaders (`GSK_RENDERER=gl`), zero-copy buffer sharing, and full hardware decoding (VA-API / NVDEC).
 - **Sequential BitTorrent Streaming**: Instant playback of magnet links and torrent swarms using **libtorrent-rasterbar**. Downloads video pieces sequentially, prioritizes file header/atom metadata, serves range requests through an internal threaded HTTP bridge, and automatically prunes local disk cache according to user preferences.
 - **Continuous Resume & Continuity**: Automatically preserves exact playback timestamps, audio tracks, and the specific torrent release (`infoHash` and file index) inside a local SQLite database so resuming cached releases is instantaneous.
+- **Advanced Catalogue Filter & Sort**: Interactive discovery popover for Movies and Series enabling multi-faceted filtering by genre, release decade/year, original language, release status, and sorting by Popularity, Rating (with minimum vote count thresholds to prevent niche distortions), Release Date, or Vote Count.
+- **Cast & Director Filmographies**: Dedicated `PersonPage` with high-resolution profile imagery, full biographical summary with line-clamped expander pill button, and categorized filmography tabs (`All`, `Movies`, `TV Series`) annotated with work counts.
+- **Interactive Director & Creator Navigation**: Clickable `"Directed by <Name> ❯"` and `"Created by <Name> ❯"` chips directly on movie and TV series overview pages for instant one-click filmography browsing.
+- **Contextual Release Badges**: Clear visual card badges including `UPCOMING` (blue) for unreleased media, `IN THEATERS` (green) for active theatrical runs, `DIRECTOR` (purple) for directorial credits in filmographies, and streaming network logos for TV series.
 - **Direct Multi-Source Scrapers**: Integrated streaming resolvers (VidFast, CineSrc, SuperEmbed, VidKing, etc.) featuring TLS fingerprint emulation via `curl-impersonate` and real-time HEAD health checks.
 - **Smart Subtitle Engine**: Integrated OpenSubtitles lookup with auto-detection, custom delay synchronization (`z`/`x`), and live font adjustment.
-- **Keyboard-First Workflow**: Directional arrow navigation across card grids, standard media playback hotkeys, and quick modal access (`t` for streams, `s` for subtitles, `i` for buffer telemetry).
+- **Keyboard-First Workflow**: Seamless 4-way arrow key movement across card grids, tabs, bio expander, and navigation back stacks (`Esc` / `Backspace`), alongside standard media playback hotkeys and quick modal access (`t` for streams, `s` for subtitles, `i` for buffer telemetry).
 
 ---
 
@@ -82,6 +90,8 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 | `Ctrl + F` / `/` | Focus Search Bar |
 | `w` | Toggle Watchlist for selected title |
 | `Return` | Open selected card |
+| `Esc` / `Backspace` | Pop page back to previous view |
+| `Up` / `Down` / `Left` / `Right` | Move focus between cards, tabs, and action rows |
 
 ---
 

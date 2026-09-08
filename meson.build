@@ -1,6 +1,6 @@
 project(
   'showberry',
-  version: '0.1.1',
+  version: '0.2.0',
   meson_version: '>= 0.62',
   default_options: [
     'warning_level=2',

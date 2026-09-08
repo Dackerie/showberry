@@ -13,11 +13,27 @@ from showberry.services.tmdb import TMDBClient
 class ImageCache:
     """Cache for downloaded images."""
 
+    _default_instance = None
+
+    @classmethod
+    def get_default(cls):
+        if cls._default_instance is None:
+            cls._default_instance = cls()
+        return cls._default_instance
+
     def __init__(self, cache_dir=None):
         if cache_dir is None:
             cache_dir = Path(GLib.get_user_cache_dir()) / 'showberry' / 'images'
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def load_image(self, url, callback, width=None, height=None):
+        """Asynchronously load an image and invoke callback(texture) on main thread."""
+        import threading
+        def _worker():
+            tex = self.get_image(url, width, height)
+            GLib.idle_add(callback, tex)
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _get_cache_path(self, url):
         """Get local cache path for a URL."""
