@@ -424,7 +424,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         """Show About Showberry dialog."""
         dialog = Adw.AboutDialog.new()
         dialog.set_application_name("Showberry")
-        dialog.set_version("0.1.0")
+        dialog.set_version("0.1.1")
         dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://github.com/Dackerie/showberry")
