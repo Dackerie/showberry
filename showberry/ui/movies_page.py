@@ -308,12 +308,6 @@ class MoviesPage(Gtk.Box):
             card.connect('navigate-grid', self._on_card_navigate)
             card.connect('toggle-watchlist', self._on_card_watchlist)
             self._flowbox.append(card)
-            child = card.get_parent()
-            if child:
-                child_key = Gtk.EventControllerKey.new()
-                child_key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-                child_key.connect('key-pressed', lambda ctrl, val, code, st, c=card: c._on_key_pressed(ctrl, val, code, st))
-                child.add_controller(child_key)
 
         self._current_page = page + 1
         return False
