@@ -10,7 +10,7 @@ gi.require_version('Adw', '1')
 
 from gi.repository import Gtk, Adw, GLib, GObject, Pango, Graphene, Gdk
 
-from showberry.services.tmdb import TMDBClient, genre_id_to_name
+from showberry.services.tmdb import TMDBClient, genre_id_to_name, TMDB_IMAGE_BASE
 from showberry.services.image_cache import ImageCache
 from showberry.services.database import DatabaseService
 from showberry.providers import get_all_providers
@@ -100,6 +100,7 @@ class MoviePage(Adw.NavigationPage):
     __gsignals__ = {
         'play-movie': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         'movie-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
+        'person-selected': (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         'watchlist-toggled': (GObject.SignalFlags.RUN_FIRST, None, (object, bool)),
     }
 
@@ -178,7 +179,11 @@ class MoviePage(Adw.NavigationPage):
             self._on_select_stream_clicked(None)
             return True
         elif keyval in (Gdk.KEY_Escape, Gdk.KEY_BackSpace):
-            if root and hasattr(root, '_nav_view'):
+            nav = self.get_ancestor(Adw.NavigationView)
+            if nav:
+                nav.pop()
+                return True
+            elif root and hasattr(root, '_nav_view'):
                 root._nav_view.pop()
                 return True
         return False
@@ -283,13 +288,23 @@ class MoviePage(Adw.NavigationPage):
 
         self._details.append(self._meta_box)
 
-        # Dedicated Director label (instant display, clean typography)
+        # Dedicated Director container & label (instant display, clean clickable chips)
+        self._director_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._director_box.set_valign(Gtk.Align.CENTER)
+        self._director_box.set_visible(False)
+
+        self._director_chips_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._director_chips_box.set_valign(Gtk.Align.CENTER)
+        self._director_box.append(self._director_chips_box)
+
         self._director_label = Gtk.Label()
         self._director_label.add_css_class('dim-label')
         self._director_label.set_xalign(0)
-        self._director_label.set_wrap(True)
+        self._director_label.set_wrap(False)
         self._director_label.set_visible(False)
-        self._details.append(self._director_label)
+        self._director_box.append(self._director_label)
+
+        self._details.append(self._director_box)
 
         # Genres (FlowBox so pills wrap cleanly on narrow/mobile screens)
         self._genres_box = Gtk.FlowBox()
@@ -463,6 +478,7 @@ class MoviePage(Adw.NavigationPage):
         bp.add_setter(self._title_label, "justify", Gtk.Justification.CENTER)
         bp.add_setter(self._tagline_label, "xalign", 0.5)
         bp.add_setter(self._meta_box, "halign", Gtk.Align.CENTER)
+        bp.add_setter(self._director_box, "halign", Gtk.Align.CENTER)
         bp.add_setter(self._director_label, "xalign", 0.5)
         bp.add_setter(self._play_button, "hexpand", True)
         bp.add_setter(self._resume_button, "hexpand", True)
@@ -496,11 +512,29 @@ class MoviePage(Adw.NavigationPage):
             self._rating_label.set_text('')
 
         release_date = movie.get('release_date') or movie.get('first_air_date') or ''
+        is_upcoming = False
         if release_date:
             year = str(release_date)[:4]
-            self._year_label.set_text(year)
+            try:
+                rel_dt = datetime.strptime(str(release_date)[:10], '%Y-%m-%d')
+                if (datetime.now() - rel_dt).days < 0:
+                    is_upcoming = True
+                    self._year_label.set_text(f"Upcoming ({year})")
+                    self._year_label.add_css_class('accent')
+                else:
+                    self._year_label.set_text(year)
+                    self._year_label.remove_css_class('accent')
+            except Exception:
+                self._year_label.set_text(year)
+                self._year_label.remove_css_class('accent')
         else:
             self._year_label.set_text('')
+            self._year_label.remove_css_class('accent')
+
+        if is_upcoming:
+            self._play_button.set_tooltip_text("This title has not been released yet.")
+        else:
+            self._play_button.set_tooltip_text(None)
 
         runtime = movie.get('runtime')
         if runtime:
@@ -509,12 +543,9 @@ class MoviePage(Adw.NavigationPage):
             self._runtime_label.set_text('')
 
 
-        directors = movie.get('directors') or []
-        if directors:
-            self._director_label.set_text(f"Directed by {', '.join(directors)}")
-            self._director_label.set_visible(True)
-        else:
-            self._director_label.set_visible(False)
+        directors_data = movie.get('directors_data')
+        directors = movie.get('directors')
+        self._render_directors(directors_data, directors)
 
         # Genres
         genre_names = movie.get('genre_names', [])
@@ -559,6 +590,165 @@ class MoviePage(Adw.NavigationPage):
         self._load_images_async()
         self._setup_providers()
 
+    def _render_directors(self, directors_data: Optional[List[Dict[str, Any]]], directors: Optional[List[str]] = None):
+        """Render clickable director / creator chips with instant fallback."""
+        is_tv = (self._movie.get('media_type') == 'tv')
+        prefix = "Created by" if is_tv else "Directed by"
+
+        while True:
+            child = self._director_chips_box.get_first_child()
+            if child is None:
+                break
+            self._director_chips_box.remove(child)
+
+        items = []
+        if directors_data:
+            items = [d for d in directors_data if d and d.get('name')]
+        elif directors:
+            items = [{'id': None, 'name': d, 'job': 'Creator' if is_tv else 'Director'} for d in directors if d]
+
+        if not items:
+            self._director_box.set_visible(False)
+            self._director_label.set_visible(False)
+            return
+
+        names = [d.get('name', '') for d in items]
+        full_text = f"{prefix} {', '.join(names)}"
+
+        if len(items) == 1:
+            p = items[0]
+            chip = Gtk.Button()
+            chip.add_css_class('director-chip')
+            chip.add_css_class('flat')
+            chip.set_valign(Gtk.Align.CENTER)
+            chip.set_cursor_from_name('pointer')
+            chip.set_focusable(True)
+
+            chip_content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            chip_content.set_margin_top(4)
+            chip_content.set_margin_bottom(4)
+            chip_content.set_margin_start(8)
+            chip_content.set_margin_end(10)
+
+            profile_path = p.get('profile_path')
+            if profile_path:
+                avatar = Adw.Avatar.new(24, p.get('name', ''), True)
+                avatar_url = f"{TMDB_IMAGE_BASE}/w185{profile_path}"
+                def _set_av_img(paintable, av=avatar):
+                    if paintable:
+                        av.set_custom_image(paintable)
+                ImageCache.get_default().load_image(avatar_url, _set_av_img)
+                chip_content.append(avatar)
+            else:
+                icon = Gtk.Image.new_from_icon_name('media-optical-symbolic')
+                icon.set_pixel_size(16)
+                chip_content.append(icon)
+
+            self._director_label.set_text(full_text)
+            self._director_label.set_visible(True)
+            if self._director_label.get_parent():
+                self._director_label.get_parent().remove(self._director_label)
+            chip_content.append(self._director_label)
+
+            arrow = Gtk.Image.new_from_icon_name('go-next-symbolic')
+            arrow.set_pixel_size(12)
+            arrow.add_css_class('dim-label')
+            chip_content.append(arrow)
+
+            chip.set_child(chip_content)
+            chip.connect('clicked', lambda b, pers=p: self.emit('person-selected', pers))
+
+            chip_key = Gtk.EventControllerKey.new()
+            def _on_chip_key(controller, keyval, keycode, state):
+                if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+                    if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                        self._resume_button.grab_focus()
+                        return True
+                    elif hasattr(self, '_play_button') and self._play_button.get_visible():
+                        self._play_button.grab_focus()
+                        return True
+                elif keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+                    if hasattr(self, '_watchlist_btn') and self._watchlist_btn.get_visible():
+                        self._watchlist_btn.grab_focus()
+                        return True
+                return False
+            chip_key.connect('key-pressed', _on_chip_key)
+            chip.add_controller(chip_key)
+
+            self._director_chips_box.append(chip)
+        else:
+            self._director_label.set_text(f"{prefix}:")
+            self._director_label.set_visible(True)
+            if self._director_label.get_parent():
+                self._director_label.get_parent().remove(self._director_label)
+            self._director_box.prepend(self._director_label)
+
+            for p in items:
+                chip = Gtk.Button()
+                chip.add_css_class('director-chip')
+                chip.add_css_class('flat')
+                chip.set_valign(Gtk.Align.CENTER)
+                chip.set_cursor_from_name('pointer')
+                chip.set_focusable(True)
+
+                chip_content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+                chip_content.set_margin_top(4)
+                chip_content.set_margin_bottom(4)
+                chip_content.set_margin_start(8)
+                chip_content.set_margin_end(8)
+
+                profile_path = p.get('profile_path')
+                if profile_path:
+                    avatar = Adw.Avatar.new(22, p.get('name', ''), True)
+                    avatar_url = f"{TMDB_IMAGE_BASE}/w185{profile_path}"
+                    def _set_av_img(paintable, av=avatar):
+                        if paintable:
+                            av.set_custom_image(paintable)
+                    ImageCache.get_default().load_image(avatar_url, _set_av_img)
+                    chip_content.append(avatar)
+                else:
+                    icon = Gtk.Image.new_from_icon_name('media-optical-symbolic')
+                    icon.set_pixel_size(14)
+                    chip_content.append(icon)
+
+                name_lbl = Gtk.Label(label=p.get('name', ''))
+                name_lbl.add_css_class('title-4')
+                chip_content.append(name_lbl)
+
+                chip.set_child(chip_content)
+                chip.connect('clicked', lambda b, pers=p: self.emit('person-selected', pers))
+
+                chip_key = Gtk.EventControllerKey.new()
+                def _on_chip_key(controller, keyval, keycode, state, b=chip):
+                    if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+                        if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                            self._resume_button.grab_focus()
+                            return True
+                        elif hasattr(self, '_play_button') and self._play_button.get_visible():
+                            self._play_button.grab_focus()
+                            return True
+                    elif keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+                        if hasattr(self, '_watchlist_btn') and self._watchlist_btn.get_visible():
+                            self._watchlist_btn.grab_focus()
+                            return True
+                    elif keyval in (Gdk.KEY_Left, Gdk.KEY_KP_Left):
+                        prev_sib = b.get_prev_sibling()
+                        if prev_sib and hasattr(prev_sib, 'grab_focus'):
+                            prev_sib.grab_focus()
+                            return True
+                    elif keyval in (Gdk.KEY_Right, Gdk.KEY_KP_Right):
+                        next_sib = b.get_next_sibling()
+                        if next_sib and hasattr(next_sib, 'grab_focus'):
+                            next_sib.grab_focus()
+                            return True
+                    return False
+                chip_key.connect('key-pressed', _on_chip_key)
+                chip.add_controller(chip_key)
+
+                self._director_chips_box.append(chip)
+
+        self._director_box.set_visible(True)
+
     def _render_cast(self, cast_list):
         """Render top cast member chips in horizontal scrolling row."""
         while True:
@@ -571,31 +761,84 @@ class MoviePage(Adw.NavigationPage):
             self._cast_box.set_visible(False)
             return
 
-        for person in cast_list[:12]:
-            chip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
-            chip.add_css_class('cast-card')
-            chip.set_valign(Gtk.Align.CENTER)
+        for person in cast_list[:16]:
+            btn = Gtk.Button()
+            btn.add_css_class('cast-card')
+            btn.add_css_class('flat')
+            btn.set_valign(Gtk.Align.CENTER)
+            btn.set_cursor_from_name('pointer')
 
-            name = person.get('name', '')
-            char = person.get('character', '')
+            chip_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            chip_box.set_margin_top(4)
+            chip_box.set_margin_bottom(4)
+            chip_box.set_margin_start(6)
+            chip_box.set_margin_end(10)
 
-            name_lbl = Gtk.Label(label=name)
+            avatar = Adw.Avatar.new(38, person.get('name', ''), True)
+            profile_path = person.get('profile_path')
+            if profile_path:
+                avatar_url = f"{TMDB_IMAGE_BASE}/w185{profile_path}"
+                def _set_avatar_img(paintable, av=avatar):
+                    if paintable:
+                        av.set_custom_image(paintable)
+                ImageCache.get_default().load_image(avatar_url, _set_avatar_img)
+            chip_box.append(avatar)
+
+            text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+            text_box.set_valign(Gtk.Align.CENTER)
+
+            name_lbl = Gtk.Label(label=person.get('name', ''))
             name_lbl.add_css_class('cast-name')
-            name_lbl.set_xalign(0.5)
+            name_lbl.set_xalign(0.0)
             name_lbl.set_wrap(False)
             name_lbl.set_single_line_mode(True)
-            chip.append(name_lbl)
+            text_box.append(name_lbl)
 
+            char = person.get('character', '')
             if char:
                 char_lbl = Gtk.Label(label=char)
                 char_lbl.add_css_class('cast-character')
                 char_lbl.add_css_class('dim-label')
-                char_lbl.set_xalign(0.5)
+                char_lbl.set_xalign(0.0)
                 char_lbl.set_wrap(False)
                 char_lbl.set_single_line_mode(True)
-                chip.append(char_lbl)
+                text_box.append(char_lbl)
 
-            self._cast_row.append(chip)
+            chip_box.append(text_box)
+            btn.set_child(chip_box)
+
+            btn.connect('clicked', lambda b, p=person: self.emit('person-selected', p))
+
+            cast_key = Gtk.EventControllerKey.new()
+            def _on_cast_key(controller, keyval, keycode, state, b=btn):
+                if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+                    if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                        self._resume_button.grab_focus()
+                        return True
+                    elif hasattr(self, '_play_button') and self._play_button.get_visible():
+                        self._play_button.grab_focus()
+                        return True
+                elif keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+                    if hasattr(self, '_recs_box') and self._recs_box.get_visible():
+                        first_card = self._recs_row.get_first_child()
+                        if first_card and hasattr(first_card, 'grab_focus'):
+                            first_card.grab_focus()
+                            return True
+                elif keyval in (Gdk.KEY_Left, Gdk.KEY_KP_Left):
+                    prev_sib = b.get_prev_sibling()
+                    if prev_sib and hasattr(prev_sib, 'grab_focus'):
+                        prev_sib.grab_focus()
+                        return True
+                elif keyval in (Gdk.KEY_Right, Gdk.KEY_KP_Right):
+                    next_sib = b.get_next_sibling()
+                    if next_sib and hasattr(next_sib, 'grab_focus'):
+                        next_sib.grab_focus()
+                        return True
+                return False
+            cast_key.connect('key-pressed', _on_cast_key)
+            btn.add_controller(cast_key)
+
+            self._cast_row.append(btn)
 
         self._cast_box.set_visible(True)
 
@@ -622,21 +865,39 @@ class MoviePage(Adw.NavigationPage):
         self._recs_box.set_visible(True)
 
     def _on_watchlist_key_pressed(self, controller, keyval, keycode, state):
-        if keyval == Gdk.KEY_Down:
-            if hasattr(self, '_play_button') and self._play_button.get_visible():
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            if hasattr(self, '_director_box') and self._director_box.get_visible():
+                first_chip = self._director_chips_box.get_first_child()
+                if first_chip and hasattr(first_chip, 'grab_focus'):
+                    first_chip.grab_focus()
+                    return True
+            if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                self._resume_button.grab_focus()
+                return True
+            elif hasattr(self, '_play_button') and self._play_button.get_visible():
                 self._play_button.grab_focus()
                 return True
         return False
 
     def _on_actions_key_pressed(self, controller, keyval, keycode, state):
-        if keyval == Gdk.KEY_Up:
+        if keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            if hasattr(self, '_director_box') and self._director_box.get_visible():
+                first_chip = self._director_chips_box.get_first_child()
+                if first_chip and hasattr(first_chip, 'grab_focus'):
+                    first_chip.grab_focus()
+                    return True
             if hasattr(self, '_watchlist_btn') and self._watchlist_btn.get_visible():
                 self._watchlist_btn.grab_focus()
                 return True
-        elif keyval == Gdk.KEY_Down:
+        elif keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
             if self._media_type == 'tv' and hasattr(self, '_season_dropdown') and self._tv_box.get_visible():
                 self._season_dropdown.grab_focus()
                 return True
+            elif hasattr(self, '_cast_box') and self._cast_box.get_visible():
+                first_btn = self._cast_row.get_first_child()
+                if first_btn and hasattr(first_btn, 'grab_focus'):
+                    first_btn.grab_focus()
+                    return True
             elif hasattr(self, '_recs_box') and self._recs_box.get_visible():
                 first_card = self._recs_row.get_first_child()
                 if first_card and hasattr(first_card, 'grab_focus'):
@@ -693,7 +954,15 @@ class MoviePage(Adw.NavigationPage):
                 if last_row and hasattr(last_row, 'grab_focus'):
                     last_row.grab_focus()
                     return
-            if hasattr(self, '_play_button'):
+            if hasattr(self, '_cast_box') and self._cast_box.get_visible():
+                first_btn = self._cast_row.get_first_child()
+                if first_btn and hasattr(first_btn, 'grab_focus'):
+                    first_btn.grab_focus()
+                    return
+            if hasattr(self, '_resume_button') and self._resume_button.get_visible():
+                self._resume_button.grab_focus()
+                return
+            elif hasattr(self, '_play_button'):
                 self._play_button.grab_focus()
                 return
         elif direction == 'left':
@@ -831,10 +1100,10 @@ class MoviePage(Adw.NavigationPage):
         if release_date:
             self._year_label.set_text(str(release_date)[:4])
 
-        directors = details.get('directors') or []
-        if directors:
-            self._director_label.set_text(f"Directed by {', '.join(directors)}")
-            self._director_label.set_visible(True)
+        directors_data = details.get('directors_data')
+        directors = details.get('directors')
+        if directors_data or directors:
+            self._render_directors(directors_data, directors)
 
         runtime = details.get('runtime')
         if runtime:

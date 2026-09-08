@@ -59,8 +59,25 @@ _NETWORK_BADGE_MAP = {
 
 def _get_badge_label(movie_data: Dict[str, Any]) -> Optional[str]:
     """Return a Heartive-style badge string or None."""
+    if movie_data.get('is_director'):
+        return 'DIRECTOR'
+
     media_type = movie_data.get('media_type', 'movie')
 
+    # 1. Check release date for "UPCOMING" or "IN THEATERS"
+    release_str = movie_data.get('release_date') or movie_data.get('first_air_date') or ''
+    if release_str:
+        try:
+            rel_date = datetime.strptime(release_str[:10], '%Y-%m-%d')
+            days_ago = (datetime.now() - rel_date).days
+            if days_ago < 0:
+                return 'UPCOMING'
+            if media_type == 'movie' and 0 <= days_ago <= 60:
+                return 'IN THEATERS'
+        except ValueError:
+            pass
+
+    # 2. TV streaming network badge
     if media_type == 'tv':
         network = (movie_data.get('network') or '').lower().strip()
         if network:
@@ -69,18 +86,7 @@ def _get_badge_label(movie_data: Dict[str, Any]) -> Optional[str]:
                 return mapped
             # Unknown network — show raw name, up to 14 chars
             return network.upper()[:14]
-        return None
 
-    # Movie: check release date for "IN THEATERS"
-    release_str = movie_data.get('release_date') or ''
-    if release_str:
-        try:
-            rel_date = datetime.strptime(release_str[:10], '%Y-%m-%d')
-            days_ago = (datetime.now() - rel_date).days
-            if 0 <= days_ago <= 60:
-                return 'IN THEATERS'
-        except ValueError:
-            pass
     return None
 
 
@@ -181,8 +187,19 @@ class MovieCard(Gtk.Box):
         badge_label = _get_badge_label(self._movie)
         if badge_label:
             self._badge.set_text(badge_label)
+            if badge_label == 'UPCOMING':
+                self._badge.add_css_class('badge-upcoming')
+                self._badge.remove_css_class('badge-director')
+            elif badge_label == 'DIRECTOR':
+                self._badge.add_css_class('badge-director')
+                self._badge.remove_css_class('badge-upcoming')
+            else:
+                self._badge.remove_css_class('badge-upcoming')
+                self._badge.remove_css_class('badge-director')
             self._badge.set_visible(True)
         else:
+            self._badge.remove_css_class('badge-upcoming')
+            self._badge.remove_css_class('badge-director')
             self._badge.set_visible(False)
         poster_overlay.add_overlay(self._badge)
 
@@ -458,11 +475,18 @@ class MovieCard(Gtk.Box):
         threading.Thread(target=enrich_worker, daemon=True).start()
 
     def _update_enriched_ui(self):
-        # Update badge (network or in theaters)
+        # Update badge (network or in theaters or upcoming)
         badge_label = _get_badge_label(self._movie)
         if badge_label:
             self._badge.set_text(badge_label)
+            if badge_label == 'UPCOMING':
+                self._badge.add_css_class('badge-upcoming')
+            else:
+                self._badge.remove_css_class('badge-upcoming')
             self._badge.set_visible(True)
+        else:
+            self._badge.remove_css_class('badge-upcoming')
+            self._badge.set_visible(False)
 
         # Update runtime or TV seasons
         rt_str = _format_runtime(self._movie.get('runtime'))

@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from datetime import date
 from typing import Dict, Any, List
 
 import gi
@@ -47,6 +48,7 @@ class MoviesPage(Gtk.Box):
 
         self._search_entry = Gtk.SearchEntry()
         self._search_entry.set_placeholder_text("Search movies by title...")
+        self._search_entry.set_hexpand(True)
         self._search_entry.connect('search-changed', self._on_search_changed)
         self._search_entry.connect('activate', self._on_search_activate)
 
@@ -54,7 +56,24 @@ class MoviesPage(Gtk.Box):
         search_key_ctrl.connect('key-pressed', self._on_search_key_pressed)
         self._search_entry.add_controller(search_key_ctrl)
 
-        search_clamp.set_child(self._search_entry)
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        search_box.append(self._search_entry)
+
+        from showberry.ui.filter_popover import FilterSortPopover
+        self._filter_popover = FilterSortPopover(is_tv=False)
+        self._filter_popover.connect('filter-changed', self._on_filter_changed)
+
+        self._filter_button = Gtk.MenuButton()
+        self._filter_button.set_icon_name('view-filter-symbolic')
+        self._filter_button.set_tooltip_text("Filter & Sort")
+        self._filter_button.set_valign(Gtk.Align.CENTER)
+        self._filter_button.set_popover(self._filter_popover)
+        filter_key_ctrl = Gtk.EventControllerKey.new()
+        filter_key_ctrl.connect('key-pressed', self._on_filter_btn_key_pressed)
+        self._filter_button.add_controller(filter_key_ctrl)
+        search_box.append(self._filter_button)
+
+        search_clamp.set_child(search_box)
         self.append(search_clamp)
 
         self.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -62,6 +81,11 @@ class MoviesPage(Gtk.Box):
         # ── Main Container ─────────────────────────────────────────────────
         self._content_overlay = Gtk.Overlay()
         self._content_overlay.set_vexpand(True)
+
+        dismiss_click = Gtk.GestureClick.new()
+        dismiss_click.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        dismiss_click.connect('pressed', self._on_content_pressed)
+        self._content_overlay.add_controller(dismiss_click)
 
         self._scroll = Gtk.ScrolledWindow()
         self._scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
@@ -226,11 +250,31 @@ class MoviesPage(Gtk.Box):
             return True
         return False
 
+    def _on_filter_btn_key_pressed(self, controller, keyval, keycode, state):
+        if state & (Gdk.ModifierType.CONTROL_MASK | Gdk.ModifierType.ALT_MASK):
+            return False
+        if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
+            self._focus_first_card()
+            return True
+        elif keyval in (Gdk.KEY_Up, Gdk.KEY_KP_Up):
+            root = self.get_root()
+            if root and hasattr(root, 'focus_tabs'):
+                root.focus_tabs()
+                return True
+        elif keyval in (Gdk.KEY_Left, Gdk.KEY_KP_Left):
+            self._search_entry.grab_focus()
+            return True
+        return False
+
     def _on_search_activate(self, entry):
         if self._search_timeout:
             GLib.source_remove(self._search_timeout)
         self._do_search()
         GLib.idle_add(self._focus_first_card)
+
+    def _on_filter_changed(self, popover, filters):
+        self._filter_popover.update_button_style(self._filter_button)
+        self._load_movies(reset=True)
 
     def _do_search(self):
         self._search_timeout = None
@@ -262,22 +306,88 @@ class MoviesPage(Gtk.Box):
             daemon=True
         ).start()
 
+    def _on_content_pressed(self, gesture, n_press, x, y):
+        if hasattr(self, '_filter_popover') and self._filter_popover.get_visible():
+            self._filter_popover.popdown()
+
     def _fetch_movies_worker(self, query: str, page: int, reset: bool):
         settings = SettingsService()
         self._tmdb.set_api_key(settings.tmdb_api_key)
 
+        filters = self._filter_popover.get_filter_params() if hasattr(self, '_filter_popover') else {}
+        is_active = filters.get('is_active', False)
+
         if not query:
-            trending = self._tmdb.get_trending(page=page) or []
-            popular = self._tmdb.get_popular(page=page) or []
-            seen = set()
-            movies = []
-            for m in trending + popular:
-                mid = m.get('id')
-                if mid and mid not in seen:
-                    seen.add(mid)
-                    movies.append(m)
+            if is_active:
+                movies = self._tmdb.discover_movies(
+                    sort_by=filters.get('sort_by', 'popularity.desc'),
+                    genre_id=filters.get('genre_id', 0),
+                    year=filters.get('year', 'All Years'),
+                    language=filters.get('language', ''),
+                    page=page,
+                    only_released=filters.get('only_released', False),
+                ) or []
+            else:
+                trending = self._tmdb.get_trending(page=page) or []
+                popular = self._tmdb.get_popular(page=page) or []
+                seen = set()
+                movies = []
+                for m in trending + popular:
+                    mid = m.get('id')
+                    if mid and mid not in seen:
+                        seen.add(mid)
+                        movies.append(m)
         else:
             movies = self._tmdb.search_movies(query, page=page) or []
+            if is_active:
+                gid = filters.get('genre_id', 0)
+                year = filters.get('year', 'All Years')
+                lang = filters.get('language', '')
+                sort_by = filters.get('sort_by', 'popularity.desc')
+                only_rel = filters.get('only_released', False)
+                today_str = date.today().isoformat()
+
+                filtered = []
+                for m in movies:
+                    if only_rel:
+                        rel = m.get('release_date') or ''
+                        if not rel or rel > today_str:
+                            continue
+                    if gid and gid > 0:
+                        m_gids = m.get('genre_ids', [])
+                        if gid not in m_gids:
+                            continue
+                    if year and year != 'All Years':
+                        rel = m.get('release_date', '') or ''
+                        if year.isdigit() and len(year) == 4:
+                            if not rel.startswith(year):
+                                continue
+                        elif year == '2010s' and not ('2010-01-01' <= rel <= '2019-12-31'):
+                            continue
+                        elif year == '2000s' and not ('2000-01-01' <= rel <= '2009-12-31'):
+                            continue
+                        elif year == '1990s' and not ('1990-01-01' <= rel <= '1999-12-31'):
+                            continue
+                        elif year == '1980s' and not ('1980-01-01' <= rel <= '1989-12-31'):
+                            continue
+                        elif year == 'Earlier' and not (rel and rel < '1980-01-01'):
+                            continue
+                    if lang and m.get('original_language') and m.get('original_language') != lang:
+                        continue
+                    filtered.append(m)
+
+                if sort_by == 'vote_average.desc':
+                    voted = [m for m in filtered if (m.get('vote_count') or 0) >= 100]
+                    filtered = voted if voted else filtered
+                    filtered.sort(key=lambda x: x.get('vote_average') or 0.0, reverse=True)
+                elif sort_by in ('release_date.desc', 'primary_release_date.desc'):
+                    filtered.sort(key=lambda x: x.get('release_date') or '', reverse=True)
+                elif sort_by == 'vote_count.desc':
+                    filtered.sort(key=lambda x: x.get('vote_count') or 0, reverse=True)
+                else:
+                    filtered.sort(key=lambda x: x.get('popularity') or 0.0, reverse=True)
+
+                movies = filtered
 
         GLib.idle_add(self._render_movies, movies, query, page, reset)
 
@@ -347,6 +457,8 @@ class MoviesPage(Gtk.Box):
     # ── Infinite Scroll ────────────────────────────────────────────────────
 
     def _on_scroll_changed(self, vadj):
+        if hasattr(self, '_filter_popover') and self._filter_popover.get_visible():
+            self._filter_popover.popdown()
         value = vadj.get_value()
         upper = vadj.get_upper()
         page_size = vadj.get_page_size()

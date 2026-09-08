@@ -2,6 +2,7 @@
 
 import os
 import time
+from datetime import date
 import requests
 from gi.repository import Gio, GLib
 
@@ -160,18 +161,26 @@ class TMDBClient:
         # Parse credits (directors & top cast)
         credits_data = data.get('credits') or {}
         cast = []
-        for c in credits_data.get('cast', [])[:12]:
+        for c in credits_data.get('cast', [])[:16]:
             cast.append({
+                'id': c.get('id'),
                 'name': c.get('name', ''),
                 'character': c.get('character', ''),
                 'profile_path': c.get('profile_path'),
             })
-        directors = [
-            c['name'] for c in credits_data.get('crew', [])
+        directors_data = [
+            {
+                'id': c.get('id'),
+                'name': c.get('name', ''),
+                'profile_path': c.get('profile_path'),
+                'job': 'Director',
+            }
+            for c in credits_data.get('crew', [])
             if c.get('job') == 'Director'
         ]
         parsed['cast'] = cast
-        parsed['directors'] = directors
+        parsed['directors_data'] = directors_data
+        parsed['directors'] = [d['name'] for d in directors_data]
 
         # Parse recommendations
         recs = data.get('recommendations', {}).get('results', [])
@@ -196,13 +205,38 @@ class TMDBClient:
         # Parse credits (top cast)
         credits_data = data.get('credits') or {}
         cast = []
-        for c in credits_data.get('cast', [])[:12]:
+        for c in credits_data.get('cast', [])[:16]:
             cast.append({
+                'id': c.get('id'),
                 'name': c.get('name', ''),
                 'character': c.get('character', ''),
                 'profile_path': c.get('profile_path'),
             })
         parsed['cast'] = cast
+
+        # Parse creators / directors
+        directors_data = [
+            {
+                'id': c.get('id'),
+                'name': c.get('name', ''),
+                'profile_path': c.get('profile_path'),
+                'job': 'Creator',
+            }
+            for c in data.get('created_by', [])
+        ]
+        if not directors_data:
+            directors_data = [
+                {
+                    'id': c.get('id'),
+                    'name': c.get('name', ''),
+                    'profile_path': c.get('profile_path'),
+                    'job': 'Director',
+                }
+                for c in credits_data.get('crew', [])
+                if c.get('job') in ('Director', 'Creator')
+            ]
+        parsed['directors_data'] = directors_data
+        parsed['directors'] = [d['name'] for d in directors_data]
 
         # Parse recommendations
         recs = data.get('recommendations', {}).get('results', [])
@@ -259,6 +293,196 @@ class TMDBClient:
         ]
 
         return {'cast': cast, 'directors': directors}
+
+    def discover_movies(self, sort_by: str = 'popularity.desc', genre_id: int = 0, year: str = 'All Years', language: str = '', page: int = 1, only_released: bool = False):
+        """Discover movies with filtering and sorting."""
+        params = {
+            'page': page,
+            'include_adult': False,
+        }
+        if sort_by == 'release_date.desc':
+            params['sort_by'] = 'primary_release_date.desc'
+        else:
+            params['sort_by'] = sort_by or 'popularity.desc'
+
+        if params['sort_by'] == 'vote_average.desc':
+            if year in ('1980s', 'Earlier'):
+                params['vote_count.gte'] = 100
+            else:
+                params['vote_count.gte'] = 300
+
+        if only_released:
+            params['primary_release_date.lte'] = date.today().isoformat()
+
+        if genre_id and int(genre_id) > 0:
+            params['with_genres'] = str(genre_id)
+
+        if language:
+            params['with_original_language'] = language
+
+        if year and year != 'All Years':
+            if year.isdigit() and len(year) == 4:
+                params['primary_release_year'] = int(year)
+            elif year == '2010s':
+                params['primary_release_date.gte'] = '2010-01-01'
+                params['primary_release_date.lte'] = '2019-12-31'
+            elif year == '2000s':
+                params['primary_release_date.gte'] = '2000-01-01'
+                params['primary_release_date.lte'] = '2009-12-31'
+            elif year == '1990s':
+                params['primary_release_date.gte'] = '1990-01-01'
+                params['primary_release_date.lte'] = '1999-12-31'
+            elif year == '1980s':
+                params['primary_release_date.gte'] = '1980-01-01'
+                params['primary_release_date.lte'] = '1989-12-31'
+            elif year == 'Earlier':
+                params['primary_release_date.lte'] = '1979-12-31'
+
+        data = self._request('/discover/movie', params)
+        if data is None:
+            return []
+        return [self._parse_movie(m) for m in data.get('results', [])]
+
+    def discover_tv(self, sort_by: str = 'popularity.desc', genre_id: int = 0, year: str = 'All Years', language: str = '', page: int = 1, only_released: bool = False):
+        """Discover TV series with filtering and sorting."""
+        params = {
+            'page': page,
+            'include_adult': False,
+        }
+        if sort_by == 'release_date.desc':
+            params['sort_by'] = 'first_air_date.desc'
+        else:
+            params['sort_by'] = sort_by or 'popularity.desc'
+
+        if params['sort_by'] == 'vote_average.desc':
+            params['vote_count.gte'] = 150
+
+        if only_released:
+            params['first_air_date.lte'] = date.today().isoformat()
+
+        if genre_id and int(genre_id) > 0:
+            params['with_genres'] = str(genre_id)
+
+        if language:
+            params['with_original_language'] = language
+
+        if year and year != 'All Years':
+            if year.isdigit() and len(year) == 4:
+                params['first_air_date_year'] = int(year)
+            elif year == '2010s':
+                params['first_air_date.gte'] = '2010-01-01'
+                params['first_air_date.lte'] = '2019-12-31'
+            elif year == '2000s':
+                params['first_air_date.gte'] = '2000-01-01'
+                params['first_air_date.lte'] = '2009-12-31'
+            elif year == '1990s':
+                params['first_air_date.gte'] = '1990-01-01'
+                params['first_air_date.lte'] = '1999-12-31'
+            elif year == '1980s':
+                params['first_air_date.gte'] = '1980-01-01'
+                params['first_air_date.lte'] = '1989-12-31'
+            elif year == 'Earlier':
+                params['first_air_date.lte'] = '1979-12-31'
+
+        data = self._request('/discover/tv', params)
+        if data is None:
+            return []
+        return [self._parse_tv(m) for m in data.get('results', [])]
+
+    def get_person_details(self, person_id: int):
+        """Get details about an actor / cast member."""
+        data = self._request(f'/person/{person_id}')
+        if not data:
+            return None
+        profile_path = data.get('profile_path')
+        return {
+            'id': data.get('id'),
+            'name': data.get('name', ''),
+            'biography': data.get('biography', ''),
+            'birthday': data.get('birthday'),
+            'deathday': data.get('deathday'),
+            'place_of_birth': data.get('place_of_birth'),
+            'known_for_department': data.get('known_for_department', 'Acting'),
+            'profile_path': profile_path,
+            'profile_url': f"{TMDB_IMAGE_BASE}/w342{profile_path}" if profile_path else None,
+            'profile_url_small': f"{TMDB_IMAGE_BASE}/w185{profile_path}" if profile_path else None,
+        }
+
+    def search_person(self, query: str):
+        """Search for person by name."""
+        if not query or not query.strip():
+            return []
+        data = self._request('/search/person', {'query': query.strip()})
+        if not data:
+            return []
+        return data.get('results', [])
+
+    def get_person_credits(self, person_id: int):
+        """Get combined movie and TV credits for a person (both cast and crew/directing)."""
+        data = self._request(f'/person/{person_id}/combined_credits')
+        if not data:
+            return []
+
+        items_map = {}
+
+        # 1. Parse crew (prioritize directing & writing/producing)
+        for c in data.get('crew', []):
+            cid = c.get('id')
+            mtype = c.get('media_type', 'movie')
+            if not cid:
+                continue
+            unique_key = (cid, mtype)
+            job = c.get('job', '')
+            dept = c.get('department', '')
+
+            is_dir = (job in ('Director', 'Creator'))
+            if not is_dir and dept not in ('Directing', 'Writing', 'Creator') and job not in ('Writer', 'Screenplay', 'Executive Producer', 'Producer'):
+                continue
+
+            if unique_key not in items_map:
+                if mtype == 'tv':
+                    item = self._parse_tv(c)
+                else:
+                    item = self._parse_movie(c)
+                item['character'] = job
+                item['job'] = job
+                item['is_director'] = is_dir
+                item['popularity'] = c.get('popularity', 0.0)
+                items_map[unique_key] = item
+            else:
+                existing = items_map[unique_key]
+                if is_dir:
+                    existing['is_director'] = True
+                    existing['job'] = job
+                    existing['character'] = job
+
+        # 2. Parse cast
+        for c in data.get('cast', []):
+            cid = c.get('id')
+            mtype = c.get('media_type', 'movie')
+            if not cid:
+                continue
+            unique_key = (cid, mtype)
+            if unique_key not in items_map:
+                if mtype == 'tv':
+                    item = self._parse_tv(c)
+                else:
+                    item = self._parse_movie(c)
+                item['character'] = c.get('character', '')
+                item['job'] = 'Actor'
+                item['is_director'] = False
+                item['popularity'] = c.get('popularity', 0.0)
+                items_map[unique_key] = item
+            else:
+                existing = items_map[unique_key]
+                char = c.get('character', '')
+                if char and not existing.get('character'):
+                    existing['character'] = char
+
+        items = list(items_map.values())
+        # Directed titles prioritized, then ordered by popularity
+        items.sort(key=lambda x: (x.get('is_director', False), x.get('popularity') or 0.0), reverse=True)
+        return items
 
     def _parse_movie(self, data, detailed=False):
         """Parse movie data from TMDB response."""
@@ -346,5 +570,89 @@ def genre_id_to_name(genre_id):
         14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
         9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi', 10770: 'TV Movie',
         53: 'Thriller', 10752: 'War', 37: 'Western',
+        # TV genres
+        10759: 'Action & Adventure', 10762: 'Kids', 10763: 'News',
+        10764: 'Reality', 10765: 'Sci-Fi & Fantasy', 10766: 'Soap',
+        10767: 'Talk', 10768: 'War & Politics',
     }
     return genres.get(genre_id, 'Unknown')
+
+
+MOVIE_GENRES = [
+    (0, 'All Genres'),
+    (28, 'Action'),
+    (12, 'Adventure'),
+    (16, 'Animation'),
+    (35, 'Comedy'),
+    (80, 'Crime'),
+    (99, 'Documentary'),
+    (18, 'Drama'),
+    (10751, 'Family'),
+    (14, 'Fantasy'),
+    (36, 'History'),
+    (27, 'Horror'),
+    (10402, 'Music'),
+    (9648, 'Mystery'),
+    (10749, 'Romance'),
+    (878, 'Sci-Fi'),
+    (10770, 'TV Movie'),
+    (53, 'Thriller'),
+    (10752, 'War'),
+    (37, 'Western'),
+]
+
+TV_GENRES = [
+    (0, 'All Genres'),
+    (10759, 'Action & Adventure'),
+    (16, 'Animation'),
+    (35, 'Comedy'),
+    (80, 'Crime'),
+    (99, 'Documentary'),
+    (18, 'Drama'),
+    (10751, 'Family'),
+    (10762, 'Kids'),
+    (9648, 'Mystery'),
+    (10763, 'News'),
+    (10764, 'Reality'),
+    (10765, 'Sci-Fi & Fantasy'),
+    (10766, 'Soap'),
+    (10767, 'Talk'),
+    (10768, 'War & Politics'),
+    (37, 'Western'),
+]
+
+LANGUAGES = [
+    ('', 'All Languages'),
+    ('en', 'English'),
+    ('ja', 'Japanese'),
+    ('ko', 'Korean'),
+    ('es', 'Spanish'),
+    ('fr', 'French'),
+    ('de', 'German'),
+    ('it', 'Italian'),
+    ('hi', 'Hindi'),
+    ('zh', 'Chinese'),
+]
+
+YEAR_OPTIONS = [
+    'All Years',
+    '2026',
+    '2025',
+    '2024',
+    '2023',
+    '2022',
+    '2021',
+    '2020',
+    '2010s',
+    '2000s',
+    '1990s',
+    '1980s',
+    'Earlier',
+]
+
+SORT_OPTIONS = [
+    ('popularity.desc', 'Popularity (High to Low)'),
+    ('vote_average.desc', 'Rating (High to Low)'),
+    ('release_date.desc', 'Release Date (Newest First)'),
+    ('vote_count.desc', 'Most Voted'),
+]
