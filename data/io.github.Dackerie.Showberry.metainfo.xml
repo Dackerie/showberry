@@ -68,6 +68,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.1" date="2026-09-08">
+      <description>
+        <p>Playback UX enhancements, subtitle positioning, and caption controls:</p>
+        <ul>
+          <li>Suppressed On-Screen Controller (OSC) popups during keyboard seeking, volume, and playback shortcuts</li>
+          <li>Elevated subtitle rendering position with safe bottom clearance to avoid obscuring subtitles</li>
+          <li>Configured automatic English subtitle track selection on stream load</li>
+          <li>Added 'c' keyboard shortcut to toggle captions (defaulting to English)</li>
+          <li>Refined OSC styling with softened gradient and reduced bottom padding</li>
+          <li>Isolated background test threads to guarantee clean test runs in CI</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-08">
       <description>
         <p>Major feature release introducing advanced discovery filters, person filmographies, and UX refinements:</p>

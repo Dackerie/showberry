@@ -1,6 +1,7 @@
 """Tests for Komikku-style Adw.NavigationView UI transitions."""
 
 import unittest
+from unittest.mock import MagicMock, patch
 import gi
 
 gi.require_version('Gtk', '4.0')
@@ -901,6 +902,85 @@ class TestUINavigation(unittest.TestCase):
             # Verify _setup_keybindings configured CAPTURE
             pass
         self.assertTrue(True)
+
+    def test_player_keyboard_shortcuts_do_not_show_osc(self):
+        """Keyboard actions (seek, volume, mute, delay, play/pause) must NOT display the OSC controls."""
+        pp = PlayerPage()
+        pp._hide_controls()
+        self.assertFalse(pp._controls.get_visible())
+
+        with patch.object(pp, '_show_controls_briefly') as mock_show:
+            # Seek right (10s)
+            pp._on_key_pressed(None, Gdk.KEY_Right, 0, 0)
+            mock_show.assert_not_called()
+            self.assertFalse(pp._controls.get_visible())
+
+            # Seek left (10s)
+            pp._on_key_pressed(None, Gdk.KEY_Left, 0, 0)
+            mock_show.assert_not_called()
+            self.assertFalse(pp._controls.get_visible())
+
+            # Seek right shift (60s)
+            pp._on_key_pressed(None, Gdk.KEY_Right, 0, Gdk.ModifierType.SHIFT_MASK)
+            mock_show.assert_not_called()
+            self.assertFalse(pp._controls.get_visible())
+
+            # Volume up
+            pp._on_key_pressed(None, Gdk.KEY_Up, 0, 0)
+            mock_show.assert_not_called()
+
+            # Volume down
+            pp._on_key_pressed(None, Gdk.KEY_Down, 0, 0)
+            mock_show.assert_not_called()
+
+            # Mute
+            pp._on_key_pressed(None, Gdk.KEY_m, 0, 0)
+            mock_show.assert_not_called()
+
+            # Play / Pause
+            pp._on_key_pressed(None, Gdk.KEY_space, 0, 0)
+            mock_show.assert_not_called()
+
+            # Subtitle delay
+            pp._on_key_pressed(None, Gdk.KEY_z, 0, 0)
+            mock_show.assert_not_called()
+            pp._on_key_pressed(None, Gdk.KEY_x, 0, 0)
+            mock_show.assert_not_called()
+
+    def test_player_captions_toggle_shortcut(self):
+        """Pressing 'c' toggles captions and defaults to English."""
+        pp = PlayerPage()
+        pp._mpv_widget.get_sub_tracks = MagicMock(return_value=[
+            {'id': 1, 'title': 'French', 'lang': 'fre'},
+            {'id': 2, 'title': 'English (SDH)', 'lang': 'eng'},
+        ])
+        pp._mpv_widget.set_sub_track = MagicMock()
+        pp._mpv_widget.get_sub_track = MagicMock(return_value='no')
+
+        # 1. Subtitles are currently OFF -> Pressing 'c' enables English
+        handled = pp._on_key_pressed(None, Gdk.KEY_c, 0, 0)
+        self.assertTrue(handled)
+        pp._mpv_widget.set_sub_track.assert_called_with(2)
+        self.assertEqual(pp._osd_pill.get_text(), "Captions: English (SDH)")
+
+        # 2. Subtitles are currently ON -> Pressing 'c' disables them ('no')
+        pp._mpv_widget.get_sub_track.return_value = 2
+        handled = pp._on_key_pressed(None, Gdk.KEY_c, 0, 0)
+        self.assertTrue(handled)
+        pp._mpv_widget.set_sub_track.assert_called_with('no')
+        self.assertEqual(pp._osd_pill.get_text(), "Captions: Off")
+
+        # 3. No tracks loaded, but external subtitles available -> downloads & selects English
+        pp._mpv_widget.get_sub_tracks.return_value = []
+        pp._mpv_widget.get_sub_track.return_value = 'no'
+        pp._available_subtitles = [
+            {'label': 'Spanish', 'lang': 'spa', 'url': 'http://sub.es'},
+            {'label': 'English Full', 'lang': 'eng', 'url': 'http://sub.en'},
+        ]
+        with patch.object(pp, '_on_download_and_select_external_sub') as mock_dl:
+            pp._on_key_pressed(None, Gdk.KEY_C, 0, 0)
+            mock_dl.assert_called_once_with(pp._available_subtitles[1])
+            self.assertEqual(pp._osd_pill.get_text(), "Loading Captions: English Full...")
 
     def test_movie_page_gdk_key_shortcuts(self):
         """MoviePage key pressed handler must use Gdk without NameError."""

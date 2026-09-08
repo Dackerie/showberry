@@ -74,6 +74,7 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 | `Up` / `Down` | Volume up / down (5%) |
 | `m` | Toggle Mute |
 | `f` / `F11` | Toggle Fullscreen |
+| `c` | Toggle Captions on / off (Defaults to English) |
 | `s` | Open Subtitles Menu & Delay Controls |
 | `z` / `x` | Subtitle Delay (-100ms / +100ms) |
 | `t` | Open Torrent Stream Chooser Dialog |

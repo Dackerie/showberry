@@ -394,6 +394,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         g_play.append(Gtk.ShortcutsShortcut(title="Mute / Unmute", accelerator="m"))
         g_play.append(Gtk.ShortcutsShortcut(title="Decrease Subtitle Delay", accelerator="z"))
         g_play.append(Gtk.ShortcutsShortcut(title="Increase Subtitle Delay", accelerator="x"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Toggle Captions (Default English)", accelerator="c"))
         g_play.append(Gtk.ShortcutsShortcut(title="Subtitles Menu", accelerator="s"))
         g_play.append(Gtk.ShortcutsShortcut(title="Choose Torrent Stream", accelerator="t"))
         g_play.append(Gtk.ShortcutsShortcut(title="Stream Info / Stats", accelerator="i"))
@@ -433,7 +434,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         """Show About Showberry dialog."""
         dialog = Adw.AboutDialog.new()
         dialog.set_application_name("Showberry")
-        dialog.set_version("0.2.0")
+        dialog.set_version("0.2.1")
         dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://github.com/Dackerie/showberry")

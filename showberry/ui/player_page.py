@@ -105,6 +105,9 @@ class MpvWidget(Gtk.GLArea):
             demuxer_readahead_secs=120,
             cache_secs=120,
             network_timeout=15,
+            slang='eng,en,enUS,en-US',
+            sub_pos=94,
+            sub_margin_y=36,
         )
 
         @self._mpv.property_observer('paused-for-cache')
@@ -434,23 +437,38 @@ class MpvWidget(Gtk.GLArea):
             return 'no'
 
     def pause(self):
-        self._mpv.pause = True
+        try:
+            self._mpv.pause = True
+        except Exception:
+            pass
 
     def resume(self):
-        self._mpv.pause = False
+        try:
+            self._mpv.pause = False
+        except Exception:
+            pass
 
     def toggle_pause(self):
-        self._mpv.pause = not self._mpv.pause
-        return self._mpv.pause
+        try:
+            self._mpv.pause = not self._mpv.pause
+            return self._mpv.pause
+        except Exception:
+            return False
 
     def seek(self, seconds, reference='relative'):
-        self._mpv.seek(seconds, reference=reference)
+        try:
+            self._mpv.seek(seconds, reference=reference)
+        except Exception:
+            pass
 
     def set_volume(self, volume):
-        v = max(0.0, min(100.0, float(volume)))
-        self._mpv.volume = v
-        if v > 0 and self.is_muted():
-            self._mpv.mute = False
+        try:
+            v = max(0.0, min(100.0, float(volume)))
+            self._mpv.volume = v
+            if v > 0 and self.is_muted():
+                self._mpv.mute = False
+        except Exception:
+            pass
 
     def get_volume(self):
         try:
@@ -460,14 +478,23 @@ class MpvWidget(Gtk.GLArea):
             return 100.0
 
     def toggle_mute(self):
-        self._mpv.mute = not self._mpv.mute
-        return self._mpv.mute
+        try:
+            self._mpv.mute = not self._mpv.mute
+            return self._mpv.mute
+        except Exception:
+            return False
 
     def is_muted(self):
-        return bool(self._mpv.mute)
+        try:
+            return bool(self._mpv.mute)
+        except Exception:
+            return False
 
     def set_sub_delay(self, seconds: float):
-        self._mpv.sub_delay = round(seconds, 2)
+        try:
+            self._mpv.sub_delay = round(seconds, 2)
+        except Exception:
+            pass
 
     def get_sub_delay(self) -> float:
         try:
@@ -1166,21 +1193,18 @@ class PlayerPage(Adw.NavigationPage):
         if keyname in ['space', 'k', 'K']:
             paused = self._mpv_widget.toggle_pause()
             self.show_osd_notification("Paused" if paused else "Playing")
-            self._show_controls_briefly()
             return True
         elif keyname == 'Left':
             delta = -60 if shift else -10
             self._mpv_widget.seek(delta)
             sign = "+" if delta > 0 else ""
             self.show_osd_notification(f"Seek {sign}{delta}s")
-            self._show_controls_briefly()
             return True
         elif keyname == 'Right':
             delta = 60 if shift else 10
             self._mpv_widget.seek(delta)
             sign = "+" if delta > 0 else ""
             self.show_osd_notification(f"Seek {sign}{delta}s")
-            self._show_controls_briefly()
             return True
         elif keyname == 'Up':
             if self._mpv_widget.is_muted():
@@ -1189,7 +1213,6 @@ class PlayerPage(Adw.NavigationPage):
             vol = min(100.0, curr + 5.0)
             self._controls._volume_scale.set_value(vol)
             self.show_osd_notification(f"Volume: {int(vol)}%")
-            self._show_controls_briefly()
             return True
         elif keyname == 'Down':
             curr = self._mpv_widget.get_volume()
@@ -1199,11 +1222,9 @@ class PlayerPage(Adw.NavigationPage):
                 self.show_osd_notification("Volume: 0% (Muted)")
             else:
                 self.show_osd_notification(f"Volume: {int(vol)}%")
-            self._show_controls_briefly()
             return True
         elif keyname in ['m', 'M']:
             self._controls._on_mute_clicked(None)
-            self._show_controls_briefly()
             return True
         elif keyname in ['f', 'F', 'F11']:
             self._on_fullscreen_toggle(None)
@@ -1215,6 +1236,9 @@ class PlayerPage(Adw.NavigationPage):
             else:
                 self._on_close(None)
             return True
+        elif keyname in ['c', 'C']:
+            self._toggle_captions()
+            return True
         elif keyname in ['s', 'S']:
             self._controls._sub_btn.activate()
             return True
@@ -1224,7 +1248,6 @@ class PlayerPage(Adw.NavigationPage):
             sign = "+" if new_delay > 0 else ""
             self.show_osd_notification(f"Subtitle Delay: {sign}{new_delay:.2f}s ({sign}{int(new_delay * 1000)}ms)")
             self._controls._sub_popover.refresh_delay_label()
-            self._show_controls_briefly()
             return True
         elif keyname in ['x', 'X']:
             delta = 0.5 if shift else 0.1
@@ -1232,6 +1255,7 @@ class PlayerPage(Adw.NavigationPage):
             sign = "+" if new_delay > 0 else ""
             self.show_osd_notification(f"Subtitle Delay: {sign}{new_delay:.2f}s ({sign}{int(new_delay * 1000)}ms)")
             self._controls._sub_popover.refresh_delay_label()
+            return True
         elif keyname in ['t', 'T']:
             self._on_open_stream_chooser(None)
             return True
@@ -1240,6 +1264,64 @@ class PlayerPage(Adw.NavigationPage):
             return True
 
         return False
+
+    def _toggle_captions(self):
+        """Toggle subtitles on/off via 'c' key shortcut, defaulting to English."""
+        if not self._mpv_widget:
+            return
+
+        current_sid = self._mpv_widget.get_sub_track()
+        is_active = current_sid not in ('no', False, None, 0)
+
+        if is_active:
+            # Subtitles currently on -> turn off
+            self._mpv_widget.set_sub_track('no')
+            self.show_osd_notification("Captions: Off")
+            self._controls.refresh_subtitles()
+            return
+
+        # Subtitles currently off -> turn on English by default
+        tracks = self._mpv_widget.get_sub_tracks()
+        eng_track = None
+        for t in tracks:
+            lang = (t.get('lang') or '').lower()
+            title = (t.get('title') or '').lower()
+            if lang in ('eng', 'en') or 'english' in title:
+                eng_track = t
+                break
+
+        if eng_track:
+            self._mpv_widget.set_sub_track(eng_track['id'])
+            title = eng_track.get('title') or 'English'
+            self.show_osd_notification(f"Captions: {title}")
+            self._controls.refresh_subtitles()
+            return
+
+        # If tracks exist but none tagged with 'eng', select first loaded track
+        if tracks:
+            first_track = tracks[0]
+            self._mpv_widget.set_sub_track(first_track['id'])
+            title = first_track.get('title') or 'On'
+            self.show_osd_notification(f"Captions: {title}")
+            self._controls.refresh_subtitles()
+            return
+
+        # No tracks loaded in MPV yet, check self._available_subtitles
+        eng_avail = None
+        for s in self._available_subtitles:
+            lang = (s.get('lang') or '').lower()
+            label = (s.get('label') or '').lower()
+            if lang in ('eng', 'en') or 'english' in label:
+                eng_avail = s
+                break
+
+        target_sub = eng_avail or (self._available_subtitles[0] if self._available_subtitles else None)
+        if target_sub:
+            label = target_sub.get('label') or target_sub.get('lang') or 'English'
+            self.show_osd_notification(f"Loading Captions: {label}...")
+            self._on_download_and_select_external_sub(target_sub)
+        else:
+            self.show_osd_notification("No Captions Available")
 
     def load_stream(self, stream_data):
         """Load and play a stream asynchronously."""
