@@ -1,6 +1,6 @@
 # Maintainer: Dackerie <dackerie@showberry.dev>
 pkgname=showberry
-pkgver=0.1.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="An elegant, modern movie and TV series streaming application for GNOME"
 arch=('any')

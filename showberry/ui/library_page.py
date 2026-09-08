@@ -173,6 +173,10 @@ class LibraryPage(Gtk.Box):
                 card.connect('navigate-grid', self._on_wl_navigate)
                 card.connect('toggle-watchlist', self._on_wl_card_toggled)
                 self._wl_flowbox.append(card)
+                child = card.get_parent()
+                if child:
+                    child.set_focusable(False)
+                    child.set_focus_on_click(False)
 
     def focus_first(self) -> bool:
         """Focus the first item in Continue Watching, or first item in Watchlist."""
@@ -201,6 +205,7 @@ class LibraryPage(Gtk.Box):
             if sib and hasattr(sib, 'grab_focus'):
                 sib.grab_focus()
         elif direction == 'up':
+            self._scroll.get_vadjustment().set_value(0.0)
             root = self.get_root()
             if root and hasattr(root, 'focus_tabs'):
                 root.focus_tabs()
@@ -223,20 +228,47 @@ class LibraryPage(Gtk.Box):
                 else:
                     target_child.grab_focus()
 
+    def _get_columns_count(self) -> int:
+        fb = self._wl_flowbox
+        c0 = fb.get_child_at_index(0)
+        c1 = fb.get_child_at_index(1)
+        if c0 and c1:
+            ok0, r0 = c0.compute_bounds(fb)
+            ok1, r1 = c1.compute_bounds(fb)
+            if ok0 and ok1 and r0.get_width() > 50 and r1.get_x() > r0.get_x():
+                y0 = r0.get_y()
+                prev_x = r0.get_x()
+                cols = 1
+                while True:
+                    c = fb.get_child_at_index(cols)
+                    if not c:
+                        break
+                    ok, r = c.compute_bounds(fb)
+                    if not ok or r.get_x() <= prev_x or r.get_y() > y0 + 10:
+                        break
+                    prev_x = r.get_x()
+                    cols += 1
+                return max(1, cols)
+        width = self._wl_flowbox.get_width()
+        if width <= 1:
+            scroll_w = self._scroll.get_width()
+            if scroll_w <= 1:
+                scroll_w = 1200
+            clamped_w = min(1400, 800 + (scroll_w - 800) * 0.5) if scroll_w > 800 else scroll_w
+            width = max(100, clamped_w - 32)
+        return max(1, int((width + 14) // 224))
+
     def _on_wl_navigate(self, card, direction: str):
         parent = card.get_parent()
         if not parent or not hasattr(parent, 'get_index'):
             return
         idx = parent.get_index()
-
-        width = self._scroll.get_width()
-        if width <= 1:
-            width = 1000
-        available_width = min(width - 32, 1400)
-        cols = max(1, available_width // 210)
+        cols = self._get_columns_count()
 
         if direction == 'up':
             if idx < cols:
+                # Reset scroll adjustment so Continue Watching and top header are in view
+                self._scroll.get_vadjustment().set_value(0.0)
                 # First row of Watchlist -> navigate up to Continue Watching if visible
                 if self._cw_section.get_visible():
                     cw_children = []

@@ -728,25 +728,32 @@ class TestUINavigation(unittest.TestCase):
         from showberry.services.database import DatabaseService
 
         db = DatabaseService()
-        with db._get_connection() as conn:
-            conn.execute('INSERT OR REPLACE INTO watch_history (tmdb_id, title, media_type, duration_seconds, progress_seconds, updated_at) VALUES (881, "Test CW", "movie", 7200, 1000, 1700000000)')
-            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (882, "Test WL", "movie", 1700000000)')
-            conn.commit()
+        try:
+            with db._get_connection() as conn:
+                conn.execute('INSERT OR REPLACE INTO watch_history (tmdb_id, title, media_type, duration_seconds, progress_seconds, updated_at) VALUES (881, "Test CW", "movie", 7200, 1000, 1700000000)')
+                conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (882, "Test WL", "movie", 1700000000)')
+                conn.commit()
 
-        lp = LibraryPage()
-        # focus_first returns True
-        self.assertTrue(lp.focus_first())
+            lp = LibraryPage()
+            # focus_first returns True
+            self.assertTrue(lp.focus_first())
 
-        # CW card navigating down moves focus to WL
-        cw_card = lp._cw_box.get_first_child()
-        self.assertIsNotNone(cw_card)
-        cw_card.emit('navigate-grid', 'down')
+            # CW card navigating down moves focus to WL
+            cw_card = lp._cw_box.get_first_child()
+            self.assertIsNotNone(cw_card)
+            cw_card.emit('navigate-grid', 'down')
 
-        # WL card navigating up moves focus back to CW
-        first_wl = lp._wl_flowbox.get_child_at_index(0)
-        self.assertIsNotNone(first_wl)
-        wl_card = first_wl.get_child()
-        wl_card.emit('navigate-grid', 'up')
+            # WL card navigating up moves focus back to CW and resets scroll adjustment to 0
+            first_wl = lp._wl_flowbox.get_child_at_index(0)
+            self.assertIsNotNone(first_wl)
+            wl_card = first_wl.get_child()
+            wl_card.emit('navigate-grid', 'up')
+            self.assertEqual(lp._scroll.get_vadjustment().get_value(), 0.0)
+        finally:
+            with db._get_connection() as conn:
+                conn.execute('DELETE FROM watch_history WHERE tmdb_id = 881')
+                conn.execute('DELETE FROM watchlist WHERE tmdb_id = 882')
+                conn.commit()
 
 
     def test_movie_page_backdrop_dimensions(self):
@@ -1285,22 +1292,24 @@ class TestUINavigation(unittest.TestCase):
         from showberry.services.database import DatabaseService
 
         db = DatabaseService()
-        with db._get_connection() as conn:
-            conn.execute('INSERT OR REPLACE INTO watch_history (tmdb_id, title, media_type, duration_seconds, progress_seconds, updated_at) VALUES (891, "CW Up Test", "movie", 7200, 1000, 1700000000)')
-            conn.commit()
+        try:
+            with db._get_connection() as conn:
+                conn.execute('INSERT OR REPLACE INTO watch_history (tmdb_id, title, media_type, duration_seconds, progress_seconds, updated_at) VALUES (891, "CW Up Test", "movie", 7200, 1000, 1700000000)')
+                conn.commit()
 
-        lp = LibraryPage()
-        tabs_focused = []
-        lp.connect('focus-tabs', lambda p: tabs_focused.append(True))
+            lp = LibraryPage()
+            tabs_focused = []
+            lp.connect('focus-tabs', lambda p: tabs_focused.append(True))
 
-        cw_card = lp._cw_box.get_first_child()
-        self.assertIsNotNone(cw_card)
-        cw_card.emit('navigate-grid', 'up')
-        self.assertTrue(len(tabs_focused) > 0)
-
-        with db._get_connection() as conn:
-            conn.execute('DELETE FROM watch_history WHERE tmdb_id = 891')
-            conn.commit()
+            cw_card = lp._cw_box.get_first_child()
+            self.assertIsNotNone(cw_card)
+            cw_card.emit('navigate-grid', 'up')
+            self.assertTrue(len(tabs_focused) > 0)
+            self.assertEqual(lp._scroll.get_vadjustment().get_value(), 0.0)
+        finally:
+            with db._get_connection() as conn:
+                conn.execute('DELETE FROM watch_history WHERE tmdb_id = 891')
+                conn.commit()
 
     def test_library_nav_watchlist_up_to_tabs_when_cw_empty(self):
         """WL card navigating Up when CW is hidden emits focus-tabs signal."""
@@ -1308,24 +1317,26 @@ class TestUINavigation(unittest.TestCase):
         from showberry.services.database import DatabaseService
 
         db = DatabaseService()
-        with db._get_connection() as conn:
-            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (892, "WL Only Test", "movie", 1700000000)')
-            conn.commit()
+        try:
+            with db._get_connection() as conn:
+                conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (892, "WL Only Test", "movie", 1700000000)')
+                conn.commit()
 
-        lp = LibraryPage()
-        lp._cw_section.set_visible(False)
-        tabs_focused = []
-        lp.connect('focus-tabs', lambda p: tabs_focused.append(True))
+            lp = LibraryPage()
+            lp._cw_section.set_visible(False)
+            tabs_focused = []
+            lp.connect('focus-tabs', lambda p: tabs_focused.append(True))
 
-        first_wl = lp._wl_flowbox.get_child_at_index(0)
-        self.assertIsNotNone(first_wl)
-        wl_card = first_wl.get_child()
-        wl_card.emit('navigate-grid', 'up')
-        self.assertTrue(len(tabs_focused) > 0)
-
-        with db._get_connection() as conn:
-            conn.execute('DELETE FROM watchlist WHERE tmdb_id = 892')
-            conn.commit()
+            first_wl = lp._wl_flowbox.get_child_at_index(0)
+            self.assertIsNotNone(first_wl)
+            wl_card = first_wl.get_child()
+            wl_card.emit('navigate-grid', 'up')
+            self.assertTrue(len(tabs_focused) > 0)
+            self.assertEqual(lp._scroll.get_vadjustment().get_value(), 0.0)
+        finally:
+            with db._get_connection() as conn:
+                conn.execute('DELETE FROM watchlist WHERE tmdb_id = 892')
+                conn.commit()
 
     def test_switcher_down_and_tab_focus_helpers(self):
         """ShowberryWindow focus_tabs, focus_active_page, and switcher Down navigation."""
@@ -1347,30 +1358,57 @@ class TestUINavigation(unittest.TestCase):
         from showberry.services.database import DatabaseService
 
         db = DatabaseService()
-        with db._get_connection() as conn:
-            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (893, "Card Nav Test", "movie", 1700000000)')
-            conn.commit()
+        try:
+            with db._get_connection() as conn:
+                conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (893, "Card Nav Test", "movie", 1700000000)')
+                conn.commit()
 
+            lp = LibraryPage()
+            first_wl = lp._wl_flowbox.get_child_at_index(0)
+            self.assertIsNotNone(first_wl)
+            card = first_wl.get_child()
+
+            nav_events = []
+            card.connect('navigate-grid', lambda c, d: nav_events.append(d))
+
+            handled = card._on_key_pressed(None, Gdk.KEY_Right, 0, 0)
+            self.assertTrue(handled)
+            self.assertIn('right', nav_events)
+
+            # Verify focus_active_page returns False (never repeats in GLib timeouts)
+            win = ShowberryWindow()
+            res = win.focus_active_page()
+            self.assertFalse(res)
+        finally:
+            with db._get_connection() as conn:
+                conn.execute('DELETE FROM watchlist WHERE tmdb_id = 893')
+                conn.commit()
+
+    def test_grid_columns_count_and_down_navigation(self):
+        """MoviesPage, SeriesPage, and LibraryPage compute columns correctly and route DOWN."""
+        from showberry.ui.movies_page import MoviesPage
+        from showberry.ui.series_page import SeriesPage
+        from showberry.ui.library_page import LibraryPage
+        from showberry.ui.movie_card import MovieCard
+
+        mp = MoviesPage()
+        sp = SeriesPage()
         lp = LibraryPage()
-        first_wl = lp._wl_flowbox.get_child_at_index(0)
-        self.assertIsNotNone(first_wl)
-        card = first_wl.get_child()
 
-        nav_events = []
-        card.connect('navigate-grid', lambda c, d: nav_events.append(d))
+        # Check fallback computation on empty pages
+        self.assertGreaterEqual(mp._get_columns_count(), 1)
+        self.assertGreaterEqual(sp._get_columns_count(), 1)
+        self.assertGreaterEqual(lp._get_columns_count(), 1)
 
-        handled = card._on_key_pressed(None, Gdk.KEY_Right, 0, 0)
-        self.assertTrue(handled)
-        self.assertIn('right', nav_events)
+        # Populate MoviesPage with 8 cards
+        movies = [{'id': 700 + i, 'title': f'Grid Movie {i}'} for i in range(8)]
+        mp._render_movies(movies, '', 1, True)
 
-        # Verify focus_active_page returns False (never repeats in GLib timeouts)
-        win = ShowberryWindow()
-        res = win.focus_active_page()
-        self.assertFalse(res)
-
-        with db._get_connection() as conn:
-            conn.execute('DELETE FROM watchlist WHERE tmdb_id = 893')
-            conn.commit()
+        # FlowBoxChild wrapping must have focusable=False and focus_on_click=False
+        c0 = mp._flowbox.get_child_at_index(0)
+        self.assertIsNotNone(c0)
+        self.assertFalse(c0.get_focusable())
+        self.assertFalse(c0.get_focus_on_click())
 
 
 if __name__ == '__main__':

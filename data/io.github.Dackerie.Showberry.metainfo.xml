@@ -62,6 +62,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.1" date="2026-09-08">
+      <description>
+        <p>Bugfix release restoring smooth keyboard navigation:</p>
+        <ul>
+          <li>Fixed Watchlist to Continue Watching and header tabs UP navigation</li>
+          <li>Fixed vertical column alignment when pressing DOWN in Movies and TV grids</li>
+          <li>Ensured smooth viewport scroll restoration when moving between sections</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-09-06">
       <description>
         <p>Initial release of Showberry.</p>
