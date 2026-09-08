@@ -1341,14 +1341,14 @@ class TestUINavigation(unittest.TestCase):
         handled = win._on_switcher_key_pressed(None, Gdk.KEY_Down, 0, 0)
         self.assertTrue(handled)
 
-    def test_flowbox_child_key_capture_delegation(self):
-        """FlowBoxChild capture key controller routes arrow keys to card and emits navigate-grid."""
+    def test_movie_card_key_navigation_and_no_repeating_timer(self):
+        """MovieCard routes arrow keys to navigate-grid, and window does not repeat active page focus."""
         from showberry.ui.library_page import LibraryPage
         from showberry.services.database import DatabaseService
 
         db = DatabaseService()
         with db._get_connection() as conn:
-            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (893, "Capture Test", "movie", 1700000000)')
+            conn.execute('INSERT OR REPLACE INTO watchlist (tmdb_id, title, media_type, added_at) VALUES (893, "Card Nav Test", "movie", 1700000000)')
             conn.commit()
 
         lp = LibraryPage()
@@ -1359,13 +1359,14 @@ class TestUINavigation(unittest.TestCase):
         nav_events = []
         card.connect('navigate-grid', lambda c, d: nav_events.append(d))
 
-        # Find key controller on first_wl
-        controllers = [c for c in first_wl.observe_controllers() if isinstance(c, Gtk.EventControllerKey)]
-        self.assertTrue(len(controllers) > 0)
-        ctrl = controllers[0]
-        handled = ctrl.emit('key-pressed', Gdk.KEY_Right, 0, 0)
+        handled = card._on_key_pressed(None, Gdk.KEY_Right, 0, 0)
         self.assertTrue(handled)
         self.assertIn('right', nav_events)
+
+        # Verify focus_active_page returns False (never repeats in GLib timeouts)
+        win = ShowberryWindow()
+        res = win.focus_active_page()
+        self.assertFalse(res)
 
         with db._get_connection() as conn:
             conn.execute('DELETE FROM watchlist WHERE tmdb_id = 893')

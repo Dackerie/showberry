@@ -64,7 +64,6 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self._player_page.connect('stream-failed', self._on_stream_failed)
 
         self.set_content(self._toast_overlay)
-        GLib.timeout_add(150, self.focus_active_page)
 
     def _create_main_page(self) -> Adw.NavigationPage:
         toolbar_view = Adw.ToolbarView()
@@ -148,7 +147,8 @@ class ShowberryWindow(Adw.ApplicationWindow):
 
     def _on_switcher_key_pressed(self, controller, keyval, keycode, state):
         if keyval in (Gdk.KEY_Down, Gdk.KEY_KP_Down):
-            return self.focus_active_page()
+            self.focus_active_page()
+            return True
         return False
 
     def focus_tabs(self) -> bool:
@@ -172,19 +172,19 @@ class ShowberryWindow(Adw.ApplicationWindow):
         """Focus the primary entry element in the active page."""
         curr = self._view_stack.get_visible_child_name()
         if curr == 'library' and hasattr(self, '_library_page'):
-            return self._library_page.focus_first()
+            self._library_page.focus_first()
         elif curr == 'movies' and hasattr(self, '_movies_page'):
             self._movies_page._search_entry.grab_focus()
-            return True
         elif curr == 'series' and hasattr(self, '_series_page'):
             self._series_page._search_entry.grab_focus()
-            return True
         return False
 
     def _on_nav_page_changed(self, nav_view, pspec):
         vis = nav_view.get_visible_page()
         if vis and vis.get_tag() == 'main' and hasattr(self, '_library_page'):
-            self._library_page.schedule_refresh(100)
+            if getattr(self, '_nav_initialized', False):
+                self._library_page.schedule_refresh(100)
+            self._nav_initialized = True
 
     def _on_window_key_pressed(self, controller, keyval, keycode, state):
         focus = self.get_focus()

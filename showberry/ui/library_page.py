@@ -110,13 +110,21 @@ class LibraryPage(Gtk.Box):
         self.refresh()
         return False
 
-    def refresh(self):
+    def refresh(self, force: bool = False):
         """Reload watch history and watchlist from SQLite."""
         if self._refresh_timer:
             GLib.source_remove(self._refresh_timer)
             self._refresh_timer = None
         history = self._db.get_watch_history(limit=20)
         watchlist = self._db.get_watchlist(limit=50)
+
+        cw_fingerprint = [(h.get('tmdb_id'), h.get('progress_seconds')) for h in history]
+        wl_fingerprint = [w.get('tmdb_id') for w in watchlist]
+        if not force and hasattr(self, '_last_cw_fp') and hasattr(self, '_last_wl_fp'):
+            if self._last_cw_fp == cw_fingerprint and self._last_wl_fp == wl_fingerprint:
+                return  # Data has not changed; preserve existing widgets and active focus!
+        self._last_cw_fp = cw_fingerprint
+        self._last_wl_fp = wl_fingerprint
 
         # Clear Continue Watching items
         while True:
@@ -165,12 +173,6 @@ class LibraryPage(Gtk.Box):
                 card.connect('navigate-grid', self._on_wl_navigate)
                 card.connect('toggle-watchlist', self._on_wl_card_toggled)
                 self._wl_flowbox.append(card)
-                child = card.get_parent()
-                if child:
-                    child_key = Gtk.EventControllerKey.new()
-                    child_key.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-                    child_key.connect('key-pressed', lambda ctrl, val, code, st, c=card: c._on_key_pressed(ctrl, val, code, st))
-                    child.add_controller(child_key)
 
     def focus_first(self) -> bool:
         """Focus the first item in Continue Watching, or first item in Watchlist."""
