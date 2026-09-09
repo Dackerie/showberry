@@ -41,7 +41,10 @@ jobs:
 
   build-flatpak:
     name: Build Flatpak Bundle (.flatpak)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      options: --privileged
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -79,8 +82,11 @@ jobs:
             python3-gi \
             python3-pip \
             python3-venv \
+            python3-setuptools \
+            python3-wheel \
             libglib2.0-dev-bin \
             desktop-file-utils \
+            libfuse2t64 \
             wget \
             file
 
