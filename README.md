@@ -7,7 +7,6 @@
     <a href="https://github.com/Dackerie/showberry/actions/workflows/ci.yml"><img src="https://github.com/Dackerie/showberry/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
     <a href="https://github.com/Dackerie/showberry/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="License" /></a>
     <a href="https://gitlab.gnome.org/GNOME/libadwaita"><img src="https://img.shields.io/badge/GNOME-50%20%7C%20Adwaita-2a76dd.svg" alt="GNOME 50" /></a>
-    <a href="https://aur.archlinux.org/packages/showberry"><img src="https://img.shields.io/badge/AUR-showberry-1793d1.svg?logo=arch-linux" alt="AUR" /></a>
     <a href="https://flathub.org"><img src="https://img.shields.io/badge/Flathub-Ready-4a86cf.svg?logo=flatpak" alt="Flathub" /></a>
     <img src="https://img.shields.io/badge/Python-3.11+-3776ab.svg?logo=python" alt="Python" />
   </p>
@@ -117,19 +116,7 @@ chmod +x Showberry-x86_64.AppImage
 ./Showberry-x86_64.AppImage
 ```
 
-### Option 3: Arch Linux (AUR)
-Install directly from the Arch User Repository:
-```bash
-yay -S showberry
-```
-Or manually using `makepkg`:
-```bash
-git clone https://aur.archlinux.org/showberry.git
-cd showberry
-makepkg -si
-```
-
-### Option 4: Run Directly (Development / Portable)
+### Option 3: Run Directly (Development / Portable)
 Showberry can be executed directly from source without installation:
 ```bash
 git clone https://github.com/Dackerie/showberry.git
