@@ -52,6 +52,28 @@ for lib in /usr/lib/x86_64-linux-gnu/libmpv.so* /usr/lib/libmpv.so* /usr/lib64/l
     fi
 done
 
+# Recursively copy media dependencies (FFmpeg, libass, libplacebo, etc.) needed by libmpv
+echo "==> Bundling libmpv media dependencies..."
+for pass in 1 2; do
+    for sofile in "${APP_DIR}/usr/lib/"*.so*; do
+        if [ -f "$sofile" ]; then
+            for dep in $(ldd "$sofile" 2>/dev/null | grep '=> /' | awk '{print $3}'); do
+                dep_name="$(basename "$dep")"
+                case "$dep_name" in
+                    libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*|libGL.so*|libEGL.so*|libwayland*|libX11*|libxcb*|libresolv.so*|libgcc_s.so*)
+                        # Exclude low-level system, glibc and graphics display libraries
+                        ;;
+                    *)
+                        if [ -f "$dep" ] && [ ! -e "${APP_DIR}/usr/lib/${dep_name}" ]; then
+                            cp -L "$dep" "${APP_DIR}/usr/lib/" 2>/dev/null || true
+                        fi
+                        ;;
+                esac
+            done
+        fi
+    done
+done
+
 echo "==> Generating AppRun launcher..."
 cat << 'LAUNCHER' > "${APP_DIR}/AppRun"
 #!/usr/bin/env bash
