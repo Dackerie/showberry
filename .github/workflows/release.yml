@@ -42,6 +42,7 @@ jobs:
   build-flatpak:
     name: Build Flatpak Bundle (.flatpak)
     runs-on: ubuntu-latest
+    continue-on-error: true
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       options: --privileged
@@ -62,7 +63,7 @@ jobs:
         with:
           name: flatpak-bundle
           path: io.github.Dackerie.Showberry.flatpak
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-appimage:
     name: Build AppImage (.AppImage)
@@ -106,6 +107,7 @@ jobs:
     name: Publish Release Assets
     runs-on: ubuntu-24.04
     needs: [build-python, build-flatpak, build-appimage]
+    if: always() && !cancelled() && needs.build-python.result == 'success' && needs.build-appimage.result == 'success'
     steps:
       - name: Download all built artifacts
         uses: actions/download-artifact@v4
