@@ -157,7 +157,16 @@
       "sources": [
         {
           "type": "dir",
-          "path": "../.."
+          "path": "../..",
+          "skip": [
+            ".flatpak-builder",
+            "build-dir",
+            "repo",
+            "AppDir",
+            ".git",
+            ".pytest_cache",
+            "appimagetool"
+          ]
         }
       ]
     }
