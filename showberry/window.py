@@ -397,7 +397,12 @@ class ShowberryWindow(Adw.ApplicationWindow):
         g_play.append(Gtk.ShortcutsShortcut(title="Toggle Captions (Default English)", accelerator="c"))
         g_play.append(Gtk.ShortcutsShortcut(title="Subtitles Menu", accelerator="s"))
         g_play.append(Gtk.ShortcutsShortcut(title="Choose Torrent Stream", accelerator="t"))
-        g_play.append(Gtk.ShortcutsShortcut(title="Stream Info / Stats", accelerator="i"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Next Episode (TV)", accelerator="<Shift>n"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Cycle Audio Track", accelerator="a"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Decrease Playback Speed", accelerator="bracketleft"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Increase Playback Speed", accelerator="bracketright"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Reset Playback Speed", accelerator="r"))
+        g_play.append(Gtk.ShortcutsShortcut(title="Cycle Video Fit / Aspect Ratio", accelerator="w"))
         g_play.append(Gtk.ShortcutsShortcut(title="Toggle Fullscreen", accelerator="f"))
         sec_player.append(g_play)
 
@@ -434,7 +439,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         """Show About Showberry dialog."""
         dialog = Adw.AboutDialog.new()
         dialog.set_application_name("Showberry")
-        dialog.set_version("0.2.1")
+        dialog.set_version("0.2.2")
         dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://github.com/Dackerie/showberry")

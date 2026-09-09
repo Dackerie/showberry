@@ -73,6 +73,11 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 | `Shift` + `Left` / `Right` | Seek backward / forward 1 minute |
 | `Up` / `Down` | Volume up / down (5%) |
 | `m` | Toggle Mute |
+| `Shift` + `N` | Play Next Episode (TV Series) |
+| `a` | Cycle Audio Track |
+| `[` / `]` | Decrease / Increase Playback Speed (-0.25x / +0.25x) |
+| `r` / `0` | Reset Playback Speed to 1.0x (Normal) |
+| `w` | Cycle Video Fit / Aspect Ratio (Fit, Fill/Crop, 16:9, 21:9, 4:3) |
 | `f` / `F11` | Toggle Fullscreen |
 | `c` | Toggle Captions on / off (Defaults to English) |
 | `s` | Open Subtitles Menu & Delay Controls |

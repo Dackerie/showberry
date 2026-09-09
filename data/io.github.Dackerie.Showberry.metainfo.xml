@@ -68,6 +68,20 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.2.2" date="2026-09-09">
+      <description>
+        <p>Player UI redesign, next episode countdown &amp; autoplay, and playback enhancements:</p>
+        <ul>
+          <li>Redesigned player controls and top bar with modern GNOME floating frosted glass capsules and backdrop blur</li>
+          <li>Added automatic TV series next episode countdown card and seamless autoplay</li>
+          <li>Added audio track selector with distinct headphones icon and audio track cycling shortcut (A)</li>
+          <li>Added variable playback speed popover and shortcuts ([ / ] for step adjustments, 0 / r to reset)</li>
+          <li>Added video fit / aspect ratio cycling shortcut (W) for Fit, Fill/Crop, 16:9, 21:9, and 4:3 modes</li>
+          <li>Added Next Episode hotkey (Shift+N)</li>
+          <li>Balanced overlay spacing with a 20px gap between Next Episode card and bottom controls</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.1" date="2026-09-08">
       <description>
         <p>Playback UX enhancements, subtitle positioning, and caption controls:</p>

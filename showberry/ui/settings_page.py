@@ -180,7 +180,7 @@ class SettingsPage(Gtk.Box):
         # Version
         version_row = Adw.ActionRow()
         version_row.set_title('Version')
-        version_row.set_subtitle('0.2.1')
+        version_row.set_subtitle('0.2.2')
         group.add(version_row)
 
         # Help row with API key link
