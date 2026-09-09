@@ -68,11 +68,13 @@
     </screenshot>
   </screenshots>
   <releases>
-    <release version="0.2.2" date="2026-09-09">
+    <release version="0.3.0" date="2026-09-09">
       <description>
-        <p>Player UI redesign, next episode countdown &amp; autoplay, and playback enhancements:</p>
+        <p>Comprehensive player UI redesign, libtorrent streaming, and packaging enhancements:</p>
         <ul>
           <li>Redesigned player controls and top bar with modern GNOME floating frosted glass capsules and backdrop blur</li>
+          <li>Integrated native libtorrent support for torrent streaming and metadata fetching</li>
+          <li>Refined badge pill styling and hover play action indicators</li>
           <li>Added automatic TV series next episode countdown card and seamless autoplay</li>
           <li>Added audio track selector with distinct headphones icon and audio track cycling shortcut (A)</li>
           <li>Added variable playback speed popover and shortcuts ([ / ] for step adjustments, 0 / r to reset)</li>

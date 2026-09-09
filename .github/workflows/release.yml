@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to release assets for (e.g. v0.2.2)'
+        description: 'Tag to release assets for (e.g. v0.3.0)'
         required: true
-        default: 'v0.2.2'
+        default: 'v0.3.0'
 
 permissions:
   contents: write

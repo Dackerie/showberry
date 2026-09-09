@@ -8,6 +8,7 @@ gi.require_version('Adw', '1')
 
 from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
+from showberry import __version__
 from showberry.ui.library_page import LibraryPage
 from showberry.ui.movies_page import MoviesPage
 from showberry.ui.series_page import SeriesPage
@@ -439,7 +440,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         """Show About Showberry dialog."""
         dialog = Adw.AboutDialog.new()
         dialog.set_application_name("Showberry")
-        dialog.set_version("0.2.2")
+        dialog.set_version(__version__)
         dialog.set_developer_name("Showberry Contributors")
         dialog.set_comments("An elegant, modern movie and TV series streaming application for GNOME.")
         dialog.set_website("https://github.com/Dackerie/showberry")

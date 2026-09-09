@@ -6,6 +6,7 @@ gi.require_version('Adw', '1')
 
 from gi.repository import Gtk, Adw, Gio
 
+from showberry import __version__
 from showberry.services.settings import SettingsService
 from showberry.providers import get_all_providers
 
@@ -180,7 +181,7 @@ class SettingsPage(Gtk.Box):
         # Version
         version_row = Adw.ActionRow()
         version_row.set_title('Version')
-        version_row.set_subtitle('0.2.2')
+        version_row.set_subtitle(__version__)
         group.add(version_row)
 
         # Help row with API key link
