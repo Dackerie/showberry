@@ -7,7 +7,8 @@
     <a href="https://github.com/Dackerie/showberry/actions/workflows/ci.yml"><img src="https://github.com/Dackerie/showberry/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
     <a href="https://github.com/Dackerie/showberry/blob/master/LICENSE"><img src="https://img.shields.io/badge/License-GPL%203.0-blue.svg" alt="License" /></a>
     <a href="https://gitlab.gnome.org/GNOME/libadwaita"><img src="https://img.shields.io/badge/GNOME-50%20%7C%20Adwaita-2a76dd.svg" alt="GNOME 50" /></a>
-    <a href="https://flathub.org"><img src="https://img.shields.io/badge/Flathub-Ready-4a86cf.svg?logo=flatpak" alt="Flathub" /></a>
+    <a href="https://github.com/Dackerie/showberry/releases/latest"><img src="https://img.shields.io/badge/Flatpak-Available-4a86cf.svg?logo=flatpak" alt="Flatpak" /></a>
+    <a href="https://github.com/Dackerie/showberry/releases/latest"><img src="https://img.shields.io/github/v/release/Dackerie/showberry?color=brightgreen&label=Release" alt="Latest Release" /></a>
     <img src="https://img.shields.io/badge/Python-3.11+-3776ab.svg?logo=python" alt="Python" />
   </p>
 </div>
@@ -102,22 +103,42 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 
 ## 📦 Installation & Running
 
-### Option 1: Standalone Flatpak Bundle (.flatpak)
-Download the `.flatpak` bundle from the [latest GitHub Release](https://github.com/Dackerie/showberry/releases/latest):
+### 🌟 Recommended: Flatpak (Self-Contained & Sandboxed)
+
+The Flatpak bundle includes the full GNOME 50 runtime, Libadwaita, `libmpv`, `libtorrent-rasterbar`, and all Python dependencies in an isolated sandbox. It automatically registers Showberry in your desktop application launcher.
+
+Run this single command in your terminal to download and install the latest release directly:
+
 ```bash
-flatpak install --user ./io.github.Dackerie.Showberry.flatpak
+curl -LO https://github.com/Dackerie/showberry/releases/latest/download/io.github.Dackerie.Showberry.flatpak && flatpak install --user -y ./io.github.Dackerie.Showberry.flatpak && rm io.github.Dackerie.Showberry.flatpak
+```
+
+Once installed, launch Showberry from your application menu or via terminal:
+
+```bash
 flatpak run io.github.Dackerie.Showberry
 ```
 
+> **Note:** If your system does not already have the GNOME 50 runtime installed, Flatpak will automatically install it during the process.
+
+---
+
 ### Option 2: Standalone AppImage (.AppImage)
-Download the `.AppImage` from the [latest GitHub Release](https://github.com/Dackerie/showberry/releases/latest):
+
+If you prefer a single portable executable without installing, download and run the AppImage:
+
 ```bash
-chmod +x Showberry-x86_64.AppImage
-./Showberry-x86_64.AppImage
+curl -LO https://github.com/Dackerie/showberry/releases/latest/download/Showberry-x86_64.AppImage && chmod +x Showberry-x86_64.AppImage && ./Showberry-x86_64.AppImage
 ```
 
-### Option 3: Run Directly (Development / Portable)
-Showberry can be executed directly from source without installation:
+> **Note:** Requires host `python3`, `libadwaita-1`, `python3-gi`, and `libmpv` installed on your distribution.
+
+---
+
+### Option 3: Run Directly from Source (Development)
+
+Showberry can also be cloned and executed directly from source:
+
 ```bash
 git clone https://github.com/Dackerie/showberry.git
 cd showberry
