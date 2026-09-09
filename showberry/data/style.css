@@ -1,0 +1,356 @@
+/* FlowBox Child styling reset to prevent hover misalignment */
+flowboxchild {
+    padding: 0;
+    margin: 0;
+    background: transparent;
+    border-radius: 12px;
+}
+
+flowboxchild:hover,
+flowboxchild:selected,
+flowboxchild:focus {
+    background: transparent;
+    outline: none;
+    box-shadow: none;
+}
+
+/* Movie Cards & Posters */
+.movie-card {
+    border-radius: 12px;
+    padding: 6px;
+    background-color: alpha(@card_bg_color, 0.4);
+    border: 1px solid alpha(@borders, 0.4);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 200ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.movie-card:hover,
+.movie-card:focus,
+.movie-card:focus-visible,
+flowboxchild:focus .movie-card {
+    transform: translateY(-4px);
+    background-color: alpha(@card_bg_color, 0.85);
+    border-color: @accent_color;
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35), 0 0 0 3px alpha(@accent_color, 0.3);
+}
+
+.movie-card:active {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.card-poster {
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Heartive-style hover play circle overlay */
+.card-play-overlay {
+    background-color: rgba(0, 0, 0, 0.75);
+    border-radius: 9999px;
+    min-width: 64px;
+    min-height: 64px;
+    padding: 0;
+    margin: 0;
+    color: #ffffff;
+    border: 2.5px solid rgba(255, 255, 255, 0.95);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
+    transition: all 150ms ease;
+}
+
+.card-play-overlay:hover {
+    background-color: @accent_bg_color;
+    border-color: #ffffff;
+    transform: scale(1.08);
+}
+
+/* Movie Detail Page */
+.movie-backdrop {
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    min-height: 200px;
+}
+
+.backdrop-scrim {
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0) 55%, @window_bg_color 100%);
+}
+
+.genre-pill {
+    border-radius: 9999px;
+    padding: 4px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    background-color: alpha(@window_fg_color, 0.08);
+    color: @window_fg_color;
+    border: 1px solid alpha(@borders, 0.5);
+}
+
+.genres-flowbox flowboxchild {
+    padding: 0;
+    margin: 0;
+    background: none;
+}
+.genres-flowbox flowboxchild:hover,
+.genres-flowbox flowboxchild:focus,
+.genres-flowbox flowboxchild:selected {
+    background: none;
+}
+
+.meta-rating {
+    font-weight: 700;
+    color: #e5a50a; /* warm gold */
+}
+
+/* Cast Cards (Sleek Compact Pills) */
+.cast-card {
+    background-color: alpha(@window_fg_color, 0.05);
+    border: 1px solid alpha(@borders, 0.4);
+    border-radius: 9999px;
+    padding: 5px 14px;
+    transition: all 150ms ease-in-out;
+}
+
+.cast-card:hover {
+    background-color: alpha(@window_fg_color, 0.12);
+    border-color: alpha(@accent_color, 0.5);
+    transform: translateY(-1px);
+}
+
+.cast-name {
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: @window_fg_color;
+}
+
+.cast-character {
+    font-size: 0.72rem;
+    opacity: 0.75;
+}
+
+/* Player Surface & Floating Controls */
+.player-page {
+    background-color: #000000;
+}
+
+.player-controls {
+    background-color: alpha(#161618, 0.88);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    padding: 10px 20px 12px 20px;
+    margin: 0 24px 20px 24px;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
+    transition: opacity 250ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.player-controls scale trough {
+    min-height: 4px;
+    border-radius: 2px;
+}
+
+.player-controls scale highlight {
+    background-color: @accent_bg_color;
+    border-radius: 2px;
+}
+
+/* Navigation & Header */
+.navigation-sidebar {
+    background-color: alpha(@window_bg_color, 0.95);
+}
+
+.title-section {
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin-left: 8px;
+    margin-bottom: 4px;
+}
+
+/* Watchlist active button styling */
+.watchlist-active {
+    color: #e5a50a;
+}
+
+/* Floating OSD Notification Pill */
+.osd-pill {
+    background-color: alpha(#181818, 0.92);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 24px;
+    padding: 8px 22px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+}
+
+/* Next Episode Auto-Countdown Floating Card */
+.next-episode-card {
+    background-color: alpha(#161618, 0.94);
+    backdrop-filter: blur(24px);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    padding: 14px 18px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+}
+
+.next-episode-card .heading {
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.next-episode-card .dim-label {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.speed-button {
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 4px 8px;
+}
+
+.player-top-bar {
+    background-color: alpha(#161618, 0.85);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 6px 16px;
+    margin: 16px 24px 0 24px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+    transition: opacity 250ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+
+.player-spinner-box {
+    background-color: rgba(18, 18, 18, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 24px 36px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+}
+
+/* Card network / release badge (bottom-left) */
+.card-badge {
+    background-color: rgba(0, 0, 0, 0.75);
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+
+.card-badge.badge-upcoming {
+    background-color: rgba(28, 113, 216, 0.88);
+    color: #ffffff;
+    font-size: 0.70rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* Remove / delete button overlay on Continue Watching cards */
+.card-remove-button {
+    background-color: rgba(0, 0, 0, 0.72);
+    border-radius: 9999px;
+    padding: 5px;
+    color: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    transition: background-color 150ms;
+}
+
+.card-remove-button:hover {
+    background-color: rgba(220, 50, 50, 0.85);
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
+/* Cast member clickable chips */
+.cast-card {
+    background-color: alpha(@window_fg_color, 0.06);
+    border: 1px solid alpha(@window_fg_color, 0.12);
+    border-radius: 24px;
+    padding: 2px 6px;
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.cast-card:hover {
+    background-color: alpha(@window_fg_color, 0.14);
+    border-color: alpha(@accent_color, 0.45);
+}
+
+.cast-card:focus {
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+}
+
+.cast-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.cast-character {
+    font-size: 0.78rem;
+}
+
+/* Filter & Sort Popover */
+.filter-sort-popover {
+    border-radius: 12px;
+}
+
+.card-badge.badge-director {
+    background-color: rgba(145, 65, 172, 0.90);
+    color: #ffffff;
+    font-size: 0.70rem;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+/* Director clickable chip */
+.director-chip {
+    background-color: alpha(@window_fg_color, 0.08);
+    border: 1px solid alpha(@window_fg_color, 0.15);
+    border-radius: 18px;
+    padding: 3px 10px;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.director-chip:hover {
+    background-color: alpha(@window_fg_color, 0.16);
+    border-color: alpha(@accent_color, 0.55);
+}
+
+.director-chip:focus {
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+}
+
+/* PersonPage Bio expand/collapse button */
+.bio-expand-btn {
+    background-color: alpha(@window_fg_color, 0.08);
+    border: 1px solid alpha(@window_fg_color, 0.18);
+    border-radius: 9999px;
+    padding: 4px 14px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 4px;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 100ms ease;
+}
+
+.bio-expand-btn:hover {
+    background-color: alpha(@window_fg_color, 0.18);
+    border-color: alpha(@accent_color, 0.6);
+}
+
+.bio-expand-btn:focus {
+    outline: 2px solid @accent_color;
+    outline-offset: 2px;
+}
+
+
+
+

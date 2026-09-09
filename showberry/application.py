@@ -5,9 +5,12 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
 from gi.repository import Gtk, Gio, Adw, Gdk, GLib
+import logging
 from pathlib import Path
 
 from showberry.window import ShowberryWindow, KinemaWindow
+
+logger = logging.getLogger(__name__)
 
 
 class ShowberryApplication(Adw.Application):
@@ -67,9 +70,11 @@ class ShowberryApplication(Adw.Application):
     def _load_css(self):
         """Load application CSS stylesheet."""
         candidate_paths = [
+            Path(__file__).parent / 'data' / 'style.css',
+            Path(__file__).parent / 'style.css',
             Path(__file__).parent.parent / 'data' / 'style.css',
-            Path(GLib.get_user_data_dir()) / 'showberry' / 'style.css',
             Path('/app/share/showberry/style.css'),
+            Path(GLib.get_user_data_dir()) / 'showberry' / 'style.css',
             Path('/usr/share/showberry/style.css'),
             Path('/usr/local/share/showberry/style.css'),
         ]
@@ -78,6 +83,7 @@ class ShowberryApplication(Adw.Application):
             if p.exists():
                 provider = Gtk.CssProvider()
                 provider.load_from_path(str(p))
+                logger.info(f"Loaded CSS stylesheet from {p}")
                 break
 
         if provider:
@@ -88,6 +94,8 @@ class ShowberryApplication(Adw.Application):
                     provider,
                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
                 )
+        else:
+            logger.warning("No CSS stylesheet found in any candidate path!")
 
 
     def do_activate(self):
