@@ -4,13 +4,20 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag to release assets for (e.g. v0.2.2)'
+        required: true
+        default: 'v0.2.2'
+
+permissions:
+  contents: write
 
 jobs:
-  build-and-release:
+  build-python:
+    name: Build Python Wheel & Sdist
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,14 +32,92 @@ jobs:
           python -m pip install --upgrade pip build
           python -m build
 
+      - name: Upload Python artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist
+          path: dist/*
+          if-no-files-found: error
+
+  build-flatpak:
+    name: Build Flatpak Bundle (.flatpak)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: io.github.Dackerie.Showberry.flatpak
+          manifest-path: packaging/flathub/io.github.Dackerie.Showberry.json
+          cache: true
+          branch: stable
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flatpak-bundle
+          path: io.github.Dackerie.Showberry.flatpak
+          if-no-files-found: error
+
+  build-appimage:
+    name: Build AppImage (.AppImage)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libmpv-dev \
+            mpv \
+            python3-gi \
+            python3-pip \
+            python3-venv \
+            libglib2.0-dev-bin \
+            desktop-file-utils \
+            wget \
+            file
+
+      - name: Build AppImage
+        run: |
+          chmod +x packaging/appimage/build-appimage.sh
+          ./packaging/appimage/build-appimage.sh
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-bundle
+          path: Showberry-x86_64.AppImage
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish Release Assets
+    runs-on: ubuntu-24.04
+    needs: [build-python, build-flatpak, build-appimage]
+    steps:
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
       - name: Generate Checksums
         run: |
-          cd dist
+          cd release-assets
           sha256sum * > SHA256SUMS.txt
+          echo "=== Release Assets & Checksums ==="
+          cat SHA256SUMS.txt
 
-      - name: Create GitHub Release
+      - name: Upload Assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.tag_name || github.ref_name }}
           files: |
-            dist/*
+            release-assets/*
           generate_release_notes: true

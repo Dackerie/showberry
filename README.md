@@ -101,22 +101,40 @@ Showberry unifies discovery, metadata, scraping, and high-performance playback i
 
 ---
 
-## 📦 Running & Installation
+## 📦 Installation & Running
 
-### Run Directly (Development / Portable)
-Showberry can be executed without installation:
+### Option 1: Standalone Flatpak Bundle (.flatpak)
+Download the `.flatpak` bundle from the [latest GitHub Release](https://github.com/Dackerie/showberry/releases/latest):
+```bash
+flatpak install --user ./io.github.Dackerie.Showberry.flatpak
+flatpak run io.github.Dackerie.Showberry
+```
+
+### Option 2: Standalone AppImage (.AppImage)
+Download the `.AppImage` from the [latest GitHub Release](https://github.com/Dackerie/showberry/releases/latest):
+```bash
+chmod +x Showberry-x86_64.AppImage
+./Showberry-x86_64.AppImage
+```
+
+### Option 3: Arch Linux (AUR)
+Install directly from the Arch User Repository:
+```bash
+yay -S showberry
+```
+Or manually using `makepkg`:
+```bash
+git clone https://aur.archlinux.org/showberry.git
+cd showberry
+makepkg -si
+```
+
+### Option 4: Run Directly (Development / Portable)
+Showberry can be executed directly from source without installation:
 ```bash
 git clone https://github.com/Dackerie/showberry.git
 cd showberry
 ./run.sh
-```
-
-### Manual Package Build
-Build the native Arch package using `makepkg`:
-```bash
-git clone https://github.com/Dackerie/showberry.git
-cd showberry
-makepkg -si
 ```
 
 ---
