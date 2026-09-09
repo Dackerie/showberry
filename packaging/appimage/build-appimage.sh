@@ -14,11 +14,18 @@ mkdir -p "${APP_DIR}/usr/bin" \
          "${APP_DIR}/usr/lib/python3/dist-packages"
 
 echo "==> Installing Python dependencies into AppDir..."
-python3 -m pip install --target "${APP_DIR}/usr/lib/python3/dist-packages" \
+python3 -m pip install --break-system-packages --target "${APP_DIR}/usr/lib/python3/dist-packages" \
     requests pillow curl_cffi pycryptodome PyOpenGL python-mpv
 
 echo "==> Installing Showberry package into AppDir..."
-python3 -m pip install --target "${APP_DIR}/usr/lib/python3/dist-packages" --no-deps .
+python3 -m pip install --break-system-packages --target "${APP_DIR}/usr/lib/python3/dist-packages" --no-deps .
+
+for gid in /usr/lib/python3/dist-packages/gi /usr/lib64/python3*/site-packages/gi /usr/lib/python3*/site-packages/gi; do
+    if [ -d "$gid" ]; then
+        cp -r "$gid" "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
+        break
+    fi
+done
 
 echo "==> Installing desktop, icons, and metadata..."
 cp data/io.github.Dackerie.Showberry.desktop "${APP_DIR}/usr/share/applications/"
