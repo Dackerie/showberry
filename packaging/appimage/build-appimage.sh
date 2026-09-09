@@ -60,6 +60,28 @@ export PYTHONPATH="${HERE}/usr/lib/python3/dist-packages:${HERE}/usr/lib/python3
 export GI_TYPELIB_PATH="${HERE}/usr/lib/girepository-1.0:${HERE}/usr/lib/x86_64-linux-gnu/girepository-1.0:${GI_TYPELIB_PATH:-}"
 export GSETTINGS_SCHEMA_DIR="${HERE}/usr/share/glib-2.0/schemas:${GSETTINGS_SCHEMA_DIR:-}"
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-}"
+
+# Check for Python 3
+if ! command -v python3 &>/dev/null; then
+    echo "Showberry: Error - Python 3 is required to run this AppImage." >&2
+    exit 1
+fi
+
+# Pre-flight check for GTK 4 and Libadwaita
+python3 -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1'); from gi.repository import Gtk, Adw" 2>/dev/null || {
+    echo "Showberry: Error - GTK 4, Libadwaita, or PyGObject is missing on this system." >&2
+    echo "Tip: Install libadwaita & python3-gi, or use the standalone Flatpak bundle which includes all dependencies." >&2
+    exit 1
+}
+
+# Pre-flight check for libmpv
+python3 -c "import ctypes.util; assert ctypes.util.find_library('mpv') is not None" 2>/dev/null || {
+    echo "Showberry: Error - libmpv was not found on your system." >&2
+    echo "Tip: Install mpv ('sudo apt install mpv' or 'sudo pacman -S mpv' or 'sudo dnf install mpv-libs')," >&2
+    echo "     or use the standalone Flatpak bundle which bundles libmpv completely." >&2
+    exit 1
+}
+
 exec python3 -m showberry.main "$@"
 LAUNCHER
 chmod +x "${APP_DIR}/AppRun"
