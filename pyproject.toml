@@ -29,5 +29,6 @@ include = ["showberry*"]
 showberry = ["data/*"]
 
 [tool.pytest.ini_options]
+pythonpath = ["."]
 testpaths = ["tests"]
 norecursedirs = ["AppDir", "build", "dist", ".git", ".pytest_cache"]
