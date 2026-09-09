@@ -19,4 +19,5 @@ appimagetool
 .flatpak-builder/
 build-dir/
 *.flatpak
+FLATHUB_SUBMISSION.md
 

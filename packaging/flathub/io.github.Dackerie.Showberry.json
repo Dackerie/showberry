@@ -30,30 +30,137 @@
     {
       "name": "luajit",
       "no-autogen": true,
+      "make-args": [
+        "BUILDMODE=dynamic",
+        "PREFIX=/app"
+      ],
+      "make-install-args": [
+        "PREFIX=/app"
+      ],
       "cleanup": [
-        "/bin"
+        "/bin",
+        "/include",
+        "/lib/pkgconfig",
+        "/share/man"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/openresty/luajit2/archive/refs/tags/v2.1-20260724.tar.gz",
+          "sha256": "f5b09359b2939ccc769949acf42e0ad2721fa9bb7678c34789059cb44977fc8a"
+        }
+      ]
+    },
+    {
+      "name": "ffmpeg",
+      "cleanup": [
+        "/include",
+        "/lib/pkgconfig",
+        "/share/ffmpeg/examples"
+      ],
+      "config-opts": [
+        "--enable-shared",
+        "--disable-static",
+        "--enable-gnutls",
+        "--enable-gpl",
+        "--disable-doc",
+        "--disable-programs",
+        "--disable-encoders",
+        "--disable-muxers",
+        "--enable-encoder=png"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://ffmpeg.org/releases/ffmpeg-9.0.1.tar.xz",
+          "sha256": "cf38e0e28c7e5605942c4a77755349b0145804a397af37eb1fb4c77cb237f635"
+        }
+      ]
+    },
+    {
+      "name": "libass",
+      "cleanup": [
+        "/include",
+        "/lib/*.la",
+        "/lib/pkgconfig"
+      ],
+      "config-opts": [
+        "--disable-static"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://github.com/libass/libass/releases/download/0.17.5/libass-0.17.5.tar.xz",
+          "sha256": "2dca25c0e0c837ddf00b52011b3f82cac1e4ddd3ad018227806b0c2288864acc"
+        }
+      ]
+    },
+    {
+      "name": "uchardet",
+      "buildsystem": "cmake-ninja",
+      "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DBUILD_STATIC=0",
+        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+      ],
+      "cleanup": [
+        "/bin",
+        "/include",
+        "/lib/pkgconfig",
+        "/share/man",
+        "/lib/cmake"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "url": "https://www.freedesktop.org/software/uchardet/releases/uchardet-0.0.8.tar.xz",
+          "sha256": "e97a60cfc00a1c147a674b097bb1422abd9fa78a2d9ce3f3fdcc2e78a34ac5f0"
+        }
+      ]
+    },
+    {
+      "name": "libplacebo",
+      "buildsystem": "meson",
+      "cleanup": [
+        "/include",
+        "/lib/pkgconfig"
       ],
       "sources": [
         {
           "type": "git",
-          "url": "https://luajit.org/git/luajit.git",
-          "branch": "v2.1"
+          "url": "https://github.com/haasn/libplacebo.git",
+          "tag": "v7.360.1",
+          "commit": "cee9b076f2c63104ccfd497fa79c39a867293ec4"
         }
       ]
     },
     {
       "name": "mpv",
+      "cleanup": [
+        "/include",
+        "/lib/pkgconfig",
+        "/share/bash-completion",
+        "/share/doc",
+        "/share/icons",
+        "/share/man",
+        "/share/zsh"
+      ],
       "buildsystem": "meson",
       "config-opts": [
         "-Dlibmpv=true",
         "-Dcplayer=true",
-        "-Dlua=enabled"
+        "-Dbuild-date=false",
+        "-Dalsa=disabled",
+        "-Dlua=enabled",
+        "-Dmanpage-build=disabled",
+        "-Djavascript=disabled",
+        "-Drubberband=disabled"
       ],
       "sources": [
         {
-          "type": "git",
-          "url": "https://github.com/mpv-player/mpv.git",
-          "tag": "v0.38.0"
+          "type": "archive",
+          "url": "https://github.com/mpv-player/mpv/archive/v0.41.0.tar.gz",
+          "sha256": "ee21092a5ee427353392360929dc64645c54479aefdb5babc5cfbb5fad626209"
         }
       ]
     },
