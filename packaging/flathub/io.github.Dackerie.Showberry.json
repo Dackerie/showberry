@@ -170,6 +170,7 @@
       "buildsystem": "simple",
       "build-commands": [
         "pip3 install --no-deps --prefix=/app .",
+        "install -Dm644 data/style.css /app/share/showberry/style.css",
         "install -Dm644 data/io.github.Dackerie.Showberry.desktop /app/share/applications/io.github.Dackerie.Showberry.desktop",
         "install -Dm644 data/io.github.Dackerie.Showberry.metainfo.xml /app/share/metainfo/io.github.Dackerie.Showberry.metainfo.xml",
         "install -Dm644 data/io.github.Dackerie.Showberry.gschema.xml /app/share/glib-2.0/schemas/io.github.Dackerie.Showberry.gschema.xml",

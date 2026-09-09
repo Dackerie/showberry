@@ -25,6 +25,9 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["showberry*"]
 
+[tool.setuptools.package-data]
+showberry = ["data/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["AppDir", "build", "dist", ".git", ".pytest_cache"]

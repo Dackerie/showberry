@@ -2075,7 +2075,9 @@ class PlayerPage(Adw.NavigationPage):
                 t_status = {}
                 try:
                     from showberry.services.torrent import get_torrent_streamer
-                    t_status = get_torrent_streamer().get_status()
+                    _streamer = get_torrent_streamer()
+                    if _streamer:
+                        t_status = _streamer.get_status()
                 except Exception:
                     pass
                 info_hash = chosen.get('infoHash') or t_status.get('info_hash')
@@ -2235,7 +2237,9 @@ class PlayerPage(Adw.NavigationPage):
                         chosen = stream_data.get('chosen_stream') or {}
                         t_status = {}
                         try:
-                            t_status = get_torrent_streamer().get_status()
+                            _streamer = get_torrent_streamer()
+                            if _streamer:
+                                t_status = _streamer.get_status()
                         except Exception:
                             pass
                         info_hash = chosen.get('infoHash') or t_status.get('info_hash')
@@ -2260,7 +2264,9 @@ class PlayerPage(Adw.NavigationPage):
                 logger.warning(f"Error saving watch progress during cleanup: {ex}")
 
             try:
-                get_torrent_streamer().stop()
+                _streamer = get_torrent_streamer()
+                if _streamer:
+                    _streamer.stop()
             except Exception as ex:
                 logger.warning(f"Error stopping torrent streamer: {ex}")
 
