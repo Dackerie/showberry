@@ -96,29 +96,6 @@
       ]
     },
     {
-      "name": "uchardet",
-      "buildsystem": "cmake-ninja",
-      "config-opts": [
-        "-DCMAKE_BUILD_TYPE=Release",
-        "-DBUILD_STATIC=0",
-        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-      ],
-      "cleanup": [
-        "/bin",
-        "/include",
-        "/lib/pkgconfig",
-        "/share/man",
-        "/lib/cmake"
-      ],
-      "sources": [
-        {
-          "type": "archive",
-          "url": "https://www.freedesktop.org/software/uchardet/releases/uchardet-0.0.8.tar.xz",
-          "sha256": "e97a60cfc00a1c147a674b097bb1422abd9fa78a2d9ce3f3fdcc2e78a34ac5f0"
-        }
-      ]
-    },
-    {
       "name": "libplacebo",
       "buildsystem": "meson",
       "cleanup": [
@@ -151,6 +128,7 @@
         "-Dbuild-date=false",
         "-Dalsa=disabled",
         "-Dlua=enabled",
+        "-Duchardet=disabled",
         "-Dmanpage-build=disabled",
         "-Djavascript=disabled",
         "-Drubberband=disabled"
