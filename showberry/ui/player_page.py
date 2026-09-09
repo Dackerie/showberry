@@ -10,8 +10,9 @@ import locale
 locale.setlocale(locale.LC_NUMERIC, 'C')
 
 import logging
+import subprocess
 import threading
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 import mpv
 from mpv import MPV, MpvGlGetProcAddressFn, MpvRenderContext
@@ -29,6 +30,14 @@ from showberry.services.tmdb import TMDBClient
 from showberry.services.torrent import get_torrent_streamer
 
 logger = logging.getLogger(__name__)
+
+ASPECT_MODES = [
+    ('Fit (Original)', '-1', 0.0),
+    ('Fill / Crop', '-1', 1.0),
+    ('Stretch 16:9', '16:9', 0.0),
+    ('Stretch 21:9', '21:9', 0.0),
+    ('Stretch 4:3', '4:3', 0.0),
+]
 
 
 def get_proc_address_wrapper():
@@ -508,14 +517,110 @@ class MpvWidget(Gtk.GLArea):
         self.set_sub_delay(new_val)
         return new_val
 
+    def get_audio_tracks(self) -> List[Dict[str, Any]]:
+        """Get list of all available audio tracks."""
+        tracks = []
+        try:
+            track_list = self._mpv.track_list or []
+            for t in track_list:
+                if t.get('type') == 'audio':
+                    tracks.append({
+                        'id': t.get('id'),
+                        'title': t.get('title') or t.get('lang') or f"Track {t.get('id')}",
+                        'lang': t.get('lang', ''),
+                        'codec': t.get('codec', ''),
+                        'channels': t.get('audio-channels', ''),
+                        'selected': bool(t.get('selected', False)),
+                    })
+        except Exception as e:
+            logger.warning(f"Error fetching audio tracks: {e}")
+        return tracks
+
+    def set_audio_track(self, track_id: Any):
+        """Select an audio track ID or 'no'/'auto'."""
+        try:
+            self._mpv['aid'] = track_id
+        except Exception as e:
+            logger.warning(f"Error selecting audio track {track_id}: {e}")
+
+    def get_audio_track(self):
+        try:
+            return self._mpv['aid']
+        except Exception:
+            return 'auto'
+
+    def cycle_audio_track(self) -> Optional[Dict[str, Any]]:
+        """Cycle to the next audio track and return its metadata."""
+        tracks = self.get_audio_tracks()
+        if not tracks:
+            return None
+        current_aid = self.get_audio_track()
+        curr_idx = -1
+        for i, t in enumerate(tracks):
+            if str(t['id']) == str(current_aid) or (current_aid == 'auto' and t.get('selected')):
+                curr_idx = i
+                break
+        next_idx = (curr_idx + 1) % len(tracks)
+        target = tracks[next_idx]
+        self.set_audio_track(target['id'])
+        return target
+
+    def get_speed(self) -> float:
+        """Get current playback speed."""
+        try:
+            val = self._mpv.speed
+            return float(val) if val is not None else 1.0
+        except Exception:
+            return 1.0
+
+    def set_speed(self, speed: float) -> float:
+        """Set playback speed clamped between 0.25x and 3.0x."""
+        try:
+            s = max(0.25, min(3.0, round(float(speed), 2)))
+            self._mpv.speed = s
+            return s
+        except Exception:
+            return 1.0
+
+    def adjust_speed(self, delta: float) -> float:
+        """Adjust playback speed by delta."""
+        new_speed = round(self.get_speed() + delta, 2)
+        return self.set_speed(new_speed)
+
+    def cycle_aspect_ratio(self) -> str:
+        """Cycle through aspect ratio / zoom modes."""
+        if not hasattr(self, '_aspect_mode_idx'):
+            self._aspect_mode_idx = 0
+        self._aspect_mode_idx = (self._aspect_mode_idx + 1) % len(ASPECT_MODES)
+        label, aspect_override, panscan = ASPECT_MODES[self._aspect_mode_idx]
+        try:
+            self._mpv['video-aspect-override'] = aspect_override
+            self._mpv['panscan'] = panscan
+        except Exception as e:
+            logger.warning(f"Error setting aspect ratio: {e}")
+        return label
+
+    def get_aspect_ratio_mode(self) -> str:
+        idx = getattr(self, '_aspect_mode_idx', 0)
+        return ASPECT_MODES[idx][0]
+
     def get_position(self):
-        return self._mpv.time_pos or 0
+        try:
+            return self._mpv.time_pos or 0
+        except Exception:
+            return 0
 
     def get_duration(self):
-        return self._mpv.duration or 0
+        try:
+            return self._mpv.duration or 0
+        except Exception:
+            return 0
 
     def is_paused(self):
-        return self._mpv.pause
+        try:
+            return bool(self._mpv.pause)
+        except Exception:
+            return False
 
     def stop(self):
         try:
@@ -733,6 +838,176 @@ class SubtitlePopover(Gtk.Popover):
                 self._on_timing_changed(None, f"Subtitle: {button.get_label()}")
 
 
+class AudioPopover(Gtk.Popover):
+    """Popover menu for selecting available audio tracks."""
+
+    def __init__(self, player: Optional[MpvWidget] = None, on_audio_changed=None):
+        super().__init__()
+        self._player = player
+        self._on_audio_changed = on_audio_changed
+
+        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._box.set_margin_top(12)
+        self._box.set_margin_bottom(12)
+        self._box.set_margin_start(14)
+        self._box.set_margin_end(14)
+        self._box.set_size_request(250, -1)
+
+        # Header with Title and Refresh button
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        title_label = Gtk.Label(label="Audio Tracks")
+        title_label.add_css_class('heading')
+        title_label.set_xalign(0)
+        title_label.set_hexpand(True)
+        header_box.append(title_label)
+
+        refresh_btn = Gtk.Button.new_from_icon_name('view-refresh-symbolic')
+        refresh_btn.add_css_class('flat')
+        refresh_btn.set_tooltip_text("Reload audio tracks")
+        refresh_btn.connect('clicked', lambda b: self.refresh_tracks())
+        header_box.append(refresh_btn)
+        self._box.append(header_box)
+
+        # Scrolled tracks container
+        self._scroll = Gtk.ScrolledWindow()
+        self._scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self._scroll.set_max_content_height(200)
+        self._scroll.set_propagate_natural_height(True)
+
+        self._tracks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._scroll.set_child(self._tracks_box)
+        self._box.append(self._scroll)
+
+        self.set_child(self._box)
+        self.connect('show', self._on_show)
+
+    def set_player(self, player: MpvWidget):
+        self._player = player
+
+    def _on_show(self, *_):
+        self.refresh_tracks()
+
+    def refresh_tracks(self):
+        while True:
+            child = self._tracks_box.get_first_child()
+            if child is None:
+                break
+            self._tracks_box.remove(child)
+
+        if not self._player:
+            return
+
+        tracks = self._player.get_audio_tracks()
+        current_aid = self._player.get_audio_track()
+
+        first_btn = None
+        for track in tracks:
+            title = track.get('title') or 'Audio Track'
+            codec = track.get('codec') or ''
+            channels = track.get('channels')
+            detail_parts = []
+            if codec:
+                detail_parts.append(codec.upper())
+            if channels:
+                detail_parts.append(f"{channels}ch")
+            details = f" ({' • '.join(detail_parts)})" if detail_parts else ""
+
+            label = f"{title}{details}"
+            btn = Gtk.CheckButton.new_with_label(label)
+            btn.add_css_class('flat')
+            if first_btn is None:
+                first_btn = btn
+            else:
+                btn.set_group(first_btn)
+
+            is_active = (str(track['id']) == str(current_aid)) or (current_aid == 'auto' and track.get('selected'))
+            if is_active:
+                btn.set_active(True)
+
+            btn.connect('toggled', self._on_track_toggled, track['id'], label)
+            self._tracks_box.append(btn)
+
+        if not tracks:
+            no_audio = Gtk.Label(label="No audio tracks found")
+            no_audio.add_css_class('dim-label')
+            no_audio.add_css_class('caption')
+            no_audio.set_margin_top(4)
+            no_audio.set_margin_bottom(4)
+            self._tracks_box.append(no_audio)
+
+    def _on_track_toggled(self, button, track_id, track_label):
+        if button.get_active() and self._player:
+            self._player.set_audio_track(track_id)
+            if self._on_audio_changed:
+                self._on_audio_changed(f"Audio: {track_label}")
+
+
+class SpeedPopover(Gtk.Popover):
+    """Popover menu for selecting playback speed."""
+
+    SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+
+    def __init__(self, player: Optional[MpvWidget] = None, on_speed_changed=None):
+        super().__init__()
+        self._player = player
+        self._on_speed_changed = on_speed_changed
+
+        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self._box.set_margin_top(10)
+        self._box.set_margin_bottom(10)
+        self._box.set_margin_start(12)
+        self._box.set_margin_end(12)
+        self._box.set_size_request(160, -1)
+
+        title_label = Gtk.Label(label="Playback Speed")
+        title_label.add_css_class('heading')
+        title_label.set_xalign(0)
+        self._box.append(title_label)
+
+        self._options_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._box.append(self._options_box)
+
+        self.set_child(self._box)
+        self.connect('show', self._on_show)
+
+    def set_player(self, player: MpvWidget):
+        self._player = player
+
+    def _on_show(self, *_):
+        self.refresh_speeds()
+
+    def refresh_speeds(self):
+        while True:
+            child = self._options_box.get_first_child()
+            if child is None:
+                break
+            self._options_box.remove(child)
+
+        current_speed = self._player.get_speed() if self._player else 1.0
+
+        first_btn = None
+        for spd in self.SPEED_OPTIONS:
+            label = f"{spd}x" if spd != 1.0 else "1.0x (Normal)"
+            btn = Gtk.CheckButton.new_with_label(label)
+            btn.add_css_class('flat')
+            if first_btn is None:
+                first_btn = btn
+            else:
+                btn.set_group(first_btn)
+
+            if abs(current_speed - spd) < 0.05:
+                btn.set_active(True)
+
+            btn.connect('toggled', self._on_speed_toggled, spd)
+            self._options_box.append(btn)
+
+    def _on_speed_toggled(self, button, speed_val):
+        if button.get_active() and self._player:
+            self._player.set_speed(speed_val)
+            if self._on_speed_changed:
+                self._on_speed_changed(speed_val)
+
+
 class PlayerControls(Gtk.Box):
     """Floating OSD player control bar with play/pause, seek, volume, subtitles."""
 
@@ -740,6 +1015,7 @@ class PlayerControls(Gtk.Box):
         'close': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'fullscreen-toggle': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'timing-notification': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        'next-episode': (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self):
@@ -775,6 +1051,7 @@ class PlayerControls(Gtk.Box):
         drag_gesture.connect('drag-end', self._on_seek_drag_end)
         self._seek_bar.add_controller(drag_gesture)
         self._seek_bar.connect('value-changed', self._on_seek_value_changed)
+
         seek_box.append(self._seek_bar)
 
         self._total_time_label = Gtk.Label(label='0:00')
@@ -813,10 +1090,50 @@ class PlayerControls(Gtk.Box):
         self._seek_fwd_btn.connect('clicked', lambda b: self._seek_relative(10))
         controls.append(self._seek_fwd_btn)
 
+        # Next episode button (TV shows only)
+        self._next_ep_btn = Gtk.Button.new_from_icon_name('media-skip-forward-symbolic')
+        self._next_ep_btn.add_css_class('flat')
+        self._next_ep_btn.set_tooltip_text("Next Episode (Shift+N)")
+        self._next_ep_btn.set_focusable(False)
+        self._next_ep_btn.set_visible(False)
+        self._next_ep_btn.connect('clicked', lambda b: self.emit('next-episode'))
+        controls.append(self._next_ep_btn)
+
         # Spacer
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         controls.append(spacer)
+
+        # Speed selector with Popover
+        self._speed_popover = SpeedPopover(on_speed_changed=self._on_speed_changed)
+        self._speed_btn = Gtk.MenuButton()
+        self._speed_btn.set_label("1.0x")
+        self._speed_btn.add_css_class('flat')
+        self._speed_btn.add_css_class('speed-button')
+        self._speed_btn.set_tooltip_text("Playback Speed ([ / ])")
+        self._speed_btn.set_popover(self._speed_popover)
+        self._speed_btn.set_focusable(False)
+        controls.append(self._speed_btn)
+
+        # Audio Track Menu Button with Popover
+        self._audio_popover = AudioPopover(on_audio_changed=self._on_audio_changed)
+        self._audio_btn = Gtk.MenuButton()
+        self._audio_btn.set_icon_name('audio-headphones-symbolic')
+        self._audio_btn.add_css_class('flat')
+        self._audio_btn.set_tooltip_text("Audio Tracks (A)")
+        self._audio_btn.set_popover(self._audio_popover)
+        self._audio_btn.set_focusable(False)
+        controls.append(self._audio_btn)
+
+        # Subtitle Menu Button with Popover
+        self._sub_popover = SubtitlePopover(on_timing_changed=self._on_sub_timing_adjusted)
+        self._sub_btn = Gtk.MenuButton()
+        self._sub_btn.set_icon_name('media-view-subtitles-symbolic')
+        self._sub_btn.add_css_class('flat')
+        self._sub_btn.set_tooltip_text("Subtitles & Timing (C: Toggle, Z: -100ms, X: +100ms)")
+        self._sub_btn.set_popover(self._sub_popover)
+        self._sub_btn.set_focusable(False)
+        controls.append(self._sub_btn)
 
         # Volume controls
         self._volume_btn = Gtk.Button.new_from_icon_name('audio-volume-high-symbolic')
@@ -833,16 +1150,6 @@ class PlayerControls(Gtk.Box):
         self._volume_scale.set_focusable(False)
         self._volume_scale.connect('value-changed', self._on_volume_changed)
         controls.append(self._volume_scale)
-
-        # Subtitle Menu Button with Popover
-        self._sub_popover = SubtitlePopover(on_timing_changed=self._on_sub_timing_adjusted)
-        self._sub_btn = Gtk.MenuButton()
-        self._sub_btn.set_icon_name('media-view-subtitles-symbolic')
-        self._sub_btn.add_css_class('flat')
-        self._sub_btn.set_tooltip_text("Subtitles & Timing (Z: -100ms, X: +100ms)")
-        self._sub_btn.set_popover(self._sub_popover)
-        self._sub_btn.set_focusable(False)
-        controls.append(self._sub_btn)
 
         # Fullscreen button
         self._fullscreen_button = Gtk.Button.new_from_icon_name('view-fullscreen-symbolic')
@@ -868,10 +1175,34 @@ class PlayerControls(Gtk.Box):
             sign = "+" if delay > 0 else ""
             self.emit('timing-notification', f"Subtitle Delay: {sign}{delay:.2f}s ({sign}{int(delay * 1000)}ms)")
 
+    def _on_speed_changed(self, speed: float):
+        self.set_speed_label(speed)
+        self.emit('timing-notification', f"Speed: {speed:.2f}x")
+
+    def _on_audio_changed(self, msg: str):
+        self.emit('timing-notification', msg)
+
+    def set_speed_label(self, speed: float):
+        spd_str = f"{speed:.2f}".rstrip('0').rstrip('.') + "x"
+        self._speed_btn.set_label(spd_str)
+
+    def refresh_audio_tracks(self):
+        if hasattr(self, '_audio_popover'):
+            self._audio_popover.refresh_tracks()
+
+    def set_next_episode_visible(self, visible: bool, tooltip: Optional[str] = None):
+        self._next_ep_btn.set_visible(visible)
+        if tooltip:
+            self._next_ep_btn.set_tooltip_text(tooltip)
+
     def set_player(self, player: MpvWidget):
         self._player = player
         if hasattr(self, '_sub_popover'):
             self._sub_popover.set_player(player)
+        if hasattr(self, '_audio_popover'):
+            self._audio_popover.set_player(player)
+        if hasattr(self, '_speed_popover'):
+            self._speed_popover.set_player(player)
 
     def set_available_subtitles(self, subs: List[Dict[str, Any]], on_select_cb=None):
         if hasattr(self, '_sub_popover'):
@@ -884,6 +1215,7 @@ class PlayerControls(Gtk.Box):
     def reset(self, start_pos: float = 0.0, total_duration: float = 0.0):
         """Reset seekbar, labels, and state to clean defaults."""
         self._is_dragging = False
+
         try:
             self._seek_bar.handler_block_by_func(self._on_seek_value_changed)
         except Exception:
@@ -1049,6 +1381,11 @@ class PlayerPage(Adw.NavigationPage):
         self._session_id = 0
         self._pending_sub_query = None
         self._available_subtitles = []
+        self._next_stream_data = None
+        self._next_ep_dismissed = False
+        self._next_ep_triggered = False
+        self._countdown_timer_id = None
+        self._countdown_seconds = 10
 
         self.set_focusable(True)
         self.connect('map', lambda w: self.grab_focus())
@@ -1139,13 +1476,56 @@ class PlayerPage(Adw.NavigationPage):
         self._osd_pill.set_visible(False)
         self._overlay.add_overlay(self._osd_pill)
 
+        # Floating Next Episode Countdown Card (bottom right, above controls)
+        self._next_ep_card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._next_ep_card.add_css_class('next-episode-card')
+        self._next_ep_card.set_halign(Gtk.Align.END)
+        self._next_ep_card.set_valign(Gtk.Align.END)
+        self._next_ep_card.set_margin_end(28)
+        self._next_ep_card.set_margin_bottom(148)
+        self._next_ep_card.set_visible(False)
+
+        next_ep_top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        self._next_ep_title_label = Gtk.Label(label="Next Episode in 10s")
+        self._next_ep_title_label.add_css_class('heading')
+        self._next_ep_title_label.set_xalign(0)
+        self._next_ep_title_label.set_hexpand(True)
+        next_ep_top.append(self._next_ep_title_label)
+
+        self._next_ep_dismiss_btn = Gtk.Button.new_from_icon_name('window-close-symbolic')
+        self._next_ep_dismiss_btn.add_css_class('flat')
+        self._next_ep_dismiss_btn.add_css_class('circular')
+        self._next_ep_dismiss_btn.set_tooltip_text("Dismiss")
+        self._next_ep_dismiss_btn.set_focusable(False)
+        self._next_ep_dismiss_btn.connect('clicked', self._on_dismiss_next_episode)
+        next_ep_top.append(self._next_ep_dismiss_btn)
+        self._next_ep_card.append(next_ep_top)
+
+        self._next_ep_sub_label = Gtk.Label(label="")
+        self._next_ep_sub_label.add_css_class('dim-label')
+        self._next_ep_sub_label.set_xalign(0)
+        self._next_ep_card.append(self._next_ep_sub_label)
+
+        next_ep_btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        self._next_ep_play_now_btn = Gtk.Button(label="Play Now")
+        self._next_ep_play_now_btn.add_css_class('suggested-action')
+        self._next_ep_play_now_btn.add_css_class('pill')
+        self._next_ep_play_now_btn.set_focusable(False)
+        self._next_ep_play_now_btn.connect('clicked', lambda b: self._play_next_episode())
+        next_ep_btn_row.append(self._next_ep_play_now_btn)
+        self._next_ep_card.append(next_ep_btn_row)
+
         # Controls overlay
         self._controls = PlayerControls()
         self._controls.set_player(self._mpv_widget)
         self._controls.connect('close', self._on_close)
         self._controls.connect('fullscreen-toggle', self._on_fullscreen_toggle)
         self._controls.connect('timing-notification', lambda c, msg: self.show_osd_notification(msg))
+        self._controls.connect('next-episode', lambda b: self._play_next_episode())
         self._overlay.add_overlay(self._controls)
+
+        # Next episode card overlay added AFTER controls so it renders on top
+        self._overlay.add_overlay(self._next_ep_card)
 
         self.set_child(self._overlay)
 
@@ -1262,6 +1642,42 @@ class PlayerPage(Adw.NavigationPage):
         elif keyname in ['i', 'I']:
             self._on_open_stream_details(None)
             return True
+        elif keyname in ['a', 'A']:
+            track = self._mpv_widget.cycle_audio_track()
+            if track:
+                title = track.get('title') or 'Audio Track'
+                codec = track.get('codec') or ''
+                detail = f" ({codec.upper()})" if codec else ""
+                self.show_osd_notification(f"Audio: {title}{detail}")
+            else:
+                self.show_osd_notification("Audio: Default")
+            self._controls.refresh_audio_tracks()
+            return True
+        elif keyname == 'bracketleft':
+            new_spd = self._mpv_widget.adjust_speed(-0.25)
+            self.show_osd_notification(f"Speed: {new_spd:.2f}x")
+            self._controls.set_speed_label(new_spd)
+            return True
+        elif keyname == 'bracketright':
+            new_spd = self._mpv_widget.adjust_speed(0.25)
+            self.show_osd_notification(f"Speed: {new_spd:.2f}x")
+            self._controls.set_speed_label(new_spd)
+            return True
+        elif keyname in ['0', 'r', 'R']:
+            self._mpv_widget.set_speed(1.0)
+            self.show_osd_notification("Speed: 1.0x (Normal)")
+            self._controls.set_speed_label(1.0)
+            return True
+        elif keyname in ['w', 'W']:
+            mode_label = self._mpv_widget.cycle_aspect_ratio()
+            self.show_osd_notification(f"Video Fit: {mode_label}")
+            return True
+        elif (keyname in ['n', 'N'] and shift) or keyname == 'N':
+            if getattr(self, '_next_stream_data', None):
+                self._play_next_episode()
+            else:
+                self.show_osd_notification("No Next Episode")
+            return True
 
         return False
 
@@ -1335,6 +1751,15 @@ class PlayerPage(Adw.NavigationPage):
         self._available_subtitles = []
         self._controls.set_available_subtitles([])
 
+        # Reset Next Episode state
+        self._next_stream_data = None
+        self._next_ep_dismissed = False
+        self._next_ep_triggered = False
+        self._cancel_next_ep_countdown()
+        if hasattr(self, '_next_ep_card'):
+            self._next_ep_card.set_visible(False)
+        self._controls.set_next_episode_visible(False)
+
         tmdb_id = movie.get('id') or movie.get('tmdb_id')
         if not tmdb_id:
             self.emit('stream-failed', "Missing TMDB media identifier.")
@@ -1372,6 +1797,15 @@ class PlayerPage(Adw.NavigationPage):
 
         self._session_id += 1
         current_session = self._session_id
+
+        # If TV show, resolve next episode metadata in background
+        media_type = stream_data.get('media_type')
+        if media_type == 'tv' or (season is not None and episode is not None):
+            threading.Thread(
+                target=self._resolve_next_episode_thread,
+                args=(tmdb_id, season, episode, current_session),
+                daemon=True
+            ).start()
 
         chosen_stream = stream_data.get('chosen_stream')
         threading.Thread(
@@ -1510,6 +1944,11 @@ class PlayerPage(Adw.NavigationPage):
         self._spinner.stop()
         self._spinner_box.set_visible(False)
 
+        # Refresh audio tracks and playback speed in controls
+        GLib.timeout_add(1000, lambda: self._controls.refresh_audio_tracks())
+        if self._mpv_widget:
+            self._controls.set_speed_label(self._mpv_widget.get_speed())
+
         # Defer subtitle fetch until stream is visibly rolling (3s delay, zero bandwidth/CPU competition during buffer)
         if self._pending_sub_query:
             query = self._pending_sub_query
@@ -1625,6 +2064,12 @@ class PlayerPage(Adw.NavigationPage):
             movie = self._stream_data.get('movie', {})
             tmdb_id = movie.get('id')
 
+            # Check if near end for TV next episode countdown
+            if self._next_stream_data and not getattr(self, '_next_ep_dismissed', False):
+                rem = dur - pos
+                if dur > 60 and rem <= 45 and not getattr(self, '_next_ep_triggered', False):
+                    self._show_next_episode_countdown()
+
             if tmdb_id and dur > 30 and pos > 5:
                 chosen = self._stream_data.get('chosen_stream') or {}
                 t_status = {}
@@ -1656,6 +2101,87 @@ class PlayerPage(Adw.NavigationPage):
 
         return True
 
+    def _resolve_next_episode_thread(self, tmdb_id, season, episode, session_id: int):
+        """Background worker to look up the subsequent episode."""
+        try:
+            s_num = int(season or 1)
+            e_num = int(episode or 1)
+            episodes = self._tmdb.get_tv_season(tmdb_id, s_num)
+            next_info = None
+            if episodes:
+                for ep in episodes:
+                    if ep.get('episode_number') == e_num + 1:
+                        next_info = (s_num, e_num + 1, ep.get('name', f"Episode {e_num + 1}"))
+                        break
+            if not next_info:
+                # Check next season episode 1
+                next_season_eps = self._tmdb.get_tv_season(tmdb_id, s_num + 1)
+                if next_season_eps:
+                    first_ep = next_season_eps[0]
+                    next_info = (s_num + 1, first_ep.get('episode_number', 1), first_ep.get('name', "Episode 1"))
+
+            if next_info and session_id == self._session_id:
+                GLib.idle_add(self._on_next_episode_resolved, next_info, session_id)
+        except Exception as e:
+            logger.debug(f"Error resolving next episode: {e}")
+
+    def _on_next_episode_resolved(self, next_info, session_id: int):
+        if session_id != self._session_id or not self._stream_data:
+            return
+        n_season, n_episode, n_title = next_info
+        self._next_stream_data = {
+            'movie': self._stream_data.get('movie', {}),
+            'provider': self._stream_data.get('provider'),
+            'media_type': 'tv',
+            'season': n_season,
+            'episode': n_episode,
+            'start_position': 0,
+            'title': n_title,
+        }
+        tooltip = f"Next Episode (Shift+N): S{n_season:02d}E{n_episode:02d} - {n_title}"
+        self._controls.set_next_episode_visible(True, tooltip)
+        self._next_ep_sub_label.set_text(f"S{n_season:02d}E{n_episode:02d} • {n_title}")
+
+    def _show_next_episode_countdown(self):
+        if not self._next_stream_data or self._next_ep_dismissed or self._next_ep_triggered:
+            return
+        self._next_ep_triggered = True
+        self._countdown_seconds = 10
+        self._next_ep_title_label.set_text(f"Next Episode in {self._countdown_seconds}s")
+        self._next_ep_card.set_visible(True)
+        self._countdown_timer_id = GLib.timeout_add_seconds(1, self._on_countdown_tick)
+
+    def _on_countdown_tick(self):
+        self._countdown_seconds -= 1
+        if self._countdown_seconds <= 0:
+            self._countdown_timer_id = None
+            self._play_next_episode()
+            return False
+        self._next_ep_title_label.set_text(f"Next Episode in {self._countdown_seconds}s")
+        return True
+
+    def _on_dismiss_next_episode(self, button=None):
+        self._cancel_next_ep_countdown()
+        self._next_ep_dismissed = True
+        self._next_ep_card.set_visible(False)
+
+    def _cancel_next_ep_countdown(self):
+        if hasattr(self, '_countdown_timer_id') and self._countdown_timer_id:
+            try:
+                GLib.source_remove(self._countdown_timer_id)
+            except Exception:
+                pass
+            self._countdown_timer_id = None
+
+    def _play_next_episode(self):
+        if not self._next_stream_data:
+            return
+        data = self._next_stream_data
+        self._cancel_next_ep_countdown()
+        self._next_ep_card.set_visible(False)
+        self.show_osd_notification(f"Starting S{data['season']:02d}E{data['episode']:02d}: {data.get('title', '')}")
+        self.load_stream(data)
+
     def _on_stream_error(self, err_msg: str, session_id: int = 0):
         if session_id and session_id != self._session_id:
             return False
@@ -1669,6 +2195,9 @@ class PlayerPage(Adw.NavigationPage):
         self._session_id += 1  # Invalidate any in-flight resolver or subtitle worker threads
         self._pending_sub_query = None
         self._available_subtitles = []
+        self._cancel_next_ep_countdown()
+        if hasattr(self, '_next_ep_card'):
+            self._next_ep_card.set_visible(False)
 
         # Capture progress before deactivating
         try:
