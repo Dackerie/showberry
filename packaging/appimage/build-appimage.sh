@@ -53,6 +53,7 @@ for lib in /usr/lib/x86_64-linux-gnu/libmpv.so* /usr/lib/libmpv.so* /usr/lib64/l
 done
 
 # Recursively copy media dependencies (FFmpeg, libass, libplacebo, etc.) needed by libmpv
+# Exclude desktop, GTK, GLib, Pango, Cairo, and system libraries so the host GTK 4 stack is untouched
 echo "==> Bundling libmpv media dependencies..."
 for pass in 1 2; do
     for sofile in "${APP_DIR}/usr/lib/"*.so*; do
@@ -60,8 +61,8 @@ for pass in 1 2; do
             for dep in $(ldd "$sofile" 2>/dev/null | grep '=> /' | awk '{print $3}'); do
                 dep_name="$(basename "$dep")"
                 case "$dep_name" in
-                    libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*|libGL.so*|libEGL.so*|libwayland*|libX11*|libxcb*|libresolv.so*|libgcc_s.so*)
-                        # Exclude low-level system, glibc and graphics display libraries
+                    *glib*|*gobject*|*gio*|*gmodule*|*gstreamer*|*cairo*|*pango*|*harfbuzz*|*fontconfig*|*freetype*|*ffi*|*z.so*|*bz2*|*lzma*|*systemd*|*udev*|*X11*|*xcb*|*wayland*|*GL*|*EGL*|libc.*|libm.*|libpthread.*|libdl.*|librt.*|ld-linux*|libstdc++*|libgcc*)
+                        # Skip desktop, GTK, GLib, and system libraries
                         ;;
                     *)
                         if [ -f "$dep" ] && [ ! -e "${APP_DIR}/usr/lib/${dep_name}" ]; then
