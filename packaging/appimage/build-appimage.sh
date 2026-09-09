@@ -46,34 +46,9 @@ for d in /usr/lib/x86_64-linux-gnu/girepository-1.0 /usr/lib64/girepository-1.0 
     fi
 done
 
-for lib in /usr/lib/x86_64-linux-gnu/libmpv.so* /usr/lib/libmpv.so* /usr/lib64/libmpv.so*; do
-    if [ -f "$lib" ] || [ -L "$lib" ]; then
-        cp -d "$lib" "${APP_DIR}/usr/lib/" 2>/dev/null || true
-    fi
-done
-
-# Recursively copy media dependencies (FFmpeg, libass, libplacebo, etc.) needed by libmpv
-# Exclude desktop, GTK, GLib, Pango, Cairo, and system libraries so the host GTK 4 stack is untouched
-echo "==> Bundling libmpv media dependencies..."
-for pass in 1 2; do
-    for sofile in "${APP_DIR}/usr/lib/"*.so*; do
-        if [ -f "$sofile" ]; then
-            for dep in $(ldd "$sofile" 2>/dev/null | grep '=> /' | awk '{print $3}'); do
-                dep_name="$(basename "$dep")"
-                case "$dep_name" in
-                    *glib*|*gobject*|*gio*|*gmodule*|*gstreamer*|*cairo*|*pango*|*harfbuzz*|*fontconfig*|*freetype*|*ffi*|*z.so*|*bz2*|*lzma*|*systemd*|*udev*|*X11*|*xcb*|*wayland*|*GL*|*EGL*|libc.*|libm.*|libpthread.*|libdl.*|librt.*|ld-linux*|libstdc++*|libgcc*)
-                        # Skip desktop, GTK, GLib, and system libraries
-                        ;;
-                    *)
-                        if [ -f "$dep" ] && [ ! -e "${APP_DIR}/usr/lib/${dep_name}" ]; then
-                            cp -L "$dep" "${APP_DIR}/usr/lib/" 2>/dev/null || true
-                        fi
-                        ;;
-                esac
-            done
-        fi
-    done
-done
+# Note: We intentionally avoid bundling native C desktop libraries (GLib, GTK, libmpv)
+# into the AppImage. Relying on the host's native libmpv and GTK 4 guarantees
+# flawless hardware acceleration, matching audio/video drivers, and zero symbol conflicts.
 
 echo "==> Generating AppRun launcher..."
 cat << 'LAUNCHER' > "${APP_DIR}/AppRun"
