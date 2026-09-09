@@ -20,12 +20,12 @@ python3 -m pip install --break-system-packages --target "${APP_DIR}/usr/lib/pyth
 echo "==> Installing Showberry package into AppDir..."
 python3 -m pip install --break-system-packages --target "${APP_DIR}/usr/lib/python3/dist-packages" --no-deps .
 
-for gid in /usr/lib/python3/dist-packages/gi /usr/lib64/python3*/site-packages/gi /usr/lib/python3*/site-packages/gi; do
-    if [ -d "$gid" ]; then
-        cp -r "$gid" "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
-        break
-    fi
-done
+echo "==> Bundling PyGObject (gi)..."
+GI_DIR="$(python3 -c 'import gi, os; print(os.path.dirname(gi.__file__))' 2>/dev/null || true)"
+if [ -n "$GI_DIR" ] && [ -d "$GI_DIR" ]; then
+    echo "Found gi at ${GI_DIR}, copying into AppDir..."
+    cp -r "$GI_DIR" "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
+fi
 
 echo "==> Installing desktop, icons, and metadata..."
 cp data/io.github.Dackerie.Showberry.desktop "${APP_DIR}/usr/share/applications/"
@@ -35,8 +35,8 @@ cp data/io.github.Dackerie.Showberry.gschema.xml "${APP_DIR}/usr/share/glib-2.0/
 glib-compile-schemas "${APP_DIR}/usr/share/glib-2.0/schemas/"
 
 cp -r data/icons/* "${APP_DIR}/usr/share/icons/"
-cp data/icons/hicolor/scalable/apps/io.github.Dackerie.Showberry.svg "${APP_DIR}/io.github.Dackerie.Showberry.svg"
-cp data/icons/hicolor/scalable/apps/io.github.Dackerie.Showberry.svg "${APP_DIR}/.DirIcon"
+cp data/icons/hicolor/512x512/apps/io.github.Dackerie.Showberry.png "${APP_DIR}/io.github.Dackerie.Showberry.png"
+cp data/icons/hicolor/512x512/apps/io.github.Dackerie.Showberry.png "${APP_DIR}/.DirIcon"
 
 echo "==> Bundling system typelibs and media libraries..."
 mkdir -p "${APP_DIR}/usr/lib/girepository-1.0"
@@ -58,7 +58,7 @@ cat << 'LAUNCHER' > "${APP_DIR}/AppRun"
 HERE="$(dirname "$(readlink -f "${0}")")"
 export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}"
-export PYTHONPATH="${HERE}/usr/lib/python3/dist-packages:${PYTHONPATH:-}"
+export PYTHONPATH="${HERE}/usr/lib/python3/dist-packages:${HERE}/usr/lib/python3/site-packages:${PYTHONPATH:-}"
 export GI_TYPELIB_PATH="${HERE}/usr/lib/girepository-1.0:${HERE}/usr/lib/x86_64-linux-gnu/girepository-1.0:${GI_TYPELIB_PATH:-}"
 export GSETTINGS_SCHEMA_DIR="${HERE}/usr/share/glib-2.0/schemas:${GSETTINGS_SCHEMA_DIR:-}"
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-}"
@@ -76,5 +76,5 @@ else
     APPIMAGETOOL="appimagetool"
 fi
 
-ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run "${APP_DIR}" Showberry-x86_64.AppImage
+ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run -n "${APP_DIR}" Showberry-x86_64.AppImage
 echo "==> Successfully created Showberry-x86_64.AppImage"

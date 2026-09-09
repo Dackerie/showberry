@@ -13,3 +13,10 @@ venv/
 *.db
 *.pkg.tar.zst
 pkg/
+AppDir/
+appimagetool
+*.AppImage
+.flatpak-builder/
+build-dir/
+*.flatpak
+
