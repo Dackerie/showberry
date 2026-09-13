@@ -14,8 +14,18 @@ import subprocess
 import threading
 from typing import Optional, List, Dict, Any, Tuple
 
-import mpv
-from mpv import MPV, MpvGlGetProcAddressFn, MpvRenderContext
+try:
+    import mpv
+    from mpv import MPV, MpvGlGetProcAddressFn, MpvRenderContext
+    HAS_MPV = True
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error("Failed to load mpv library: %s", e)
+    mpv = None
+    MPV = None
+    MpvGlGetProcAddressFn = None
+    MpvRenderContext = None
+    HAS_MPV = False
 
 try:
     from OpenGL import GL
@@ -139,6 +149,21 @@ class MpvWidget(Gtk.GLArea):
         self.connect('resize', self._on_resize)
         self.connect('render', self._on_render)
 
+        self._ctx = None
+        self._gl_context_ref = None
+        self._redraw_pending = False
+        self._pending_subtitles = []
+        self._wait_first_frame = False  # set True while A/V sync wait is active
+        self._is_active = True
+        self._has_drawn_first_frame = False
+        self._is_stream_active = False
+        self._current_media_path = None
+
+        if not HAS_MPV or MPV is None:
+            self._mpv = None
+            logger.error("MPV backend is not available; video playback disabled")
+            return
+
         from showberry.services.settings import SettingsService
         settings = SettingsService()
         initial_sub_pos = settings.sub_pos
@@ -173,16 +198,6 @@ class MpvWidget(Gtk.GLArea):
         def _on_eof_reached(name, value):
             if value and getattr(self, '_is_active', False):
                 GLib.idle_add(self.emit, 'playback-ended')
-
-        self._ctx = None
-        self._gl_context_ref = None
-        self._redraw_pending = False
-        self._pending_subtitles = []
-        self._wait_first_frame = False  # set True while A/V sync wait is active
-        self._is_active = True
-        self._has_drawn_first_frame = False
-        self._is_stream_active = False
-        self._current_media_path = None
         self._current_sub_path = None
 
     def activate(self):
@@ -206,6 +221,8 @@ class MpvWidget(Gtk.GLArea):
             pass
 
     def _on_realize(self, *_):
+        if not getattr(self, '_mpv', None):
+            return
         self.make_current()
         curr_gdk_ctx = self.get_context()
 

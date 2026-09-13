@@ -53,6 +53,13 @@ rm -rf build/ dist/showberry
 pyinstaller packaging/macos/showberry.spec --noconfirm
 mv dist/showberry "${APP_DIR}/Contents/Resources/showberry"
 
+echo "==> Bundling libmpv into macOS App bundle..."
+for mpv_cand in /opt/homebrew/lib/libmpv*.dylib /usr/local/lib/libmpv*.dylib; do
+    if [ -f "$mpv_cand" ]; then
+        cp -a "$mpv_cand" "${APP_DIR}/Contents/Resources/showberry/" 2>/dev/null || true
+    fi
+done
+
 echo "==> Ad-hoc signing application bundle..."
 find "${APP_DIR}" -type f | while read -r file; do
     if file "$file" | grep -q "Mach-O"; then
