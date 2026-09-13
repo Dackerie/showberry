@@ -8,28 +8,32 @@ echo "========================================"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-ARCH="$(uname -m)"
+ARCH="${ARCH:-$(uname -m)}"
 echo "==> Target Architecture: ${ARCH}"
 
 cd "${REPO_ROOT}"
 
-echo "==> [1/6] Installing Homebrew dependencies..."
-if command -v brew &>/dev/null; then
-    brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
+if ! command -v pyinstaller &>/dev/null; then
+    echo "==> [1/6] Installing Homebrew dependencies..."
+    if command -v brew &>/dev/null; then
+        brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
+    fi
+
+    echo "==> [2/6] Installing Python dependencies..."
+    python3 -m pip install --break-system-packages \
+        requests \
+        pillow \
+        curl_cffi \
+        pycryptodome \
+        PyOpenGL \
+        python-mpv \
+        pyinstaller
+else
+    echo "==> [1/6 & 2/6] Dependencies already installed, skipping..."
 fi
 
-echo "==> [2/6] Installing Python dependencies..."
-python3 -m pip install --break-system-packages \
-    requests \
-    pillow \
-    curl_cffi \
-    pycryptodome \
-    PyOpenGL \
-    python-mpv \
-    pyinstaller
-
 echo "==> [3/6] Compiling GSettings schemas..."
-glib-compile-schemas data/
+glib-compile-schemas data/ || true
 
 echo "==> [4/6] Creating macOS App Bundle..."
 APP_DIR="${REPO_ROOT}/Showberry.app"

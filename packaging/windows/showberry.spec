@@ -2,8 +2,8 @@
 import os
 import sys
 from pathlib import Path
-
-repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+spec_dir = SPECPATH if 'SPECPATH' in globals() else (os.path.dirname(__file__) if '__file__' in globals() else os.getcwd())
+repo_root = os.path.abspath(os.path.join(spec_dir, '..', '..'))
 
 datas = [
     (os.path.join(repo_root, 'showberry', 'data', 'style.css'), 'showberry/data'),
@@ -108,7 +108,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=os.path.join(os.path.dirname(__file__), 'icon.ico'),
+    icon=os.path.join(spec_dir, 'icon.ico'),
 )
 
 coll = COLLECT(
