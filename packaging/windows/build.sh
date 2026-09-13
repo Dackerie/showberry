@@ -27,7 +27,8 @@ pacman -S --noconfirm --needed \
     mingw-w64-ucrt-x86_64-ninja \
     mingw-w64-ucrt-x86_64-git \
     mingw-w64-ucrt-x86_64-boost \
-    mingw-w64-ucrt-x86_64-boost-libs
+    mingw-w64-ucrt-x86_64-boost-libs \
+    mingw-w64-ucrt-x86_64-ntldd
 
 echo "==> [2/5] Installing Python PIP packages..."
 pip install --break-system-packages \
@@ -62,11 +63,11 @@ echo "==> [4/5] Running PyInstaller..."
 rm -rf build/ dist/showberry
 pyinstaller packaging/windows/showberry.spec --noconfirm
 
-echo "==> [5/5] Finalizing distribution bundle..."
-# Ensure libmpv-2.dll is located alongside showberry.exe
-if [ -f "/ucrt64/bin/libmpv-2.dll" ]; then
-    cp "/ucrt64/bin/libmpv-2.dll" dist/showberry/
-fi
+echo "==> [5/5] Finalizing distribution bundle and collecting DLL dependencies..."
+python "${SCRIPT_DIR}/collect_dlls.py"
 cp "${SCRIPT_DIR}/icon.ico" dist/showberry/
+if [ -d "dist/showberry/_internal" ]; then
+    cp "${SCRIPT_DIR}/icon.ico" dist/showberry/_internal/
+fi
 
 echo "==> Showberry Windows binary bundle created at: ${REPO_ROOT}/dist/showberry"
