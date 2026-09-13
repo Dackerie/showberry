@@ -29,7 +29,10 @@ elif sys.platform == 'darwin':
     # On macOS, search Homebrew and bundle paths for libmpv.dylib
     mac_paths = ['/opt/homebrew/lib', '/usr/local/lib']
     if getattr(sys, 'frozen', False):
-        mac_paths.insert(0, os.path.join(os.path.dirname(sys.executable), '..', 'Resources'))
+        exe_parent = os.path.dirname(sys.executable)
+        mac_paths.insert(0, exe_parent)
+        mac_paths.insert(0, os.path.abspath(os.path.join(exe_parent, '..')))
+        mac_paths.insert(0, os.path.abspath(os.path.join(exe_parent, '..', 'Resources')))
     existing_dyld = os.environ.get('DYLD_FALLBACK_LIBRARY_PATH', '')
     for p in mac_paths:
         if os.path.exists(p) and p not in existing_dyld:

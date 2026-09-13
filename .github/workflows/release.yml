@@ -146,20 +146,15 @@ jobs:
           if-no-files-found: error
 
   build-macos:
-    name: Build macOS DMG (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [arm64, x86_64]
-    runs-on: ${{ matrix.arch == 'arm64' && 'macos-14' || 'macos-13' }}
+    name: Build macOS DMG (arm64)
+    runs-on: macos-14
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: |
-          brew update
-          brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar
+          brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
           python3 -m pip install --break-system-packages \
             requests \
             pillow \
@@ -171,14 +166,14 @@ jobs:
 
       - name: Run macOS build script
         env:
-          ARCH: ${{ matrix.arch }}
+          ARCH: arm64
         run: |
           bash ./packaging/macos/build.sh
 
       - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg-${{ matrix.arch }}
+          name: macos-dmg-arm64
           path: Showberry-macOS-*.dmg
           if-no-files-found: error
 
