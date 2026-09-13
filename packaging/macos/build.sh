@@ -15,7 +15,7 @@ cd "${REPO_ROOT}"
 
 echo "==> [1/6] Installing Homebrew dependencies..."
 if command -v brew &>/dev/null; then
-    brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg || true
+    brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
 fi
 
 echo "==> [2/6] Installing Python dependencies..."
@@ -26,7 +26,6 @@ python3 -m pip install --break-system-packages \
     pycryptodome \
     PyOpenGL \
     python-mpv \
-    libtorrent \
     pyinstaller
 
 echo "==> [3/6] Compiling GSettings schemas..."

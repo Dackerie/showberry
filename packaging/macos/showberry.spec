@@ -56,6 +56,7 @@ hiddenimports = [
     'PIL',
     'requests',
     'sqlite3',
+    'libtorrent',
 ]
 
 a = Analysis(

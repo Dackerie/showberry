@@ -21,7 +21,13 @@ pacman -S --noconfirm --needed \
     mingw-w64-ucrt-x86_64-pyinstaller \
     mingw-w64-ucrt-x86_64-mpv \
     mingw-w64-ucrt-x86_64-gcc \
-    mingw-w64-ucrt-x86_64-glib2
+    mingw-w64-ucrt-x86_64-glib2 \
+    mingw-w64-ucrt-x86_64-openssl \
+    mingw-w64-ucrt-x86_64-cmake \
+    mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-git \
+    mingw-w64-ucrt-x86_64-boost \
+    mingw-w64-ucrt-x86_64-boost-libs
 
 echo "==> [2/5] Installing Python PIP packages..."
 pip install --break-system-packages \
@@ -30,8 +36,24 @@ pip install --break-system-packages \
     curl_cffi \
     pycryptodome \
     PyOpenGL \
-    python-mpv \
-    libtorrent
+    python-mpv
+
+echo "==> [2b/5] Building and installing Libtorrent from source..."
+(
+    git clone --recursive "https://github.com/arvidn/libtorrent"
+    cd libtorrent
+    git switch --detach 578e06824c3546f3371ab43967ab288a7e253eca
+    mkdir build && cd build
+    cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -Dpython-bindings=ON -DBUILD_SHARED_LIBS=OFF -Dstatic_runtime=ON -DPython3_EXECUTABLE="$(which python)"
+    cmake --build .
+    cmake --install . --prefix /ucrt64
+    cd ../..
+    rm -rf libtorrent
+    echo "==> Libtorrent built and installed into /ucrt64 successfully!"
+) || {
+    echo "==> Warning: Libtorrent build failed or skipped. Continuing build without torrent streaming..."
+    rm -rf libtorrent 2>/dev/null || true
+}
 
 echo "==> [3/5] Compiling GSettings schemas..."
 glib-compile-schemas data/
