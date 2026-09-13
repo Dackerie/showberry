@@ -63,8 +63,8 @@ class SettingsPage(Gtk.Box):
     def _setup_player_group(self):
         """Setup player settings group."""
         group = Adw.PreferencesGroup()
-        group.set_title('Player')
-        group.set_description('Video player settings')
+        group.set_title('Playback & Behavior')
+        group.set_description('Video player, providers, and auto-skip settings')
 
         # Default provider
         providers = get_all_providers()
@@ -72,6 +72,7 @@ class SettingsPage(Gtk.Box):
 
         provider_row = Adw.ComboRow()
         provider_row.set_title('Default Provider')
+        provider_row.set_subtitle('Initial provider prioritized when using Auto (Best)')
         provider_row.set_model(Gtk.StringList.new(provider_names))
 
         # Find current provider index
@@ -83,6 +84,26 @@ class SettingsPage(Gtk.Box):
 
         provider_row.connect('notify::selected', self._on_provider_changed)
         group.add(provider_row)
+
+        # Auto-Skip Next Episode
+        auto_skip_row = Adw.SwitchRow()
+        auto_skip_row.set_title('Auto-Skip Next Episode')
+        auto_skip_row.set_subtitle('Show countdown card and automatically play next episode during credits')
+        auto_skip_row.set_active(self._settings.auto_skip_enabled)
+        auto_skip_row.connect('notify::active', self._on_auto_skip_changed)
+        group.add(auto_skip_row)
+
+        # Countdown duration
+        countdown_row = Adw.ComboRow()
+        countdown_row.set_title('Countdown Duration')
+        countdown_row.set_subtitle('Seconds to wait before automatically playing the next episode')
+        self._countdown_values = [5, 10, 15]
+        countdown_row.set_model(Gtk.StringList.new(['5 seconds', '10 seconds (Default)', '15 seconds']))
+        curr_cd = self._settings.auto_skip_countdown
+        cd_idx = self._countdown_values.index(curr_cd) if curr_cd in self._countdown_values else 1
+        countdown_row.set_selected(cd_idx)
+        countdown_row.connect('notify::selected', self._on_countdown_changed)
+        group.add(countdown_row)
 
         self._prefs_page.add(group)
 
@@ -212,6 +233,14 @@ class SettingsPage(Gtk.Box):
         index = row.get_selected()
         if index < len(providers):
             self._settings.default_provider = providers[index].name
+
+    def _on_auto_skip_changed(self, row, pspec):
+        self._settings.auto_skip_enabled = row.get_active()
+
+    def _on_countdown_changed(self, row, pspec):
+        idx = row.get_selected()
+        if 0 <= idx < len(self._countdown_values):
+            self._settings.auto_skip_countdown = self._countdown_values[idx]
 
     def _apply_theme(self, theme):
         """Apply the selected theme."""

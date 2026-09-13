@@ -41,42 +41,78 @@ ASPECT_MODES = [
 
 
 def get_proc_address_wrapper():
-    """Get OpenGL proc address for MPV using direct ctypes bindings for EGL and GLX."""
+    """Get OpenGL proc address for MPV across Linux, Windows, and macOS."""
     import ctypes
+    import sys
+
+    wgl_get_proc = None
+    win_gl = None
     egl_get_proc = None
     gl_get_proc = None
     gl_lib = None
+    mac_gl = None
 
-    try:
-        egl = ctypes.CDLL('libEGL.so.1')
-        egl_get_proc = egl.eglGetProcAddress
-        egl_get_proc.restype = ctypes.c_void_p
-        egl_get_proc.argtypes = [ctypes.c_char_p]
-    except Exception:
-        pass
+    if sys.platform == 'win32':
+        try:
+            win_gl = ctypes.windll.opengl32
+            wgl_get_proc = win_gl.wglGetProcAddress
+            wgl_get_proc.restype = ctypes.c_void_p
+            wgl_get_proc.argtypes = [ctypes.c_char_p]
+        except Exception:
+            pass
+    elif sys.platform == 'darwin':
+        try:
+            mac_gl = ctypes.CDLL('/System/Library/Frameworks/OpenGL.framework/OpenGL')
+        except Exception:
+            pass
+    else:
+        try:
+            egl = ctypes.CDLL('libEGL.so.1')
+            egl_get_proc = egl.eglGetProcAddress
+            egl_get_proc.restype = ctypes.c_void_p
+            egl_get_proc.argtypes = [ctypes.c_char_p]
+        except Exception:
+            pass
 
-    try:
-        gl_lib = ctypes.CDLL('libGL.so.1')
-        gl_get_proc = getattr(gl_lib, 'glXGetProcAddressARB', getattr(gl_lib, 'glXGetProcAddress', None))
-        if gl_get_proc:
-            gl_get_proc.restype = ctypes.c_void_p
-            gl_get_proc.argtypes = [ctypes.c_char_p]
-    except Exception:
-        pass
+        try:
+            gl_lib = ctypes.CDLL('libGL.so.1')
+            gl_get_proc = getattr(gl_lib, 'glXGetProcAddressARB', getattr(gl_lib, 'glXGetProcAddress', None))
+            if gl_get_proc:
+                gl_get_proc.restype = ctypes.c_void_p
+                gl_get_proc.argtypes = [ctypes.c_char_p]
+        except Exception:
+            pass
 
     def get_proc_address(*args):
         # libmpv passes (ctx, name)
         name = args[-1]
         if not isinstance(name, bytes):
-            name = name.encode('utf-8')
+            name_bytes = name.encode('utf-8')
+            name_str = name
+        else:
+            name_bytes = name
+            name_str = name.decode('utf-8', errors='ignore')
+
         res = None
-        if egl_get_proc:
-            res = egl_get_proc(name)
+        if wgl_get_proc:
+            res = wgl_get_proc(name_bytes)
+        if not res and win_gl:
+            try:
+                res = ctypes.cast(getattr(win_gl, name_str), ctypes.c_void_p).value
+            except Exception:
+                pass
+        if not res and mac_gl:
+            try:
+                res = ctypes.cast(getattr(mac_gl, name_str), ctypes.c_void_p).value
+            except Exception:
+                pass
+        if not res and egl_get_proc:
+            res = egl_get_proc(name_bytes)
         if not res and gl_get_proc:
-            res = gl_get_proc(name)
+            res = gl_get_proc(name_bytes)
         if not res and gl_lib:
             try:
-                res = ctypes.cast(getattr(gl_lib, name.decode('utf-8')), ctypes.c_void_p).value
+                res = ctypes.cast(getattr(gl_lib, name_str), ctypes.c_void_p).value
             except Exception:
                 pass
         return res or 0
@@ -90,6 +126,7 @@ class MpvWidget(Gtk.GLArea):
     __gsignals__ = {
         'stream-ready': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'buffering': (GObject.SignalFlags.RUN_FIRST, None, (bool,)),
+        'playback-ended': (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self, **properties):
@@ -101,6 +138,11 @@ class MpvWidget(Gtk.GLArea):
         self.connect('unrealize', self._on_unrealize)
         self.connect('resize', self._on_resize)
         self.connect('render', self._on_render)
+
+        from showberry.services.settings import SettingsService
+        settings = SettingsService()
+        initial_sub_pos = settings.sub_pos
+        initial_sub_scale = settings.sub_scale
 
         self._mpv = MPV(
             vo='libmpv',
@@ -115,7 +157,10 @@ class MpvWidget(Gtk.GLArea):
             cache_secs=120,
             network_timeout=15,
             slang='eng,en,enUS,en-US',
-            sub_pos=94,
+            sub_scale_with_window='yes',
+            sub_font_size=55,
+            sub_pos=initial_sub_pos,
+            sub_scale=initial_sub_scale,
             sub_margin_y=36,
         )
 
@@ -123,6 +168,11 @@ class MpvWidget(Gtk.GLArea):
         def _on_paused_for_cache(name, value):
             if getattr(self, '_is_active', False):
                 GLib.idle_add(self.emit, 'buffering', bool(value))
+
+        @self._mpv.property_observer('eof-reached')
+        def _on_eof_reached(name, value):
+            if value and getattr(self, '_is_active', False):
+                GLib.idle_add(self.emit, 'playback-ended')
 
         self._ctx = None
         self._gl_context_ref = None
@@ -132,6 +182,8 @@ class MpvWidget(Gtk.GLArea):
         self._is_active = True
         self._has_drawn_first_frame = False
         self._is_stream_active = False
+        self._current_media_path = None
+        self._current_sub_path = None
 
     def activate(self):
         """Re-enable rendering and event handling."""
@@ -349,6 +401,8 @@ class MpvWidget(Gtk.GLArea):
             self._mpv.pause = True
         except Exception:
             pass
+        self._current_media_path = url
+        self._current_sub_path = None
         self._mpv.play(url)
 
         self._pending_subtitles = list(subtitles or [])
@@ -409,6 +463,7 @@ class MpvWidget(Gtk.GLArea):
         try:
             if not self._mpv or not self._mpv.filename:
                 return
+            self._current_sub_path = path
             self._mpv.command('sub-add', path, 'auto', label, lang)
             logger.info(f"Added local subtitle track: {label} ({path})")
         except Exception as e:
@@ -515,6 +570,66 @@ class MpvWidget(Gtk.GLArea):
         current = self.get_sub_delay()
         new_val = round(current + delta, 2)
         self.set_sub_delay(new_val)
+        return new_val
+
+    def set_sub_speed(self, multiplier: float):
+        try:
+            self._mpv.sub_speed = round(multiplier, 4)
+        except Exception:
+            pass
+
+    def get_sub_speed(self) -> float:
+        try:
+            return float(self._mpv.sub_speed or 1.0)
+        except Exception:
+            return 1.0
+
+    def adjust_sub_speed(self, delta: float) -> float:
+        current = self.get_sub_speed()
+        new_val = round(current + delta, 4)
+        self.set_sub_speed(new_val)
+        return new_val
+
+    def set_sub_pos(self, pos: int):
+        try:
+            clamped = max(50, min(int(pos), 100))
+            self._mpv.sub_pos = clamped
+            from showberry.services.settings import SettingsService
+            SettingsService().sub_pos = clamped
+        except Exception:
+            pass
+
+    def get_sub_pos(self) -> int:
+        try:
+            return int(self._mpv.sub_pos or 94)
+        except Exception:
+            return 94
+
+    def adjust_sub_pos(self, delta: int) -> int:
+        current = self.get_sub_pos()
+        new_val = max(50, min(current + delta, 100))
+        self.set_sub_pos(new_val)
+        return new_val
+
+    def set_sub_scale(self, scale: float):
+        try:
+            clamped = round(max(0.5, min(float(scale), 2.5)), 2)
+            self._mpv.sub_scale = clamped
+            from showberry.services.settings import SettingsService
+            SettingsService().sub_scale = clamped
+        except Exception:
+            pass
+
+    def get_sub_scale(self) -> float:
+        try:
+            return float(self._mpv.sub_scale or 1.0)
+        except Exception:
+            return 1.0
+
+    def adjust_sub_scale(self, delta: float) -> float:
+        current = self.get_sub_scale()
+        new_val = round(max(0.5, min(current + delta, 2.5)), 2)
+        self.set_sub_scale(new_val)
         return new_val
 
     def get_audio_tracks(self) -> List[Dict[str, Any]]:
@@ -646,19 +761,20 @@ class MpvWidget(Gtk.GLArea):
 class SubtitlePopover(Gtk.Popover):
     """Popover menu for selecting subtitle tracks and adjusting timing."""
 
-    def __init__(self, player: Optional[MpvWidget] = None, on_timing_changed=None):
+    def __init__(self, player: Optional[MpvWidget] = None, on_timing_changed=None, on_auto_sync=None):
         super().__init__()
         self._player = player
         self._on_timing_changed = on_timing_changed
+        self._on_auto_sync = on_auto_sync
         self._available_subtitles: List[Dict[str, Any]] = []
         self._on_select_external = None
 
-        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self._box.set_margin_top(12)
         self._box.set_margin_bottom(12)
         self._box.set_margin_start(14)
         self._box.set_margin_end(14)
-        self._box.set_size_request(260, -1)
+        self._box.set_size_request(280, -1)
 
         # Header with Title and Refresh button
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
@@ -678,7 +794,7 @@ class SubtitlePopover(Gtk.Popover):
         # Tracks list inside scrolled window
         self._scroll = Gtk.ScrolledWindow()
         self._scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self._scroll.set_max_content_height(220)
+        self._scroll.set_max_content_height(160)
         self._scroll.set_propagate_natural_height(True)
 
         self._tracks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
@@ -687,35 +803,101 @@ class SubtitlePopover(Gtk.Popover):
 
         self._box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
-        # Timing sync section
-        sync_label = Gtk.Label(label="Subtitle Timing")
-        sync_label.add_css_class('heading')
-        sync_label.set_xalign(0)
-        self._box.append(sync_label)
+        # Timing Delay section
+        timing_hdr = Gtk.Label(label="Subtitle Delay")
+        timing_hdr.add_css_class('heading')
+        timing_hdr.set_xalign(0)
+        self._box.append(timing_hdr)
 
         self._delay_label = Gtk.Label(label="Delay: 0.0 s")
         self._delay_label.add_css_class('dim-label')
         self._box.append(self._delay_label)
 
-        timing_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        timing_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         timing_btn_box.set_halign(Gtk.Align.CENTER)
 
-        minus_btn = Gtk.Button(label="-100ms")
-        minus_btn.add_css_class('flat')
-        minus_btn.connect('clicked', lambda b: self._adjust_timing(-0.1))
-        timing_btn_box.append(minus_btn)
+        m500_btn = Gtk.Button(label="-0.5s")
+        m500_btn.add_css_class('flat')
+        m500_btn.connect('clicked', lambda b: self._adjust_timing(-0.5))
+        timing_btn_box.append(m500_btn)
+
+        m100_btn = Gtk.Button(label="-0.1s")
+        m100_btn.add_css_class('flat')
+        m100_btn.connect('clicked', lambda b: self._adjust_timing(-0.1))
+        timing_btn_box.append(m100_btn)
 
         reset_btn = Gtk.Button(label="Reset")
         reset_btn.add_css_class('flat')
         reset_btn.connect('clicked', lambda b: self._set_timing(0.0))
         timing_btn_box.append(reset_btn)
 
-        plus_btn = Gtk.Button(label="+100ms")
-        plus_btn.add_css_class('flat')
-        plus_btn.connect('clicked', lambda b: self._adjust_timing(0.1))
-        timing_btn_box.append(plus_btn)
+        p100_btn = Gtk.Button(label="+0.1s")
+        p100_btn.add_css_class('flat')
+        p100_btn.connect('clicked', lambda b: self._adjust_timing(0.1))
+        timing_btn_box.append(p100_btn)
+
+        p500_btn = Gtk.Button(label="+0.5s")
+        p500_btn.add_css_class('flat')
+        p500_btn.connect('clicked', lambda b: self._adjust_timing(0.5))
+        timing_btn_box.append(p500_btn)
 
         self._box.append(timing_btn_box)
+
+        self._box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # Position & Size Section
+        pos_size_hdr = Gtk.Label(label="Position & Size")
+        pos_size_hdr.add_css_class('heading')
+        pos_size_hdr.set_xalign(0)
+        self._box.append(pos_size_hdr)
+
+        self._pos_label = Gtk.Label(label="Vertical Position: 94%")
+        self._pos_label.add_css_class('dim-label')
+        self._box.append(self._pos_label)
+
+        pos_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pos_btn_box.set_halign(Gtk.Align.CENTER)
+
+        pos_up_btn = Gtk.Button(label="▲ Higher")
+        pos_up_btn.add_css_class('flat')
+        pos_up_btn.connect('clicked', lambda b: self._adjust_pos(-2))
+        pos_btn_box.append(pos_up_btn)
+
+        pos_rst_btn = Gtk.Button(label="Reset")
+        pos_rst_btn.add_css_class('flat')
+        pos_rst_btn.connect('clicked', lambda b: self._set_pos(94))
+        pos_btn_box.append(pos_rst_btn)
+
+        pos_dn_btn = Gtk.Button(label="▼ Lower")
+        pos_dn_btn.add_css_class('flat')
+        pos_dn_btn.connect('clicked', lambda b: self._adjust_pos(2))
+        pos_btn_box.append(pos_dn_btn)
+
+        self._box.append(pos_btn_box)
+
+        self._scale_label = Gtk.Label(label="Font Size: 1.0x")
+        self._scale_label.add_css_class('dim-label')
+        self._box.append(self._scale_label)
+
+        scale_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        scale_btn_box.set_halign(Gtk.Align.CENTER)
+
+        sc_dn_btn = Gtk.Button(label="A- Smaller")
+        sc_dn_btn.add_css_class('flat')
+        sc_dn_btn.connect('clicked', lambda b: self._adjust_scale(-0.1))
+        scale_btn_box.append(sc_dn_btn)
+
+        sc_rst_btn = Gtk.Button(label="Reset")
+        sc_rst_btn.add_css_class('flat')
+        sc_rst_btn.connect('clicked', lambda b: self._set_scale(1.0))
+        scale_btn_box.append(sc_rst_btn)
+
+        sc_up_btn = Gtk.Button(label="A+ Larger")
+        sc_up_btn.add_css_class('flat')
+        sc_up_btn.connect('clicked', lambda b: self._adjust_scale(0.1))
+        scale_btn_box.append(sc_up_btn)
+
+        self._box.append(scale_btn_box)
 
         self.set_child(self._box)
         self.connect('map', self._on_show)
@@ -731,12 +913,24 @@ class SubtitlePopover(Gtk.Popover):
     def _on_show(self, *_):
         self.refresh_tracks()
         self.refresh_delay_label()
+        self.refresh_pos_label()
+        self.refresh_scale_label()
 
     def refresh_delay_label(self):
         if self._player:
             delay = self._player.get_sub_delay()
             sign = "+" if delay > 0 else ""
             self._delay_label.set_text(f"Delay: {sign}{delay:.1f} s ({sign}{int(delay * 1000)} ms)")
+
+    def refresh_pos_label(self):
+        if self._player:
+            pos = self._player.get_sub_pos()
+            self._pos_label.set_text(f"Vertical Position: {pos}%")
+
+    def refresh_scale_label(self):
+        if self._player:
+            scale = self._player.get_sub_scale()
+            self._scale_label.set_text(f"Font Size: {scale:.1f}x")
 
     def _adjust_timing(self, delta: float):
         if self._player:
@@ -751,6 +945,34 @@ class SubtitlePopover(Gtk.Popover):
             self.refresh_delay_label()
             if self._on_timing_changed:
                 self._on_timing_changed(val)
+
+    def _adjust_pos(self, delta: int):
+        if self._player:
+            new_pos = self._player.adjust_sub_pos(delta)
+            self.refresh_pos_label()
+            if self._on_timing_changed:
+                self._on_timing_changed(None, f"Subtitle Position: {new_pos}%")
+
+    def _set_pos(self, val: int):
+        if self._player:
+            self._player.set_sub_pos(val)
+            self.refresh_pos_label()
+            if self._on_timing_changed:
+                self._on_timing_changed(None, f"Subtitle Position: {val}%")
+
+    def _adjust_scale(self, delta: float):
+        if self._player:
+            new_scale = self._player.adjust_sub_scale(delta)
+            self.refresh_scale_label()
+            if self._on_timing_changed:
+                self._on_timing_changed(None, f"Subtitle Size: {new_scale:.1f}x")
+
+    def _set_scale(self, val: float):
+        if self._player:
+            self._player.set_sub_scale(val)
+            self.refresh_scale_label()
+            if self._on_timing_changed:
+                self._on_timing_changed(None, f"Subtitle Size: {val:.1f}x")
 
     def refresh_tracks(self):
         # Clear track buttons
@@ -1008,6 +1230,104 @@ class SpeedPopover(Gtk.Popover):
                 self._on_speed_changed(speed_val)
 
 
+class ProviderPopover(Gtk.Popover):
+    """Popover menu for switching stream provider during playback."""
+
+    def __init__(self, on_provider_selected=None):
+        super().__init__()
+        self._on_provider_selected = on_provider_selected
+        self._current_provider = None
+
+        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self._box.set_margin_top(12)
+        self._box.set_margin_bottom(12)
+        self._box.set_margin_start(14)
+        self._box.set_margin_end(14)
+        self._box.set_size_request(240, -1)
+
+        title_label = Gtk.Label(label="Switch Provider")
+        title_label.add_css_class('heading')
+        title_label.set_xalign(0)
+        self._box.append(title_label)
+
+        desc_label = Gtk.Label(label="Select a provider to continue playback seamlessly")
+        desc_label.add_css_class('dim-label')
+        desc_label.add_css_class('caption')
+        desc_label.set_xalign(0)
+        desc_label.set_wrap(True)
+        self._box.append(desc_label)
+
+        self._scroll = Gtk.ScrolledWindow()
+        self._scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self._scroll.set_max_content_height(280)
+        self._scroll.set_propagate_natural_height(True)
+
+        self._providers_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._scroll.set_child(self._providers_box)
+        self._box.append(self._scroll)
+
+        self.set_child(self._box)
+        self.connect('map', self._on_show)
+
+    def set_current_provider(self, provider_name: Optional[str]):
+        self._current_provider = provider_name
+        self.refresh_providers()
+
+    def _on_show(self, *_):
+        self.refresh_providers()
+
+    def refresh_providers(self):
+        while True:
+            child = self._providers_box.get_first_child()
+            if child is None:
+                break
+            self._providers_box.remove(child)
+
+        # 1. Auto (Best)
+        auto_btn = Gtk.Button()
+        auto_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        auto_lbl = Gtk.Label(label="Auto (Best)")
+        auto_lbl.set_xalign(0)
+        auto_lbl.set_hexpand(True)
+        auto_box.append(auto_lbl)
+        if not self._current_provider or self._current_provider.lower() in ('auto', 'auto (best)'):
+            chk = Gtk.Image.new_from_icon_name('object-select-symbolic')
+            auto_box.append(chk)
+        auto_btn.set_child(auto_box)
+        auto_btn.add_css_class('flat')
+        auto_btn.connect('clicked', lambda b: self._select('Auto'))
+        self._providers_box.append(auto_btn)
+
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep.set_margin_top(4)
+        sep.set_margin_bottom(4)
+        self._providers_box.append(sep)
+
+        # Individual providers
+        from showberry.providers import get_all_providers
+        providers = get_all_providers()
+        for p in providers:
+            p_name = p.name
+            btn = Gtk.Button()
+            row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            lbl = Gtk.Label(label=p_name if p_name != 'Torrent' else 'Torrent Swarms (P2P)...')
+            lbl.set_xalign(0)
+            lbl.set_hexpand(True)
+            row_box.append(lbl)
+            if self._current_provider and self._current_provider.lower() == p_name.lower():
+                chk = Gtk.Image.new_from_icon_name('object-select-symbolic')
+                row_box.append(chk)
+            btn.set_child(row_box)
+            btn.add_css_class('flat')
+            btn.connect('clicked', lambda b, name=p_name: self._select(name))
+            self._providers_box.append(btn)
+
+    def _select(self, provider_name: str):
+        self.popdown()
+        if self._on_provider_selected:
+            self._on_provider_selected(provider_name)
+
+
 class PlayerControls(Gtk.Box):
     """Floating OSD player control bar with play/pause, seek, volume, subtitles."""
 
@@ -1045,6 +1365,25 @@ class PlayerControls(Gtk.Box):
         self._seek_bar = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 0.1)
         self._seek_bar.set_hexpand(True)
         self._seek_bar.set_draw_value(False)
+
+        # Seek Hover Timestamp Popover
+        self._duration = 0.0
+        self._seek_popover = Gtk.Popover.new()
+        self._seek_popover.set_autohide(False)
+        self._seek_popover.set_has_arrow(True)
+        self._seek_popover.set_position(Gtk.PositionType.TOP)
+        self._seek_popover.set_parent(self._seek_bar)
+
+        self._seek_popover_label = Gtk.Label()
+        self._seek_popover_label.add_css_class('seek-popover-label')
+        self._seek_popover.set_child(self._seek_popover_label)
+
+        # Hover motion controller for seekbar
+        seek_motion = Gtk.EventControllerMotion.new()
+        seek_motion.connect('enter', self._on_seek_motion_enter)
+        seek_motion.connect('motion', self._on_seek_motion_move)
+        seek_motion.connect('leave', self._on_seek_motion_leave)
+        self._seek_bar.add_controller(seek_motion)
 
         drag_gesture = Gtk.GestureDrag.new()
         drag_gesture.connect('drag-begin', self._on_seek_drag_begin)
@@ -1126,11 +1465,13 @@ class PlayerControls(Gtk.Box):
         controls.append(self._audio_btn)
 
         # Subtitle Menu Button with Popover
-        self._sub_popover = SubtitlePopover(on_timing_changed=self._on_sub_timing_adjusted)
+        self._sub_popover = SubtitlePopover(
+            on_timing_changed=self._on_sub_timing_adjusted
+        )
         self._sub_btn = Gtk.MenuButton()
         self._sub_btn.set_icon_name('media-view-subtitles-symbolic')
         self._sub_btn.add_css_class('flat')
-        self._sub_btn.set_tooltip_text("Subtitles & Timing (C: Toggle, Z: -100ms, X: +100ms)")
+        self._sub_btn.set_tooltip_text("Subtitles (C: Toggle, S: Menu)")
         self._sub_btn.set_popover(self._sub_popover)
         self._sub_btn.set_focusable(False)
         controls.append(self._sub_btn)
@@ -1221,6 +1562,7 @@ class PlayerControls(Gtk.Box):
         except Exception:
             pass
 
+        self._duration = total_duration
         if total_duration > 0 and start_pos > 0:
             val = min(100.0, (start_pos / total_duration) * 100.0)
             self._seek_bar.set_value(val)
@@ -1258,6 +1600,8 @@ class PlayerControls(Gtk.Box):
         try:
             pos = self._player.get_position()
             dur = self._player.get_duration()
+            if dur > 0:
+                self._duration = dur
 
             if dur > 0 and not self._is_dragging:
                 self._seek_bar.handler_block_by_func(self._on_seek_value_changed)
@@ -1276,6 +1620,41 @@ class PlayerControls(Gtk.Box):
             pass
 
         return True
+
+    def _on_seek_motion_enter(self, controller, x, y):
+        if getattr(self, '_duration', 0) > 0:
+            self._update_seek_tooltip(x)
+
+    def _on_seek_motion_move(self, controller, x, y):
+        if getattr(self, '_duration', 0) > 0:
+            self._update_seek_tooltip(x)
+
+    def _on_seek_motion_leave(self, controller):
+        if hasattr(self, '_seek_popover'):
+            self._seek_popover.popdown()
+
+    def _update_seek_tooltip(self, x):
+        width = self._seek_bar.get_width()
+        if width <= 0 or not getattr(self, '_duration', 0):
+            return
+
+        clamped_x = max(0.0, min(float(x), float(width)))
+        fraction = clamped_x / float(width)
+        target_time = fraction * self._duration
+
+        self._seek_popover_label.set_text(self._format_time(target_time))
+
+        rect = Gdk.Rectangle()
+        rect.x = int(clamped_x)
+        rect.y = 0
+        rect.width = 1
+        rect.height = max(1, self._seek_bar.get_height())
+        self._seek_popover.set_pointing_to(rect)
+        if not self._seek_popover.get_visible() and self.get_root():
+            try:
+                self._seek_popover.popup()
+            except Exception:
+                pass
 
     def _format_time(self, seconds):
         seconds = max(0, int(seconds))
@@ -1386,6 +1765,7 @@ class PlayerPage(Adw.NavigationPage):
         self._next_ep_triggered = False
         self._countdown_timer_id = None
         self._countdown_seconds = 10
+        self._active_sub_path = None
 
         self.set_focusable(True)
         self.connect('map', lambda w: self.grab_focus())
@@ -1402,6 +1782,7 @@ class PlayerPage(Adw.NavigationPage):
         self._mpv_widget = MpvWidget()
         self._mpv_widget.connect('stream-ready', self._on_stream_ready)
         self._mpv_widget.connect('buffering', self._on_buffering)
+        self._mpv_widget.connect('playback-ended', self._on_playback_ended)
         self._overlay.set_child(self._mpv_widget)
 
         # Loading spinner
@@ -1417,7 +1798,7 @@ class PlayerPage(Adw.NavigationPage):
         self._spinner_box.append(self._spinner_label)
         self._overlay.add_overlay(self._spinner_box)
 
-        # Docked Top Bar (Back button, Media Title, Provider badge)
+        # Docked Top Bar (Back button, Media Title, Provider dropdown)
         self._top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self._top_bar.add_css_class('player-top-bar')
         self._top_bar.set_valign(Gtk.Align.START)
@@ -1444,10 +1825,23 @@ class PlayerPage(Adw.NavigationPage):
         spacer.set_hexpand(True)
         self._top_bar.append(spacer)
 
-        self._provider_badge = Gtk.Label()
-        self._provider_badge.add_css_class('genre-pill')
-        self._provider_badge.set_visible(False)
-        self._top_bar.append(self._provider_badge)
+        self._provider_popover = ProviderPopover(on_provider_selected=lambda p: self._switch_provider(p))
+        self._provider_menu_btn = Gtk.MenuButton()
+        self._provider_menu_btn.add_css_class('flat')
+        self._provider_menu_btn.add_css_class('provider-pill-btn')
+        self._provider_menu_btn.set_tooltip_text("Switch Provider (P)")
+        self._provider_menu_btn.set_popover(self._provider_popover)
+        self._provider_menu_btn.set_focusable(False)
+
+        provider_pill_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._provider_badge_label = Gtk.Label(label="Provider")
+        provider_pill_box.append(self._provider_badge_label)
+        provider_chevron = Gtk.Image.new_from_icon_name('pan-down-symbolic')
+        provider_chevron.add_css_class('dim-label')
+        provider_pill_box.append(provider_chevron)
+        self._provider_menu_btn.set_child(provider_pill_box)
+        self._provider_menu_btn.set_visible(False)
+        self._top_bar.append(self._provider_menu_btn)
 
         self._switch_stream_btn = Gtk.Button.new_from_icon_name('view-list-bullet-symbolic')
         self._switch_stream_btn.add_css_class('circular')
@@ -1594,7 +1988,27 @@ class PlayerPage(Adw.NavigationPage):
             self._controls._volume_scale.set_value(vol)
             self.show_osd_notification(f"Volume: {int(vol)}%")
             return True
+        elif keyname == 'Up':
+            if shift:
+                new_pos = self._mpv_widget.adjust_sub_pos(-2)
+                self.show_osd_notification(f"Subtitle Position: {new_pos}%")
+                if hasattr(self._controls, '_sub_popover'):
+                    self._controls._sub_popover.refresh_pos_label()
+                return True
+            if self._mpv_widget.is_muted():
+                self._mpv_widget.toggle_mute()
+            curr = self._mpv_widget.get_volume()
+            vol = min(100.0, curr + 5.0)
+            self._controls._volume_scale.set_value(vol)
+            self.show_osd_notification(f"Volume: {int(vol)}%")
+            return True
         elif keyname == 'Down':
+            if shift:
+                new_pos = self._mpv_widget.adjust_sub_pos(2)
+                self.show_osd_notification(f"Subtitle Position: {new_pos}%")
+                if hasattr(self._controls, '_sub_popover'):
+                    self._controls._sub_popover.refresh_pos_label()
+                return True
             curr = self._mpv_widget.get_volume()
             vol = max(0.0, curr - 5.0)
             self._controls._volume_scale.set_value(vol)
@@ -1619,8 +2033,13 @@ class PlayerPage(Adw.NavigationPage):
         elif keyname in ['c', 'C']:
             self._toggle_captions()
             return True
+        elif keyname in ['p', 'P']:
+            if hasattr(self, '_provider_menu_btn') and self._provider_menu_btn.get_visible():
+                self._provider_menu_btn.popup()
+            return True
         elif keyname in ['s', 'S']:
-            self._controls._sub_btn.activate()
+            if hasattr(self, '_controls') and hasattr(self._controls, '_sub_btn'):
+                self._controls._sub_btn.popup()
             return True
         elif keyname in ['z', 'Z']:
             delta = -0.5 if shift else -0.1
@@ -1653,12 +2072,24 @@ class PlayerPage(Adw.NavigationPage):
                 self.show_osd_notification("Audio: Default")
             self._controls.refresh_audio_tracks()
             return True
-        elif keyname == 'bracketleft':
+        elif keyname in ['bracketleft', 'braceleft']:
+            if shift:
+                new_scale = self._mpv_widget.adjust_sub_scale(-0.1)
+                self.show_osd_notification(f"Subtitle Size: {new_scale:.1f}x")
+                if hasattr(self._controls, '_sub_popover'):
+                    self._controls._sub_popover.refresh_scale_label()
+                return True
             new_spd = self._mpv_widget.adjust_speed(-0.25)
             self.show_osd_notification(f"Speed: {new_spd:.2f}x")
             self._controls.set_speed_label(new_spd)
             return True
-        elif keyname == 'bracketright':
+        elif keyname in ['bracketright', 'braceright']:
+            if shift:
+                new_scale = self._mpv_widget.adjust_sub_scale(0.1)
+                self.show_osd_notification(f"Subtitle Size: {new_scale:.1f}x")
+                if hasattr(self._controls, '_sub_popover'):
+                    self._controls._sub_popover.refresh_scale_label()
+                return True
             new_spd = self._mpv_widget.adjust_speed(0.25)
             self.show_osd_notification(f"Speed: {new_spd:.2f}x")
             self._controls.set_speed_label(new_spd)
@@ -1751,7 +2182,7 @@ class PlayerPage(Adw.NavigationPage):
         self._available_subtitles = []
         self._controls.set_available_subtitles([])
 
-        # Reset Next Episode state
+        # Reset Next Episode and Intro state
         self._next_stream_data = None
         self._next_ep_dismissed = False
         self._next_ep_triggered = False
@@ -1759,6 +2190,8 @@ class PlayerPage(Adw.NavigationPage):
         if hasattr(self, '_next_ep_card'):
             self._next_ep_card.set_visible(False)
         self._controls.set_next_episode_visible(False)
+        if hasattr(self, '_provider_popover') and provider_name:
+            self._provider_popover.set_current_provider(provider_name)
 
         tmdb_id = movie.get('id') or movie.get('tmdb_id')
         if not tmdb_id:
@@ -1789,16 +2222,16 @@ class PlayerPage(Adw.NavigationPage):
         self.set_title(display_title)
         self._title_label.set_text(display_title)
         if provider_name:
-            self._provider_badge.set_text(provider_name)
-            self._provider_badge.set_visible(True)
+            self._provider_badge_label.set_text(provider_name)
+            self._provider_menu_btn.set_visible(True)
         else:
-            self._provider_badge.set_visible(False)
+            self._provider_menu_btn.set_visible(False)
         self._spinner_label.set_text(f"Resolving stream for {display_title}...")
 
         self._session_id += 1
         current_session = self._session_id
 
-        # If TV show, resolve next episode metadata in background
+        # For TV shows, resolve next episode metadata
         media_type = stream_data.get('media_type')
         if media_type == 'tv' or (season is not None and episode is not None):
             threading.Thread(
@@ -1998,10 +2431,12 @@ class PlayerPage(Adw.NavigationPage):
 
         logger.info(f"Starting playback: {result.url}")
 
-        if result.provider_name and hasattr(self, '_provider_badge'):
+        if result.provider_name and hasattr(self, '_provider_badge_label'):
             q = f" • {result.quality}" if result.quality else ""
-            self._provider_badge.set_text(f"{result.provider_name}{q}")
-            self._provider_badge.set_visible(True)
+            self._provider_badge_label.set_text(f"{result.provider_name}{q}")
+            if hasattr(self, '_provider_popover'):
+                self._provider_popover.set_current_provider(result.provider_name)
+            self._provider_menu_btn.set_visible(True)
 
         # Attach stream referer and headers to provider subtitles
         provider_subs = list(result.subtitles or [])
@@ -2064,44 +2499,86 @@ class PlayerPage(Adw.NavigationPage):
             movie = self._stream_data.get('movie', {})
             tmdb_id = movie.get('id')
 
-            # Check if near end for TV next episode countdown
-            if self._next_stream_data and not getattr(self, '_next_ep_dismissed', False):
-                rem = dur - pos
-                if dur > 60 and rem <= 45 and not getattr(self, '_next_ep_triggered', False):
-                    self._show_next_episode_countdown()
-
             if tmdb_id and dur > 30 and pos > 5:
-                chosen = self._stream_data.get('chosen_stream') or {}
-                t_status = {}
-                try:
-                    from showberry.services.torrent import get_torrent_streamer
-                    _streamer = get_torrent_streamer()
-                    if _streamer:
-                        t_status = _streamer.get_status()
-                except Exception:
-                    pass
-                info_hash = chosen.get('infoHash') or t_status.get('info_hash')
-                file_idx = chosen.get('fileIdx') if chosen.get('fileIdx') is not None else t_status.get('file_idx')
-                stream_provider = self._stream_data.get('provider') or ('torrent' if info_hash else None)
+                media_type = self._stream_data.get('media_type', 'movie')
+                season = self._stream_data.get('season')
+                episode = self._stream_data.get('episode')
+                is_completed = (dur > 0 and (pos >= dur * 0.90))
 
-                self._db.update_watch_progress(
-                    tmdb_id=tmdb_id,
-                    title=movie.get('title', 'Unknown'),
-                    media_type=self._stream_data.get('media_type', 'movie'),
-                    poster_url=movie.get('poster_url'),
-                    backdrop_url=movie.get('backdrop_url'),
-                    season=self._stream_data.get('season'),
-                    episode=self._stream_data.get('episode'),
-                    progress_seconds=pos,
-                    duration_seconds=dur,
-                    stream_provider=stream_provider,
-                    info_hash=info_hash,
-                    file_idx=file_idx,
-                )
+                if is_completed:
+                    self._db.mark_completed(
+                        tmdb_id=tmdb_id,
+                        media_type=media_type,
+                        season=season,
+                        episode=episode,
+                        title=movie.get('title', 'Unknown'),
+                        poster_url=movie.get('poster_url'),
+                        backdrop_url=movie.get('backdrop_url')
+                    )
+                    # If TV show and next episode resolved, advance watch_history to next episode at 0s
+                    if media_type == 'tv' or (season is not None and episode is not None):
+                        if self._next_stream_data:
+                            n_season = self._next_stream_data.get('season')
+                            n_episode = self._next_stream_data.get('episode')
+                            self._db.update_watch_progress(
+                                tmdb_id=tmdb_id,
+                                title=movie.get('title', 'Unknown'),
+                                media_type='tv',
+                                poster_url=movie.get('poster_url'),
+                                backdrop_url=movie.get('backdrop_url'),
+                                season=n_season,
+                                episode=n_episode,
+                                progress_seconds=0.0,
+                                duration_seconds=dur,
+                                stream_provider=self._stream_data.get('provider'),
+                            )
+                    else:
+                        self._db.delete_history_item(tmdb_id)
+                else:
+                    chosen = self._stream_data.get('chosen_stream') or {}
+                    t_status = {}
+                    try:
+                        from showberry.services.torrent import get_torrent_streamer
+                        _streamer = get_torrent_streamer()
+                        if _streamer:
+                            t_status = _streamer.get_status()
+                    except Exception:
+                        pass
+                    info_hash = chosen.get('infoHash') or t_status.get('info_hash')
+                    file_idx = chosen.get('fileIdx') if chosen.get('fileIdx') is not None else t_status.get('file_idx')
+                    stream_provider = self._stream_data.get('provider') or ('torrent' if info_hash else None)
+
+                    self._db.update_watch_progress(
+                        tmdb_id=tmdb_id,
+                        title=movie.get('title', 'Unknown'),
+                        media_type=media_type,
+                        poster_url=movie.get('poster_url'),
+                        backdrop_url=movie.get('backdrop_url'),
+                        season=season,
+                        episode=episode,
+                        progress_seconds=pos,
+                        duration_seconds=dur,
+                        stream_provider=stream_provider,
+                        info_hash=info_hash,
+                        file_idx=file_idx,
+                    )
         except Exception as e:
             logger.warning(f"Failed to persist watch progress: {e}")
 
         return True
+
+    def _show_next_episode_countdown(self):
+        if not self._next_stream_data or self._next_ep_dismissed or self._next_ep_triggered:
+            return
+        from showberry.services.settings import SettingsService
+        settings = SettingsService.get_instance()
+        if not settings.auto_skip_enabled:
+            return
+        self._next_ep_triggered = True
+        self._countdown_seconds = int(settings.auto_skip_countdown or 10)
+        self._next_ep_title_label.set_text(f"Next Episode in {self._countdown_seconds}s")
+        self._next_ep_card.set_visible(True)
+        self._countdown_timer_id = GLib.timeout_add_seconds(1, self._on_countdown_tick)
 
     def _resolve_next_episode_thread(self, tmdb_id, season, episode, session_id: int):
         """Background worker to look up the subsequent episode."""
@@ -2144,15 +2621,6 @@ class PlayerPage(Adw.NavigationPage):
         self._controls.set_next_episode_visible(True, tooltip)
         self._next_ep_sub_label.set_text(f"S{n_season:02d}E{n_episode:02d} • {n_title}")
 
-    def _show_next_episode_countdown(self):
-        if not self._next_stream_data or self._next_ep_dismissed or self._next_ep_triggered:
-            return
-        self._next_ep_triggered = True
-        self._countdown_seconds = 10
-        self._next_ep_title_label.set_text(f"Next Episode in {self._countdown_seconds}s")
-        self._next_ep_card.set_visible(True)
-        self._countdown_timer_id = GLib.timeout_add_seconds(1, self._on_countdown_tick)
-
     def _on_countdown_tick(self):
         self._countdown_seconds -= 1
         if self._countdown_seconds <= 0:
@@ -2184,6 +2652,82 @@ class PlayerPage(Adw.NavigationPage):
         self.show_osd_notification(f"Starting S{data['season']:02d}E{data['episode']:02d}: {data.get('title', '')}")
         self.load_stream(data)
 
+    def _on_playback_ended(self, widget=None):
+        """Triggered strictly when MPV finishes playback (EOF reached)."""
+        logger.info("Playback ended (EOF reached).")
+        if not self._stream_data or not self._mpv_widget:
+            return
+
+        pos = self._mpv_widget.get_position()
+        dur = self._mpv_widget.get_duration()
+        movie = self._stream_data.get('movie', {})
+        tmdb_id = movie.get('id')
+        if tmdb_id:
+            media_type = self._stream_data.get('media_type', 'movie')
+            season = self._stream_data.get('season')
+            episode = self._stream_data.get('episode')
+            self._db.mark_completed(
+                tmdb_id=tmdb_id,
+                media_type=media_type,
+                season=season,
+                episode=episode,
+                title=movie.get('title', 'Unknown'),
+                poster_url=movie.get('poster_url'),
+                backdrop_url=movie.get('backdrop_url')
+            )
+            if media_type == 'tv' or (season is not None and episode is not None):
+                if self._next_stream_data:
+                    n_season = self._next_stream_data.get('season')
+                    n_episode = self._next_stream_data.get('episode')
+                    self._db.update_watch_progress(
+                        tmdb_id=tmdb_id,
+                        title=movie.get('title', 'Unknown'),
+                        media_type='tv',
+                        poster_url=movie.get('poster_url'),
+                        backdrop_url=movie.get('backdrop_url'),
+                        season=n_season,
+                        episode=n_episode,
+                        progress_seconds=0.0,
+                        duration_seconds=dur,
+                        stream_provider=self._stream_data.get('provider'),
+                    )
+                else:
+                    self._db.mark_completed(
+                        tmdb_id=tmdb_id,
+                        media_type='tv',
+                        season=0,
+                        episode=0,
+                        title=movie.get('title', 'Unknown'),
+                        poster_url=movie.get('poster_url'),
+                        backdrop_url=movie.get('backdrop_url')
+                    )
+            else:
+                self._db.delete_history_item(tmdb_id)
+
+        # Trigger countdown strictly on EOF
+        if self._next_stream_data and not getattr(self, '_next_ep_dismissed', False) and not getattr(self, '_next_ep_triggered', False):
+            from showberry.services.settings import SettingsService
+            if SettingsService.get_instance().auto_skip_enabled:
+                self._show_next_episode_countdown()
+
+    def _switch_provider(self, provider_name: str):
+        """Switch stream provider on the fly while preserving current position."""
+        if not self._stream_data or not self._mpv_widget:
+            return
+
+        if provider_name.lower() == 'torrent':
+            self._on_open_stream_chooser(None)
+            return
+
+        pos = self._mpv_widget.get_position()
+        self.show_osd_notification(f"Switching to {provider_name}...")
+
+        new_data = dict(self._stream_data)
+        new_data['provider'] = None if provider_name.lower() in ('auto', 'auto (best)') else provider_name
+        new_data['start_position'] = pos
+        new_data.pop('chosen_stream', None)
+        self.load_stream(new_data)
+
     def _on_stream_error(self, err_msg: str, session_id: int = 0):
         if session_id and session_id != self._session_id:
             return False
@@ -2206,8 +2750,9 @@ class PlayerPage(Adw.NavigationPage):
             pos = self._mpv_widget.get_position()
             dur = self._mpv_widget.get_duration()
             stream_data = self._stream_data
+            next_stream_data = self._next_stream_data
         except Exception:
-            pos, dur, stream_data = 0, 0, None
+            pos, dur, stream_data, next_stream_data = 0, 0, None, None
 
         # Deactivate widget synchronously: pauses, stops, and disables further render callbacks
         self._mpv_widget.deactivate()
@@ -2234,32 +2779,63 @@ class PlayerPage(Adw.NavigationPage):
                     movie = stream_data.get('movie', {})
                     tmdb_id = movie.get('id')
                     if tmdb_id:
-                        chosen = stream_data.get('chosen_stream') or {}
-                        t_status = {}
-                        try:
-                            _streamer = get_torrent_streamer()
-                            if _streamer:
-                                t_status = _streamer.get_status()
-                        except Exception:
-                            pass
-                        info_hash = chosen.get('infoHash') or t_status.get('info_hash')
-                        file_idx = chosen.get('fileIdx') if chosen.get('fileIdx') is not None else t_status.get('file_idx')
-                        stream_provider = stream_data.get('provider') or ('torrent' if info_hash else None)
+                        media_type = stream_data.get('media_type', 'movie')
+                        season = stream_data.get('season')
+                        episode = stream_data.get('episode')
+                        is_completed = (dur > 0 and (pos >= dur * 0.90))
 
-                        self._db.update_watch_progress(
-                            tmdb_id=tmdb_id,
-                            title=movie.get('title', 'Unknown'),
-                            media_type=stream_data.get('media_type', 'movie'),
-                            poster_url=movie.get('poster_url'),
-                            backdrop_url=movie.get('backdrop_url'),
-                            season=stream_data.get('season'),
-                            episode=stream_data.get('episode'),
-                            progress_seconds=pos,
-                            duration_seconds=dur,
-                            stream_provider=stream_provider,
-                            info_hash=info_hash,
-                            file_idx=file_idx,
-                        )
+                        if is_completed:
+                            self._db.mark_completed(
+                                tmdb_id=tmdb_id,
+                                media_type=media_type,
+                                season=season,
+                                episode=episode,
+                                title=movie.get('title', 'Unknown'),
+                                poster_url=movie.get('poster_url'),
+                                backdrop_url=movie.get('backdrop_url')
+                            )
+                            if (media_type == 'tv' or (season is not None and episode is not None)) and next_stream_data:
+                                self._db.update_watch_progress(
+                                    tmdb_id=tmdb_id,
+                                    title=movie.get('title', 'Unknown'),
+                                    media_type='tv',
+                                    poster_url=movie.get('poster_url'),
+                                    backdrop_url=movie.get('backdrop_url'),
+                                    season=next_stream_data.get('season'),
+                                    episode=next_stream_data.get('episode'),
+                                    progress_seconds=0.0,
+                                    duration_seconds=dur,
+                                    stream_provider=stream_data.get('provider'),
+                                )
+                            else:
+                                self._db.delete_history_item(tmdb_id)
+                        else:
+                            chosen = stream_data.get('chosen_stream') or {}
+                            t_status = {}
+                            try:
+                                _streamer = get_torrent_streamer()
+                                if _streamer:
+                                    t_status = _streamer.get_status()
+                            except Exception:
+                                pass
+                            info_hash = chosen.get('infoHash') or t_status.get('info_hash')
+                            file_idx = chosen.get('fileIdx') if chosen.get('fileIdx') is not None else t_status.get('file_idx')
+                            stream_provider = stream_data.get('provider') or ('torrent' if info_hash else None)
+
+                            self._db.update_watch_progress(
+                                tmdb_id=tmdb_id,
+                                title=movie.get('title', 'Unknown'),
+                                media_type=media_type,
+                                poster_url=movie.get('poster_url'),
+                                backdrop_url=movie.get('backdrop_url'),
+                                season=season,
+                                episode=episode,
+                                progress_seconds=pos,
+                                duration_seconds=dur,
+                                stream_provider=stream_provider,
+                                info_hash=info_hash,
+                                file_idx=file_idx,
+                            )
             except Exception as ex:
                 logger.warning(f"Error saving watch progress during cleanup: {ex}")
 

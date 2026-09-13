@@ -68,6 +68,23 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.1" date="2026-09-13">
+      <description>
+        <p>Cross-platform release (Linux, Windows, macOS) and playback/library UX refinements:</p>
+        <ul>
+          <li>Official Windows installer (.exe) and portable package (.zip) via MSYS2 and Inno Setup</li>
+          <li>Official macOS drag-and-drop disk images (.dmg) for Apple Silicon and Intel</li>
+          <li>Cross-platform OpenGL rendering pipeline for GTK4 GLArea across Windows WGL, macOS CGL, and Linux EGL/GLX</li>
+          <li>Redesigned top OSC player bar with integrated provider selection dropdown menu</li>
+          <li>Added customizable subtitle positioning, vertical offset, and font scale preferences</li>
+          <li>Streamlined subtitle menu and enhanced subtitle track selection</li>
+          <li>Split Continue Watching into dedicated TV Shows and Movies sections with instant removal</li>
+          <li>Fixed library card play button to correctly resume the next unwatched episode</li>
+          <li>Added item removal support from the Completed section with immediate UI updates</li>
+          <li>Enabled keyboard navigation across all Library tabs including Completed section</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-09-09">
       <description>
         <p>Comprehensive player UI redesign, libtorrent streaming, and packaging enhancements:</p>

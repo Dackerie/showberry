@@ -9,28 +9,41 @@ from gi.repository import Gio, GLib
 
 class SettingsService:
     """Wrapper around GSettings for app preferences."""
+    _instance = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def __init__(self):
         schema_source = Gio.SettingsSchemaSource.get_default()
         schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
         if not schema:
-            user_schemas = Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas'
-            if (user_schemas / 'gschemas.compiled').exists():
-                schema_source = Gio.SettingsSchemaSource.new_from_directory(
-                    str(user_schemas),
-                    schema_source,
-                    False
-                )
-                schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
-        if not schema:
-            local_data = Path(__file__).parent.parent.parent / 'data'
-            if (local_data / 'gschemas.compiled').exists():
-                schema_source = Gio.SettingsSchemaSource.new_from_directory(
-                    str(local_data),
-                    schema_source,
-                    False
-                )
-                schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
+            import sys
+            candidate_schema_dirs = [
+                Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas',
+                Path(__file__).parent.parent.parent / 'data',
+                Path(__file__).parent.parent / 'data',
+            ]
+            if getattr(sys, 'frozen', False):
+                bundle_dir = getattr(sys, '_MEIPASS', Path(sys.executable).parent)
+                candidate_schema_dirs.insert(0, Path(bundle_dir) / 'share' / 'glib-2.0' / 'schemas')
+                candidate_schema_dirs.insert(0, Path(bundle_dir) / 'data')
+                candidate_schema_dirs.insert(0, Path(sys.executable).parent / 'share' / 'glib-2.0' / 'schemas')
+                candidate_schema_dirs.insert(0, Path(sys.executable).parent / 'data')
+
+            for s_dir in candidate_schema_dirs:
+                if (s_dir / 'gschemas.compiled').exists():
+                    schema_source = Gio.SettingsSchemaSource.new_from_directory(
+                        str(s_dir),
+                        schema_source,
+                        False
+                    )
+                    schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
+                    if schema:
+                        break
 
         if schema:
             self._settings = Gio.Settings.new_full(schema, None, None)
@@ -115,6 +128,67 @@ class SettingsService:
             self._settings.set_int('torrent-cache-size-gb', value)
         else:
             self._fallback_store['torrent-cache-size-gb'] = value
+
+    def _has_schema_key(self, key: str) -> bool:
+        if not self._settings:
+            return False
+        try:
+            schema = self._settings.props.settings_schema
+            return schema.has_key(key) if schema else False
+        except Exception:
+            return False
+
+    @property
+    def sub_pos(self) -> int:
+        if self._has_schema_key('sub-pos'):
+            return self._settings.get_int('sub-pos')
+        return self._fallback_store.get('sub-pos', 94)
+
+    @sub_pos.setter
+    def sub_pos(self, value: int):
+        if self._has_schema_key('sub-pos'):
+            self._settings.set_int('sub-pos', value)
+        else:
+            self._fallback_store['sub-pos'] = value
+
+    @property
+    def sub_scale(self) -> float:
+        if self._has_schema_key('sub-scale'):
+            return self._settings.get_double('sub-scale')
+        return self._fallback_store.get('sub-scale', 1.0)
+
+    @sub_scale.setter
+    def sub_scale(self, value: float):
+        if self._has_schema_key('sub-scale'):
+            self._settings.set_double('sub-scale', value)
+        else:
+            self._fallback_store['sub-scale'] = value
+
+    @property
+    def auto_skip_enabled(self) -> bool:
+        if self._has_schema_key('auto-skip-enabled'):
+            return self._settings.get_boolean('auto-skip-enabled')
+        return self._fallback_store.get('auto-skip-enabled', True)
+
+    @auto_skip_enabled.setter
+    def auto_skip_enabled(self, value: bool):
+        if self._has_schema_key('auto-skip-enabled'):
+            self._settings.set_boolean('auto-skip-enabled', value)
+        else:
+            self._fallback_store['auto-skip-enabled'] = value
+
+    @property
+    def auto_skip_countdown(self) -> int:
+        if self._has_schema_key('auto-skip-countdown'):
+            return self._settings.get_int('auto-skip-countdown')
+        return self._fallback_store.get('auto-skip-countdown', 10)
+
+    @auto_skip_countdown.setter
+    def auto_skip_countdown(self, value: int):
+        if self._has_schema_key('auto-skip-countdown'):
+            self._settings.set_int('auto-skip-countdown', value)
+        else:
+            self._fallback_store['auto-skip-countdown'] = value
 
     def get_settings(self):
         """Get the underlying GSettings object."""

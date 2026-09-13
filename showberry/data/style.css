@@ -167,6 +167,14 @@ flowboxchild:focus .movie-card {
     margin-bottom: 4px;
 }
 
+.title-subsection {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-left: 8px;
+    margin-bottom: 2px;
+    color: alpha(currentColor, 0.7);
+}
+
 /* Watchlist active button styling */
 .watchlist-active {
     color: #e5a50a;
@@ -350,7 +358,55 @@ flowboxchild:focus .movie-card {
     outline: 2px solid @accent_color;
     outline-offset: 2px;
 }
+/* Seekbar Hover Timestamp Popover */
+.seek-popover-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    font-family: monospace;
+    padding: 2px 6px;
+    color: #ffffff;
+}
 
+/* Watched Badge */
+.badge-watched {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #33d17a;
+    background-color: alpha(#33d17a, 0.15);
+    border: 1px solid alpha(#33d17a, 0.35);
+    border-radius: 9999px;
+    padding: 3px 10px;
+    margin-end: 6px;
+}
 
+/* Top OSC Provider Pill Button */
+menubutton.provider-pill-btn {
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-shadow: none;
+}
 
+menubutton.provider-pill-btn > button {
+    background-color: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    border-radius: 9999px;
+    padding: 4px 14px;
+    font-weight: 600;
+    font-size: 0.82rem;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow: none;
+    transition: all 150ms ease;
+}
+
+menubutton.provider-pill-btn > button:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+menubutton.provider-pill-btn > button:checked,
+menubutton.provider-pill-btn > button:active {
+    background-color: rgba(255, 255, 255, 0.32);
+    border-color: rgba(255, 255, 255, 0.55);
+}
 

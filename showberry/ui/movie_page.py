@@ -341,6 +341,13 @@ class MoviePage(Adw.NavigationPage):
         self._resume_button.connect('clicked', self._on_resume_clicked)
         self._actions_row.append(self._resume_button)
 
+        # Watched badge (if movie completed)
+        self._watched_badge = Gtk.Label(label='✓ Watched')
+        self._watched_badge.add_css_class('badge-watched')
+        self._watched_badge.set_valign(Gtk.Align.CENTER)
+        self._watched_badge.set_visible(False)
+        self._actions_row.append(self._watched_badge)
+
         # Provider selector
         self._provider_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self._provider_box.set_valign(Gtk.Align.CENTER)
@@ -399,14 +406,23 @@ class MoviePage(Adw.NavigationPage):
 
         self._tv_box.append(tv_header)
 
-        # Episode ListBox
+        # Episode ListBox wrapped in a max-height ScrolledWindow (fits ~10 episodes max)
+        self._episodes_scroll = Gtk.ScrolledWindow()
+        self._episodes_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self._episodes_scroll.set_propagate_natural_height(True)
+        self._episodes_scroll.set_min_content_height(380)
+        self._episodes_scroll.set_max_content_height(480)
+        self._episodes_scroll.set_vexpand(False)
+
         self._episodes_listbox = Gtk.ListBox()
         self._episodes_listbox.add_css_class('boxed-list')
         self._episodes_listbox.connect('row-activated', self._on_episode_row_activated)
         ep_key = Gtk.EventControllerKey.new()
         ep_key.connect('key-pressed', self._on_episodes_key_pressed)
         self._episodes_listbox.add_controller(ep_key)
-        self._tv_box.append(self._episodes_listbox)
+
+        self._episodes_scroll.set_child(self._episodes_listbox)
+        self._tv_box.append(self._episodes_scroll)
 
         content.append(self._tv_box)
 
@@ -1053,8 +1069,12 @@ class MoviePage(Adw.NavigationPage):
 
     def _setup_providers(self):
         providers = get_all_providers()
+        from showberry.services.settings import SettingsService
+        default_prov = SettingsService().default_provider or 'VidEasy'
+        auto_label = f"Auto (Best • {default_prov})"
         self._provider_names = ['Auto (Best)'] + [p.name for p in providers]
-        self._provider_dropdown.set_model(Gtk.StringList.new(self._provider_names))
+        display_labels = [auto_label] + [p.name for p in providers]
+        self._provider_dropdown.set_model(Gtk.StringList.new(display_labels))
         self._provider_dropdown.set_selected(0)
 
     def _load_details_async(self):
@@ -1125,9 +1145,13 @@ class MoviePage(Adw.NavigationPage):
         self._render_cast(details.get('cast', []))
         self._render_recommendations(details.get('recommendations', []))
 
-        # Check watch history for Resume button
+        # Check watch history for Resume button and watched status
         movie_id = details.get('id') or self._movie.get('id')
         if movie_id:
+            try:
+                self._watched_badge.set_visible(self._db.is_completed(movie_id))
+            except Exception:
+                pass
             progress = self._db.get_item_progress(movie_id)
             if progress and progress.get('progress_seconds', 0) > 15:
                 pos = int(progress['progress_seconds'])
@@ -1228,7 +1252,20 @@ class MoviePage(Adw.NavigationPage):
             empty_row = Adw.ActionRow()
             empty_row.set_title("No episodes found for this season")
             self._episodes_listbox.append(empty_row)
+            self._episodes_scroll.set_min_content_height(100)
             return
+
+        content_h = min(380, max(140, len(episodes) * 76))
+        self._episodes_scroll.set_min_content_height(content_h)
+
+        # Check completed episodes for this show and season
+        tmdb_id = self._movie.get('id') if self._movie else None
+        completed_eps = set()
+        if tmdb_id:
+            try:
+                completed_eps = self._db.get_completed_episodes_for_show(tmdb_id, season_num)
+            except Exception:
+                pass
 
         for ep in episodes:
             row = Adw.ActionRow()
@@ -1249,6 +1286,13 @@ class MoviePage(Adw.NavigationPage):
             if overview:
                 row.set_subtitle(overview)
             row.set_activatable(True)
+
+            watched_pill = Gtk.Label(label="✓ Watched")
+            watched_pill.add_css_class('badge-watched')
+            watched_pill.set_valign(Gtk.Align.CENTER)
+            watched_pill.set_visible((season_num, ep_num) in completed_eps)
+            row.add_suffix(watched_pill)
+            row._watched_pill = watched_pill
 
             play_icon = Gtk.Image.new_from_icon_name('media-playback-start-symbolic')
             play_icon.set_tooltip_text(f"Play Episode {ep_num}")
@@ -1287,10 +1331,18 @@ class MoviePage(Adw.NavigationPage):
         if 'id' not in self._movie and 'tmdb_id' in self._movie:
             self._movie['id'] = self._movie['tmdb_id']
 
-        # Default to S1E1 if TV series and no episode specified
+        # Default to next unwatched episode (or S1E1) if TV series and no episode specified
         if self._media_type == 'tv' and season is None:
-            season = 1
-            episode = 1
+            if hasattr(self, '_db'):
+                tmdb_id = self._movie.get('id') or self._movie.get('tmdb_id')
+                if tmdb_id:
+                    try:
+                        season, episode, start_pos = self._db.get_next_unwatched_episode(int(tmdb_id))
+                    except Exception as e:
+                        logger.warning(f"Could not resolve next unwatched episode: {e}")
+            if season is None:
+                season = 1
+                episode = 1
 
         stream_data = {
             'movie': self._movie,
@@ -1355,4 +1407,56 @@ class MoviePage(Adw.NavigationPage):
             'chosen_stream': stream_info,
         }
         self.emit('play-movie', stream_data)
+
+    def refresh_watch_state(self):
+        """Update watched badges and resume button immediately in place without page reload."""
+        tmdb_id = self._movie.get('id') or self._movie.get('tmdb_id')
+        if not tmdb_id:
+            return
+
+        # 1. Update Movie watched badge
+        if self._media_type == 'movie':
+            is_done = self._db.is_completed(tmdb_id)
+            if hasattr(self, '_watched_badge'):
+                self._watched_badge.set_visible(is_done)
+
+        # 2. Update Resume button
+        progress = self._db.get_item_progress(tmdb_id)
+        if progress and progress.get('progress_seconds', 0) > 15:
+            pos = int(progress['progress_seconds'])
+            mins = pos // 60
+            secs = pos % 60
+            self._resume_pos = pos
+            self._resume_info_hash = progress.get('info_hash')
+            self._resume_file_idx = progress.get('file_idx')
+            if self._media_type == 'tv':
+                s = progress.get('season', 1)
+                ep = progress.get('episode', 1)
+                self._resume_season = s
+                self._resume_episode = ep
+                self._resume_button.set_label(f"Resume S{s}E{ep} ({mins}:{secs:02d})")
+            else:
+                self._resume_button.set_label(f"Resume ({mins}:{secs:02d})")
+            self._resume_button.set_visible(True)
+        else:
+            self._resume_button.set_visible(False)
+
+        # 3. Update TV episode rows
+        if self._media_type == 'tv' and hasattr(self, '_episodes_listbox'):
+            try:
+                sel_idx = self._season_dropdown.get_selected() if hasattr(self, '_season_dropdown') else 0
+                season_num = 1
+                if hasattr(self, '_seasons_list') and sel_idx < len(self._seasons_list):
+                    season_num = self._seasons_list[sel_idx].get('season_number', 1)
+
+                completed_eps = self._db.get_completed_episodes_for_show(tmdb_id, season_num)
+                child = self._episodes_listbox.get_first_child()
+                while child:
+                    if hasattr(child, '_episode_data') and hasattr(child, '_watched_pill'):
+                        ep_num = child._episode_data.get('episode_number')
+                        child._watched_pill.set_visible((season_num, ep_num) in completed_eps)
+                    child = child.get_next_sibling()
+            except Exception as e:
+                logger.debug(f"Error refreshing episode watched badges: {e}")
+
 

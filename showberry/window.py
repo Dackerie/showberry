@@ -234,6 +234,11 @@ class ShowberryWindow(Adw.ApplicationWindow):
         if visible and visible.get_tag() == 'player':
             self._nav_view.pop()
 
+        # Update watch state on newly visible page (e.g. MoviePage watched badges)
+        new_visible = self._nav_view.get_visible_page()
+        if new_visible and hasattr(new_visible, 'refresh_watch_state'):
+            new_visible.refresh_watch_state()
+
         # Refresh library page
         if hasattr(self, '_library_page'):
             self._library_page.refresh()

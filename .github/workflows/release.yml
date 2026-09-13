@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag to release assets for (e.g. v0.3.0)'
+        description: 'Tag to release assets for (e.g. v0.3.1)'
         required: true
-        default: 'v0.3.0'
+        default: 'v0.3.1'
 
 permissions:
   contents: write
@@ -103,11 +103,88 @@ jobs:
           path: Showberry-x86_64.AppImage
           if-no-files-found: error
 
+  build-windows:
+    name: Build Windows (Installer & Portable)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 (UCRT64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+
+      - name: Run Windows build script in UCRT64
+        shell: msys2 {0}
+        run: |
+          bash ./packaging/windows/build.sh
+
+      - name: Compile Inno Setup Installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+        with:
+          path: packaging/windows/showberry.iss
+
+      - name: Create Windows Portable Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\showberry\* -DestinationPath Showberry-Windows-Portable-x86_64.zip
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: output/Showberry-Windows-Setup-x86_64.exe
+          if-no-files-found: error
+
+      - name: Upload Windows Portable
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: Showberry-Windows-Portable-x86_64.zip
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS DMG (${{ matrix.arch }})
+    strategy:
+      matrix:
+        arch: [arm64, x86_64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'macos-14' || 'macos-13' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew update
+          brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg
+          python3 -m pip install --break-system-packages \
+            requests \
+            pillow \
+            curl_cffi \
+            pycryptodome \
+            PyOpenGL \
+            python-mpv \
+            libtorrent \
+            pyinstaller
+
+      - name: Run macOS build script
+        run: |
+          bash ./packaging/macos/build.sh
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg-${{ matrix.arch }}
+          path: Showberry-macOS-*.dmg
+          if-no-files-found: error
+
   publish-release:
     name: Publish Release Assets
     runs-on: ubuntu-24.04
-    needs: [build-python, build-flatpak, build-appimage]
-    if: always() && !cancelled() && needs.build-python.result == 'success' && needs.build-appimage.result == 'success'
+    needs: [build-python, build-flatpak, build-appimage, build-windows, build-macos]
+    if: always() && !cancelled() && needs.build-python.result == 'success'
     steps:
       - name: Download all built artifacts
         uses: actions/download-artifact@v4
@@ -118,7 +195,7 @@ jobs:
       - name: Generate Checksums
         run: |
           cd release-assets
-          sha256sum * > SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt 2>/dev/null || true
           echo "=== Release Assets & Checksums ==="
           cat SHA256SUMS.txt
 

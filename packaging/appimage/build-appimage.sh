@@ -87,13 +87,15 @@ LAUNCHER
 chmod +x "${APP_DIR}/AppRun"
 
 echo "==> Packing AppImage with appimagetool..."
-if ! command -v appimagetool &> /dev/null; then
+if [ -x "./appimagetool" ]; then
+    APPIMAGETOOL="./appimagetool"
+elif command -v appimagetool &> /dev/null; then
+    APPIMAGETOOL="appimagetool"
+else
     echo "Downloading appimagetool..."
     wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" -O ./appimagetool
     chmod +x ./appimagetool
     APPIMAGETOOL="./appimagetool"
-else
-    APPIMAGETOOL="appimagetool"
 fi
 
 ARCH=x86_64 "$APPIMAGETOOL" --appimage-extract-and-run -n "${APP_DIR}" Showberry-x86_64.AppImage

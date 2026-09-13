@@ -164,11 +164,22 @@ class BrowsePage(Gtk.Box):
         self._spinner.stop()
         self._spinner.set_visible(False)
 
-        # 1. Continue Watching row
+        # 1. Continue Watching rows (TV shows & Movies sub-sections)
         if history:
-            row = MovieRow('Continue Watching', history)
-            row.connect('movie-selected', self._on_movie_selected)
-            self._rows_box.append(row)
+            tv_history = [h for h in history if h.get('media_type') == 'tv']
+            movie_history = [h for h in history if h.get('media_type') != 'tv']
+            if tv_history and movie_history:
+                row_tv = MovieRow('Continue Watching • TV Shows', tv_history)
+                row_tv.connect('movie-selected', self._on_movie_selected)
+                self._rows_box.append(row_tv)
+
+                row_mov = MovieRow('Continue Watching • Movies', movie_history)
+                row_mov.connect('movie-selected', self._on_movie_selected)
+                self._rows_box.append(row_mov)
+            else:
+                row = MovieRow('Continue Watching', history)
+                row.connect('movie-selected', self._on_movie_selected)
+                self._rows_box.append(row)
 
         # 2. Watchlist row
         if watchlist:

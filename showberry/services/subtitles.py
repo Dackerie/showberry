@@ -189,3 +189,54 @@ class SubtitleService:
         except Exception as e:
             logger.warning(f"Error downloading subtitle {sub_url}: {e}")
             return None
+
+    @staticmethod
+    def is_autosync_available() -> bool:
+        """Check if ffsubsync executable is available in PATH or user local bin."""
+        import shutil
+        if shutil.which('ffsubsync'):
+            return True
+        user_bin = Path.home() / '.local' / 'bin' / 'ffsubsync'
+        return user_bin.exists() and os.access(user_bin, os.X_OK)
+
+    def sync_subtitle_with_audio(self, video_path: str, sub_path: str) -> Optional[str]:
+        """Synchronize subtitle file with video audio speech using ffsubsync."""
+        import shutil
+        import subprocess
+
+        ffsubsync_bin = shutil.which('ffsubsync')
+        if not ffsubsync_bin:
+            user_bin = Path.home() / '.local' / 'bin' / 'ffsubsync'
+            if user_bin.exists() and os.access(user_bin, os.X_OK):
+                ffsubsync_bin = str(user_bin)
+
+        if not ffsubsync_bin:
+            logger.warning("ffsubsync executable not found.")
+            return None
+
+        if not os.path.exists(sub_path):
+            logger.warning(f"Input subtitle file does not exist: {sub_path}")
+            return None
+
+        out_path = Path(sub_path).with_name(f"{Path(sub_path).stem}_synced.srt")
+
+        cmd = [
+            ffsubsync_bin,
+            video_path,
+            '-i', sub_path,
+            '-o', str(out_path),
+            '--max-duration-seconds', '600',
+            '--extract-audio-first',
+        ]
+        logger.info(f"Running ffsubsync: {' '.join(cmd)}")
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if res.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
+                logger.info(f"Successfully synchronized subtitle to {out_path}")
+                return str(out_path)
+            else:
+                logger.warning(f"ffsubsync failed (code {res.returncode}): {res.stderr}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error executing ffsubsync: {e}")
+            return None

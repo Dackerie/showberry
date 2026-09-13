@@ -403,11 +403,13 @@ class MovieCard(Gtk.Box):
 
         if tmdb_id:
             try:
-                progress = self._db.get_item_progress(int(tmdb_id))
-                if progress and progress.get('progress_seconds', 0) > 15:
-                    start_pos = int(progress['progress_seconds'])
-                    season = progress.get('season')
-                    episode = progress.get('episode')
+                tmdb_id_int = int(tmdb_id)
+                if media_type == 'tv':
+                    season, episode, start_pos = self._db.get_next_unwatched_episode(tmdb_id_int)
+                else:
+                    progress = self._db.get_item_progress(tmdb_id_int)
+                    if progress and progress.get('progress_seconds', 0) > 15:
+                        start_pos = int(progress['progress_seconds'])
             except Exception as e:
                 logger.warning(f"Could not fetch watch progress: {e}")
 
