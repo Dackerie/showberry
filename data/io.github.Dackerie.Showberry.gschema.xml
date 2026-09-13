@@ -46,5 +46,25 @@
       <summary>Torrent Disk Cache Size</summary>
       <description>Maximum disk space in GB for cached torrents (0 for stream only)</description>
     </key>
+    <key name="sub-pos" type="i">
+      <default>94</default>
+      <summary>Subtitle Position</summary>
+      <description>Vertical subtitle position in percent (50 to 100)</description>
+    </key>
+    <key name="sub-scale" type="d">
+      <default>1.0</default>
+      <summary>Subtitle Text Scale</summary>
+      <description>Subtitle font scale multiplier (0.5 to 2.5)</description>
+    </key>
+    <key name="auto-skip-enabled" type="b">
+      <default>true</default>
+      <summary>Auto-Skip Next Episode</summary>
+      <description>Whether to automatically show the countdown card and skip to the next episode</description>
+    </key>
+    <key name="auto-skip-countdown" type="i">
+      <default>10</default>
+      <summary>Countdown Duration</summary>
+      <description>Seconds to countdown before auto-skipping</description>
+    </key>
   </schema>
 </schemalist>

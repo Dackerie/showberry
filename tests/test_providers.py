@@ -141,6 +141,30 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(p.name, 'VidKing')
         self.assertEqual(p.base_url, 'https://vidking.net')
 
+    def test_auto_provider_respects_settings_default(self):
+        from unittest.mock import patch, MagicMock
+        mock_settings = MagicMock()
+        mock_settings.default_provider = 'VidKing'
+        with patch('showberry.services.settings.SettingsService', return_value=mock_settings):
+            with patch.object(ProviderManager, 'get_providers') as mock_providers:
+                p_easy = MagicMock(name='VidEasy')
+                p_easy.name = 'VidEasy'
+                p_king = MagicMock(name='VidKing')
+                p_king.name = 'VidKing'
+                p_link = MagicMock(name='VidLink')
+                p_link.name = 'VidLink'
+                mock_providers.return_value = [p_easy, p_king, p_link]
+                with patch.object(ProviderManager, 'get_provider_by_name') as mock_by_name:
+                    mock_by_name.side_effect = lambda n: p_king if n == 'VidKing' else None
+                    with patch('showberry.providers.base.is_stream_alive', return_value=True):
+                        p_king.get_stream_url.return_value = StreamResult(url='https://stream.test/king.m3u8', provider_name='VidKing')
+                        # Call with Auto (Best)
+                        res = ProviderManager.resolve_stream(12345, preferred_provider_name='Auto (Best)')
+                        self.assertIsNotNone(res)
+                        self.assertEqual(res.provider_name, 'VidKing')
+                        p_king.get_stream_url.assert_called_once()
+                        p_easy.get_stream_url.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

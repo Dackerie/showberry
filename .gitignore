@@ -20,4 +20,9 @@ appimagetool
 build-dir/
 *.flatpak
 FLATHUB_SUBMISSION.md
+*.dmg
+Showberry.app/
+*.exe
+*.zip
+output/
 

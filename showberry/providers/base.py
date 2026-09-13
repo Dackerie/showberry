@@ -116,10 +116,21 @@ class ProviderManager:
         all_providers = cls.get_providers()
         ordered_providers: List[BaseProvider] = []
 
-        if preferred_provider_name:
+        if preferred_provider_name and preferred_provider_name.strip().lower() not in ('auto', 'auto (best)'):
             pref = cls.get_provider_by_name(preferred_provider_name)
             if pref:
                 ordered_providers.append(pref)
+        else:
+            # Under Auto (Best), check if user configured a preferred default provider in Settings
+            try:
+                from showberry.services.settings import SettingsService
+                cfg_default = SettingsService().default_provider
+                if cfg_default and cfg_default.strip().lower() not in ('auto', 'auto (best)'):
+                    pref = cls.get_provider_by_name(cfg_default)
+                    if pref:
+                        ordered_providers.append(pref)
+            except Exception as ex:
+                logger.debug(f"Could not load default provider from settings: {ex}")
 
         for p in all_providers:
             if p not in ordered_providers:

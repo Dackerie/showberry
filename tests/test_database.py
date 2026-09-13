@@ -110,6 +110,58 @@ class TestDatabaseService(unittest.TestCase):
                 self.assertEqual(len(items), 1)
                 self.assertEqual(items[0]['title'], "Migrated Movie")
 
+    def test_completed_media(self):
+        """Test marking, unmarking, and querying completed movies and episodes."""
+        # Movie test
+        self.assertFalse(self.db.is_completed(550))
+        self.db.mark_completed(550, 'movie', title="Fight Club", poster_url="https://image.tmdb.org/t/p/w500/poster.jpg")
+        self.assertTrue(self.db.is_completed(550))
+
+        # TV episode test
+        self.assertFalse(self.db.is_completed(1396, season=1, episode=1))
+        self.db.mark_completed(1396, 'tv', season=1, episode=1, title="Breaking Bad")
+        self.db.mark_completed(1396, 'tv', season=1, episode=2, title="Breaking Bad")
+        self.assertTrue(self.db.is_completed(1396, season=1, episode=1))
+        self.assertTrue(self.db.is_completed(1396, season=1, episode=2))
+        self.assertFalse(self.db.is_completed(1396, season=1, episode=3))
+
+        completed_eps = self.db.get_completed_episodes_for_show(1396, season=1)
+        self.assertEqual(completed_eps, {(1, 1), (1, 2)})
+
+        # Completed items list for library (individual TV episodes must not list the show in Completed)
+        items = self.db.get_completed_items()
+        self.assertEqual(len(items), 1)  # Only Fight Club (not Breaking Bad yet)
+        self.assertEqual(items[0]['tmdb_id'], 550)
+
+        # When the entire show is completed (season=0, episode=0)
+        self.db.mark_completed(1396, 'tv', season=0, episode=0, title="Breaking Bad")
+        items_all = self.db.get_completed_items()
+        self.assertEqual(len(items_all), 2)  # Fight Club and Breaking Bad
+        tmdb_ids = {i['tmdb_id'] for i in items_all}
+        self.assertEqual(tmdb_ids, {550, 1396})
+
+        # Unmark
+        self.db.unmark_completed(550)
+        self.assertFalse(self.db.is_completed(550))
+
+    def test_tv_continue_watching_advancement(self):
+        """Verify that a TV show queued to the next episode with progress 0 stays in watch history."""
+        # S1E1 watched, series advanced to S1E2 with progress=0
+        self.db.update_watch_progress(
+            tmdb_id=1396,
+            title="Breaking Bad",
+            media_type="tv",
+            season=1,
+            episode=2,
+            progress_seconds=0.0,
+            duration_seconds=0.0
+        )
+        history = self.db.get_watch_history()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]['tmdb_id'], 1396)
+        self.assertEqual(history[0]['season'], 1)
+        self.assertEqual(history[0]['episode'], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

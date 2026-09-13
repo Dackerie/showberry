@@ -14,6 +14,8 @@ from showberry.ui.player_page import (
     PlayerControls,
     AudioPopover,
     SpeedPopover,
+    ProviderPopover,
+    SubtitlePopover,
     ASPECT_MODES,
 )
 
@@ -268,6 +270,147 @@ class TestPlayerPhase1(unittest.TestCase):
         controls_idx = children.index(pp._controls)
         next_card_idx = children.index(pp._next_ep_card)
         self.assertGreater(next_card_idx, controls_idx)
+
+    def test_mpv_subtitle_speed_pos_and_scale(self):
+        """Test subtitle speed, pos, and scale getters/setters/adjusters."""
+        widget = MpvWidget()
+        mock_mpv = MagicMock()
+        mock_mpv.sub_speed = 1.0
+        mock_mpv.sub_pos = 94
+        mock_mpv.sub_scale = 1.0
+        widget._mpv = mock_mpv
+
+        # Subtitle speed
+        self.assertEqual(widget.get_sub_speed(), 1.0)
+        widget.set_sub_speed(0.959)
+        self.assertEqual(mock_mpv.sub_speed, 0.959)
+        widget.adjust_sub_speed(0.005)
+        self.assertEqual(mock_mpv.sub_speed, 0.964)
+
+        # Subtitle position (vertical offset)
+        self.assertEqual(widget.get_sub_pos(), 94)
+        widget.set_sub_pos(88)
+        self.assertEqual(mock_mpv.sub_pos, 88)
+        widget.adjust_sub_pos(-2)
+        self.assertEqual(mock_mpv.sub_pos, 86)
+        # Clamping
+        widget.set_sub_pos(30)
+        self.assertEqual(mock_mpv.sub_pos, 50)
+        widget.set_sub_pos(120)
+        self.assertEqual(mock_mpv.sub_pos, 100)
+
+        # Subtitle scale (font sizing)
+        self.assertEqual(widget.get_sub_scale(), 1.0)
+        widget.set_sub_scale(1.2)
+        self.assertEqual(mock_mpv.sub_scale, 1.2)
+        widget.adjust_sub_scale(0.1)
+        self.assertEqual(mock_mpv.sub_scale, 1.3)
+        # Clamping
+        widget.set_sub_scale(0.2)
+        self.assertEqual(mock_mpv.sub_scale, 0.5)
+        widget.set_sub_scale(4.0)
+        self.assertEqual(mock_mpv.sub_scale, 2.5)
+
+    def test_provider_popover_and_signal(self):
+        """Test ProviderPopover rendering and provider selection signal."""
+        selected_provider = []
+        popover = ProviderPopover(on_provider_selected=lambda p: selected_provider.append(p))
+        popover.refresh_providers()
+        self.assertIsNotNone(popover.get_child())
+
+        # Select provider
+        popover._select("VidEasy")
+        self.assertEqual(selected_provider, ["VidEasy"])
+
+        # PlayerPage top bar provider button exists
+        pp = PlayerPage()
+        self.assertTrue(hasattr(pp, '_provider_menu_btn'))
+        self.assertIn("Switch Provider", pp._provider_menu_btn.get_tooltip_text())
+        self.assertTrue(hasattr(pp, '_provider_popover'))
+
+    def test_seekbar_hover_motion(self):
+        """Test seekbar cursor hover motion time calculation and popover."""
+        controls = PlayerControls()
+        controls._duration = 6000.0
+
+        # Verify hover popover exists
+        self.assertTrue(hasattr(controls, '_seek_popover'))
+        self.assertTrue(hasattr(controls, '_seek_popover_label'))
+
+        # Mock scale width
+        with patch.object(controls._seek_bar, 'get_width', return_value=1000):
+            controls._on_seek_motion_move(None, 500, 10)
+            self.assertEqual(controls._seek_popover_label.get_text(), "50:00")
+            controls._on_seek_motion_move(None, 250, 10)
+            self.assertEqual(controls._seek_popover_label.get_text(), "25:00")
+
+        # Test leave
+        controls._on_seek_motion_leave(None)
+
+    def test_playback_ended_and_countdown(self):
+        """Test playback ended (EOF) triggers next episode countdown strictly upon completion."""
+        pp = PlayerPage()
+        pp._stream_data = {
+            'movie': {'id': 999, 'title': 'Test Show'},
+            'media_type': 'tv',
+            'season': 1,
+            'episode': 1,
+            'provider': 'videasy'
+        }
+        pp._next_stream_data = {
+            'movie': {'id': 999, 'title': 'Test Show'},
+            'media_type': 'tv',
+            'season': 1,
+            'episode': 2,
+            'title': 'Next Ep'
+        }
+        mock_player = MagicMock()
+        mock_player.get_position.return_value = 1200.0
+        mock_player.get_duration.return_value = 1200.0
+        pp._mpv_widget = mock_player
+
+        with patch.object(pp, '_show_next_episode_countdown') as mock_countdown:
+            pp._on_playback_ended()
+            mock_countdown.assert_called_once()
+
+    def test_completed_media_tracking_on_90_percent(self):
+        """Test that reaching 90% marks media completed and advances TV show in watch history."""
+        pp = PlayerPage()
+        pp._stream_data = {
+            'movie': {'id': 999, 'title': 'Test Episode'},
+            'media_type': 'tv',
+            'season': 1,
+            'episode': 1,
+            'provider': 'videasy'
+        }
+        pp._next_stream_data = {
+            'season': 1,
+            'episode': 2,
+            'title': 'Next Episode'
+        }
+        mock_player = MagicMock()
+        mock_player.get_position.return_value = 950.0
+        mock_player.get_duration.return_value = 1000.0
+        pp._mpv_widget = mock_player
+
+        mock_db = MagicMock()
+        pp._db = mock_db
+
+        pp._save_watch_progress()
+        mock_db.mark_completed.assert_called_once()
+        # Verify watch history advanced to next episode with 0 progress
+        mock_db.update_watch_progress.assert_called_with(
+            tmdb_id=999,
+            title='Test Episode',
+            media_type='tv',
+            poster_url=None,
+            backdrop_url=None,
+            season=1,
+            episode=2,
+            progress_seconds=0.0,
+            duration_seconds=1000.0,
+            stream_provider='videasy'
+        )
 
 
 if __name__ == '__main__':
