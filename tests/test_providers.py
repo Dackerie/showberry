@@ -42,6 +42,8 @@ class TestProviders(unittest.TestCase):
         names = [p.name for p in providers]
         expected_ranking = [
             'Vidy',
+            'Cinejoy',
+            'Movy',
             'VidLink',
             'VixSrc',
             'VidFast',
@@ -144,6 +146,33 @@ class TestProviders(unittest.TestCase):
                         self.assertEqual(res.provider_name, 'VidLink')
                         p_link.get_stream_url.assert_called_once()
                         p_vidy.get_stream_url.assert_not_called()
+
+    def test_cinejoy_provider_properties(self):
+        from showberry.providers.cinejoy import CinejoyProvider
+        p = CinejoyProvider()
+        self.assertEqual(p.name, 'Cinejoy')
+        self.assertEqual(p.base_url, 'https://cinejoy.to')
+
+    def test_movy_provider_properties(self):
+        from showberry.providers.movy import MovyProvider
+        p = MovyProvider()
+        self.assertEqual(p.name, 'Movy')
+        self.assertEqual(p.base_url, 'https://www.movy.bz')
+
+    def test_movy_cipher_decryption(self):
+        from showberry.providers.movy import _decrypt_movy, _generate_keystream, MAGIC
+        import base64
+        seed = "test_seed_456"
+        tmdb_id = 550
+        payload = b'{"sources":[{"quality":"1080p","url":"https://test.m3u8"}]}'
+        full_plain = bytes(MAGIC) + payload
+        ks = _generate_keystream(seed, tmdb_id, len(full_plain))
+        cipher_bytes = bytearray(full_plain)
+        for i in range(len(cipher_bytes)):
+            cipher_bytes[i] ^= ks[i]
+        b64 = base64.b64encode(cipher_bytes).decode('utf-8')
+        dec = _decrypt_movy(b64, seed, tmdb_id)
+        self.assertEqual(dec, payload.decode('utf-8'))
 
 
 if __name__ == '__main__':
