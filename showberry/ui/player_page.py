@@ -71,10 +71,12 @@ def get_proc_address_wrapper():
         except Exception:
             pass
     elif sys.platform == 'darwin':
-        try:
-            mac_gl = ctypes.CDLL('/System/Library/Frameworks/OpenGL.framework/OpenGL')
-        except Exception:
-            pass
+        for cand in (None, 'OpenGL.framework/OpenGL', '/System/Library/Frameworks/OpenGL.framework/OpenGL'):
+            try:
+                mac_gl = ctypes.CDLL(cand)
+                break
+            except Exception:
+                pass
     else:
         try:
             egl = ctypes.CDLL('libEGL.so.1')
@@ -158,6 +160,7 @@ class MpvWidget(Gtk.GLArea):
         self._has_drawn_first_frame = False
         self._is_stream_active = False
         self._current_media_path = None
+        self._unpause_watchdog_id = None
 
         if not HAS_MPV or MPV is None:
             self._mpv = None
@@ -175,6 +178,7 @@ class MpvWidget(Gtk.GLArea):
             hwdec='auto-safe',
             input_default_bindings=False,
             cursor_autohide=1000,
+            volume_max=130,
             cache='yes',
             demuxer_max_bytes=150 * 1024 * 1024,
             demuxer_max_back_bytes=50 * 1024 * 1024,
@@ -209,6 +213,9 @@ class MpvWidget(Gtk.GLArea):
         self._is_active = False
         self._is_stream_active = False
         self._has_drawn_first_frame = False
+        if getattr(self, '_unpause_watchdog_id', None):
+            GLib.source_remove(self._unpause_watchdog_id)
+            self._unpause_watchdog_id = None
         try:
             if self._ctx:
                 self._ctx.update_cb = None
@@ -230,11 +237,11 @@ class MpvWidget(Gtk.GLArea):
         # the previous MpvRenderContext is bound to a destroyed OpenGL context and cannot render.
         # Safely free it while the new OpenGL context is current before creating a fresh one.
         if self._ctx and self._gl_context_ref != curr_gdk_ctx:
-            logger.info("GL context changed across realize cycles; recreating MPV render context")
+            logger.info("OpenGL context changed; resetting MpvRenderContext")
             try:
                 self._ctx.free()
-            except Exception as e:
-                logger.warning(f"Error freeing stale MPV render context: {e}")
+            except Exception:
+                pass
             self._ctx = None
 
         self._gl_context_ref = curr_gdk_ctx
@@ -260,6 +267,9 @@ class MpvWidget(Gtk.GLArea):
         # Do NOT free MpvRenderContext here during tear down; it will be cleanly
         # freed and recreated on the next _on_realize() with the active context.
         self._is_active = False
+        if getattr(self, '_unpause_watchdog_id', None):
+            GLib.source_remove(self._unpause_watchdog_id)
+            self._unpause_watchdog_id = None
         try:
             if self._ctx:
                 self._ctx.update_cb = None
@@ -349,6 +359,9 @@ class MpvWidget(Gtk.GLArea):
         # never runs ahead of visible video frames.
         if self._wait_first_frame and self._has_drawn_first_frame:
             self._wait_first_frame = False
+            if getattr(self, '_unpause_watchdog_id', None):
+                GLib.source_remove(self._unpause_watchdog_id)
+                self._unpause_watchdog_id = None
             try:
                 self._mpv.pause = False
             except Exception:
@@ -356,6 +369,20 @@ class MpvWidget(Gtk.GLArea):
 
         return True
 
+    def _safety_unpause(self):
+        """Safety watchdog: guarantee unpausing after timeout so playback never stalls."""
+        self._unpause_watchdog_id = None
+        if getattr(self, '_wait_first_frame', False) and getattr(self, '_is_stream_active', False):
+            logger.info("Safety watchdog: unpausing MPV after render wait timeout")
+            self._wait_first_frame = False
+            self._has_drawn_first_frame = True
+            try:
+                if self._mpv:
+                    self._mpv.pause = False
+            except Exception:
+                pass
+            GLib.idle_add(self.emit, 'stream-ready')
+        return False
 
     def _on_resize(self, widget, width, height):
         if self._ctx:
@@ -421,6 +448,11 @@ class MpvWidget(Gtk.GLArea):
         self._current_media_path = url
         self._current_sub_path = None
         self._mpv.play(url)
+
+        if getattr(self, '_unpause_watchdog_id', None):
+            GLib.source_remove(self._unpause_watchdog_id)
+            self._unpause_watchdog_id = None
+        self._unpause_watchdog_id = GLib.timeout_add(600, self._safety_unpause)
 
         self._pending_subtitles = list(subtitles or [])
         if self._pending_subtitles:
@@ -544,7 +576,7 @@ class MpvWidget(Gtk.GLArea):
 
     def set_volume(self, volume):
         try:
-            v = max(0.0, min(100.0, float(volume)))
+            v = max(0.0, min(130.0, float(volume)))
             self._mpv.volume = v
             if v > 0 and self.is_muted():
                 self._mpv.mute = False
@@ -755,6 +787,9 @@ class MpvWidget(Gtk.GLArea):
             return False
 
     def stop(self):
+        if getattr(self, '_unpause_watchdog_id', None):
+            GLib.source_remove(self._unpause_watchdog_id)
+            self._unpause_watchdog_id = None
         try:
             self._mpv.command('stop')
         except Exception:
@@ -1501,11 +1536,12 @@ class PlayerControls(Gtk.Box):
         self._volume_btn.connect('clicked', self._on_mute_clicked)
         controls.append(self._volume_btn)
 
-        self._volume_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 1)
-        self._volume_scale.set_size_request(100, -1)
+        self._volume_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 130, 1)
+        self._volume_scale.set_size_request(110, -1)
         self._volume_scale.set_value(100)
         self._volume_scale.set_draw_value(False)
         self._volume_scale.set_focusable(False)
+        self._volume_scale.add_css_class('volume-boost-scale')
         self._volume_scale.connect('value-changed', self._on_volume_changed)
         controls.append(self._volume_scale)
 
@@ -1733,10 +1769,15 @@ class PlayerControls(Gtk.Box):
             self.emit('timing-notification', f"Volume: {int(restore_vol)}%")
 
     def _on_volume_changed(self, scale):
+        val = scale.get_value()
+        if val > 100:
+            scale.add_css_class('volume-boosted')
+        else:
+            scale.remove_css_class('volume-boosted')
+
         if getattr(self, '_updating_volume_scale', False):
             return
         if self._player:
-            val = scale.get_value()
             self._player.set_volume(val)
             if val == 0:
                 self._volume_btn.set_icon_name('audio-volume-muted-symbolic')
@@ -1748,6 +1789,7 @@ class PlayerControls(Gtk.Box):
                 self._pre_mute_volume = val
                 if self._player.is_muted():
                     self._player.toggle_mute()
+            self.emit('timing-notification', f"Volume: {int(val)}%")
 
 
 class PlayerPage(Adw.NavigationPage):
@@ -1960,6 +2002,18 @@ class PlayerPage(Adw.NavigationPage):
     def show_osd_notification(self, text: str):
         """Show temporary floating OSD pill on video surface."""
         self._osd_pill.set_text(text)
+        is_boosted = False
+        if text.startswith("Volume:"):
+            try:
+                num = int(text.replace("Volume:", "").replace("%", "").strip())
+                if num > 100:
+                    is_boosted = True
+            except Exception:
+                pass
+        if is_boosted:
+            self._osd_pill.add_css_class('osd-pill-boosted')
+        else:
+            self._osd_pill.remove_css_class('osd-pill-boosted')
         self._osd_pill.set_visible(True)
         if self._osd_hide_timeout:
             GLib.source_remove(self._osd_hide_timeout)
@@ -1998,14 +2052,6 @@ class PlayerPage(Adw.NavigationPage):
             self.show_osd_notification(f"Seek {sign}{delta}s")
             return True
         elif keyname == 'Up':
-            if self._mpv_widget.is_muted():
-                self._mpv_widget.toggle_mute()
-            curr = self._mpv_widget.get_volume()
-            vol = min(100.0, curr + 5.0)
-            self._controls._volume_scale.set_value(vol)
-            self.show_osd_notification(f"Volume: {int(vol)}%")
-            return True
-        elif keyname == 'Up':
             if shift:
                 new_pos = self._mpv_widget.adjust_sub_pos(-2)
                 self.show_osd_notification(f"Subtitle Position: {new_pos}%")
@@ -2015,7 +2061,7 @@ class PlayerPage(Adw.NavigationPage):
             if self._mpv_widget.is_muted():
                 self._mpv_widget.toggle_mute()
             curr = self._mpv_widget.get_volume()
-            vol = min(100.0, curr + 5.0)
+            vol = min(130.0, curr + 5.0)
             self._controls._volume_scale.set_value(vol)
             self.show_osd_notification(f"Volume: {int(vol)}%")
             return True
@@ -2914,7 +2960,7 @@ class PlayerPage(Adw.NavigationPage):
             self._mpv_widget.toggle_mute()
         current_vol = self._mpv_widget.get_volume()
         delta = -5 if dy > 0 else 5
-        new_vol = max(0, min(100, current_vol + delta))
+        new_vol = max(0.0, min(130.0, current_vol + delta))
         self._mpv_widget.set_volume(new_vol)
         if hasattr(self._controls, '_volume_scale'):
             self._controls._volume_scale.set_value(new_vol)

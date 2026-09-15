@@ -241,10 +241,10 @@ class TestUINavigation(unittest.TestCase):
         from showberry.providers.base import ProviderManager
         providers = ProviderManager.get_providers()
         names = [p.name for p in providers]
-        self.assertEqual(names[0], 'VidEasy')
-        self.assertEqual(names[1], 'Vidy')
-        self.assertEqual(names[2], 'VidKing')
-        self.assertEqual(names[3], 'VidLink')
+        self.assertEqual(names[0], 'Vidy')
+        self.assertEqual(names[1], 'VidLink')
+        self.assertEqual(names[2], 'VixSrc')
+        self.assertEqual(names[3], 'VidFast')
 
 
     def test_movie_page_overview_none_handling(self):

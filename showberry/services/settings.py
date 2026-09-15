@@ -68,7 +68,7 @@ class SettingsService:
     def default_provider(self):
         if self._settings:
             return self._settings.get_string('default-provider')
-        return self._fallback_store.get('default-provider', 'VidEasy')
+        return self._fallback_store.get('default-provider', 'vidy')
 
     @default_provider.setter
     def default_provider(self, value):

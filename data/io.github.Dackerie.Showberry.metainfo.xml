@@ -68,6 +68,18 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.2" date="2026-09-15">
+      <description>
+        <p>Stability and multiplatform playback bugfix release:</p>
+        <ul>
+          <li>Fixed Windows double-click crash with rapid-press gesture guards and navigation debounce</li>
+          <li>Fixed macOS playback pipeline freeze and 0s cached black screen by enabling dyld shared cache symbol lookup and safety unpause watchdog</li>
+          <li>Implemented 130% volume boost with dynamic red visual indicator in player OSC</li>
+          <li>Bundled missing symbolic Adwaita icons across Windows and macOS application packages</li>
+          <li>Removed shutdown Videasy and VidKing streaming providers, promoting Vidy to primary default</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-09-13">
       <description>
         <p>Cross-platform release (Linux, Windows, macOS) and playback/library UX refinements:</p>

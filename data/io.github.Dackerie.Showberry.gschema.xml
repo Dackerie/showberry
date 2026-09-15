@@ -7,7 +7,7 @@
       <description>API key for The Movie Database (TMDB)</description>
     </key>
     <key name="default-provider" type="s">
-      <default>'vidfast'</default>
+      <default>'vidy'</default>
       <summary>Default Provider</summary>
       <description>The default streaming provider to use</description>
     </key>

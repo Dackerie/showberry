@@ -5,8 +5,9 @@ import os
 import sys
 import locale
 
-# Force modern OpenGL renderer to eliminate Vulkan swapchain stalls with GLArea
-os.environ.setdefault('GSK_RENDERER', 'gl')
+# Force modern OpenGL renderer to eliminate Vulkan swapchain stalls with GLArea on Linux
+if sys.platform.startswith('linux'):
+    os.environ.setdefault('GSK_RENDERER', 'gl')
 
 # Preload libcurl-impersonate with RTLD_GLOBAL on Linux to avoid symbol collision with libmpv's libcurl
 if sys.platform.startswith('linux'):

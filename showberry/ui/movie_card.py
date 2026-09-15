@@ -377,21 +377,25 @@ class MovieCard(Gtk.Box):
         if gesture:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
         self.grab_focus()
-        self.emit('clicked-movie', self._movie)
+        # Guard against double-clicks crashing the navigation stack
+        if n_press == 1:
+            self.emit('clicked-movie', self._movie)
 
     def _on_play_released(self, gesture, n_press, x, y):
         """Play circle click → start or resume stream directly."""
         if gesture:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-        self._start_play()
+        if n_press == 1:
+            self._start_play()
 
     def _on_remove_released(self, gesture, n_press, x, y):
         """Delete button → remove from continue-watching."""
         if gesture:
             gesture.set_state(Gtk.EventSequenceState.CLAIMED)
-        tmdb_id = self._movie.get('id') or self._movie.get('tmdb_id')
-        if tmdb_id:
-            self.emit('remove-item', int(tmdb_id))
+        if n_press == 1:
+            tmdb_id = self._movie.get('id') or self._movie.get('tmdb_id')
+            if tmdb_id:
+                self.emit('remove-item', int(tmdb_id))
 
     def _start_play(self):
         """Determine start position from watch history, then emit play-movie."""

@@ -319,8 +319,8 @@ class TestPlayerPhase1(unittest.TestCase):
         self.assertIsNotNone(popover.get_child())
 
         # Select provider
-        popover._select("VidEasy")
-        self.assertEqual(selected_provider, ["VidEasy"])
+        popover._select("Vidy")
+        self.assertEqual(selected_provider, ["Vidy"])
 
         # PlayerPage top bar provider button exists
         pp = PlayerPage()
@@ -355,7 +355,7 @@ class TestPlayerPhase1(unittest.TestCase):
             'media_type': 'tv',
             'season': 1,
             'episode': 1,
-            'provider': 'videasy'
+            'provider': 'vidy'
         }
         pp._next_stream_data = {
             'movie': {'id': 999, 'title': 'Test Show'},
@@ -381,7 +381,7 @@ class TestPlayerPhase1(unittest.TestCase):
             'media_type': 'tv',
             'season': 1,
             'episode': 1,
-            'provider': 'videasy'
+            'provider': 'vidy'
         }
         pp._next_stream_data = {
             'season': 1,
@@ -409,7 +409,7 @@ class TestPlayerPhase1(unittest.TestCase):
             episode=2,
             progress_seconds=0.0,
             duration_seconds=1000.0,
-            stream_provider='videasy'
+            stream_provider='vidy'
         )
 
 

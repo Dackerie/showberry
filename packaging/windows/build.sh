@@ -15,6 +15,7 @@ pacman -S --noconfirm --needed \
     mingw-w64-ucrt-x86_64-python \
     mingw-w64-ucrt-x86_64-gtk4 \
     mingw-w64-ucrt-x86_64-libadwaita \
+    mingw-w64-ucrt-x86_64-adwaita-icon-theme \
     mingw-w64-ucrt-x86_64-python-pillow \
     mingw-w64-ucrt-x86_64-python-gobject \
     mingw-w64-ucrt-x86_64-python-pip \

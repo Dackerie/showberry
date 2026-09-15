@@ -1070,7 +1070,7 @@ class MoviePage(Adw.NavigationPage):
     def _setup_providers(self):
         providers = get_all_providers()
         from showberry.services.settings import SettingsService
-        default_prov = SettingsService().default_provider or 'VidEasy'
+        default_prov = SettingsService().default_provider or 'Vidy'
         auto_label = f"Auto (Best • {default_prov})"
         self._provider_names = ['Auto (Best)'] + [p.name for p in providers]
         display_labels = [auto_label] + [p.name for p in providers]

@@ -10,7 +10,7 @@ class TestProviders(unittest.TestCase):
         providers = get_all_providers()
         self.assertGreater(len(providers), 5)
         names = [p.name for p in providers]
-        self.assertIn('VidEasy', names)
+        self.assertIn('Vidy', names)
         self.assertIn('VidLink', names)
         self.assertIn('VidFast', names)
         self.assertIn('VidZee', names)
@@ -37,23 +37,11 @@ class TestProviders(unittest.TestCase):
         nonexistent = ProviderManager.get_provider_by_name('FakeProvider')
         self.assertIsNone(nonexistent)
 
-    def test_videasy_cipher_structure(self):
-        from showberry.providers.videasy import _init_state, _gen_keystream
-        state = _init_state('test_seed_123', 278)
-        self.assertIn('S', state)
-        self.assertIn('acc', state)
-        self.assertIsInstance(state['acc'], int)
-
-        ks = _gen_keystream(state, 16)
-        self.assertEqual(len(ks), 16)
-
     def test_provider_ranking_order(self):
         providers = get_all_providers()
         names = [p.name for p in providers]
         expected_ranking = [
-            'VidEasy',
             'Vidy',
-            'VidKing',
             'VidLink',
             'VixSrc',
             'VidFast',
@@ -135,35 +123,27 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(p.name, 'VidRift')
         self.assertEqual(p.base_url, 'https://embed.vidrift.in')
 
-    def test_vidking_provider_properties(self):
-        from showberry.providers.vidking import VidKingProvider
-        p = VidKingProvider()
-        self.assertEqual(p.name, 'VidKing')
-        self.assertEqual(p.base_url, 'https://vidking.net')
-
     def test_auto_provider_respects_settings_default(self):
         from unittest.mock import patch, MagicMock
         mock_settings = MagicMock()
-        mock_settings.default_provider = 'VidKing'
+        mock_settings.default_provider = 'VidLink'
         with patch('showberry.services.settings.SettingsService', return_value=mock_settings):
             with patch.object(ProviderManager, 'get_providers') as mock_providers:
-                p_easy = MagicMock(name='VidEasy')
-                p_easy.name = 'VidEasy'
-                p_king = MagicMock(name='VidKing')
-                p_king.name = 'VidKing'
+                p_vidy = MagicMock(name='Vidy')
+                p_vidy.name = 'Vidy'
                 p_link = MagicMock(name='VidLink')
                 p_link.name = 'VidLink'
-                mock_providers.return_value = [p_easy, p_king, p_link]
+                mock_providers.return_value = [p_vidy, p_link]
                 with patch.object(ProviderManager, 'get_provider_by_name') as mock_by_name:
-                    mock_by_name.side_effect = lambda n: p_king if n == 'VidKing' else None
+                    mock_by_name.side_effect = lambda n: p_link if n == 'VidLink' else None
                     with patch('showberry.providers.base.is_stream_alive', return_value=True):
-                        p_king.get_stream_url.return_value = StreamResult(url='https://stream.test/king.m3u8', provider_name='VidKing')
+                        p_link.get_stream_url.return_value = StreamResult(url='https://stream.test/link.m3u8', provider_name='VidLink')
                         # Call with Auto (Best)
                         res = ProviderManager.resolve_stream(12345, preferred_provider_name='Auto (Best)')
                         self.assertIsNotNone(res)
-                        self.assertEqual(res.provider_name, 'VidKing')
-                        p_king.get_stream_url.assert_called_once()
-                        p_easy.get_stream_url.assert_not_called()
+                        self.assertEqual(res.provider_name, 'VidLink')
+                        p_link.get_stream_url.assert_called_once()
+                        p_vidy.get_stream_url.assert_not_called()
 
 
 if __name__ == '__main__':

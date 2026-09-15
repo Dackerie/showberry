@@ -155,6 +155,16 @@ flowboxchild:focus .movie-card {
     border-radius: 2px;
 }
 
+.player-controls scale.volume-boost-scale highlight {
+    background-color: @accent_bg_color;
+    border-radius: 2px;
+}
+
+.player-controls scale.volume-boost-scale.volume-boosted highlight {
+    background-color: #e01b24;
+    border-radius: 2px;
+}
+
 /* Navigation & Header */
 .navigation-sidebar {
     background-color: alpha(@window_bg_color, 0.95);
@@ -190,6 +200,11 @@ flowboxchild:focus .movie-card {
     font-size: 0.95rem;
     font-weight: 600;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+}
+
+.osd-pill.osd-pill-boosted {
+    color: #ff7b63;
+    border-color: rgba(224, 27, 36, 0.5);
 }
 
 /* Next Episode Auto-Countdown Floating Card */

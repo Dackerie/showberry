@@ -13,6 +13,14 @@ datas = [
     (os.path.join(repo_root, 'data', 'icons'), 'data/icons'),
 ]
 
+for icon_base in ['/opt/homebrew/share/icons', '/usr/local/share/icons']:
+    if os.path.isdir(icon_base):
+        for theme in ['Adwaita', 'hicolor']:
+            theme_path = os.path.join(icon_base, theme)
+            if os.path.isdir(theme_path):
+                datas.append((theme_path, f'share/icons/{theme}'))
+        break
+
 binaries = []
 
 hiddenimports = [

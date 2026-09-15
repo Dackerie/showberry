@@ -59,7 +59,41 @@ class ShowberryApplication(Adw.Application):
     def do_startup(self):
         Adw.Application.do_startup(self)
         self._load_css()
+        self._setup_icon_theme()
         self._setup_accelerators()
+
+    def _setup_icon_theme(self):
+        """Ensure bundled and system icon directories are registered with Gtk.IconTheme."""
+        import sys
+        try:
+            display = Gdk.Display.get_default()
+            if not display:
+                return
+            icon_theme = Gtk.IconTheme.get_for_display(display)
+            search_paths = [
+                Path(__file__).parent / 'data' / 'icons',
+                Path(__file__).parent.parent / 'data' / 'icons',
+                Path('/app/share/icons'),
+                Path('/usr/share/icons'),
+                Path('/usr/local/share/icons'),
+                Path('/opt/homebrew/share/icons'),
+                Path('/ucrt64/share/icons'),
+            ]
+            if getattr(sys, 'frozen', False):
+                bundle_dir = getattr(sys, '_MEIPASS', Path(sys.executable).parent)
+                exe_dir = Path(sys.executable).parent
+                search_paths.insert(0, Path(bundle_dir) / 'share' / 'icons')
+                search_paths.insert(0, Path(bundle_dir) / 'data' / 'icons')
+                search_paths.insert(0, exe_dir / 'share' / 'icons')
+                search_paths.insert(0, exe_dir / 'data' / 'icons')
+                search_paths.insert(0, exe_dir.parent / 'Resources' / 'share' / 'icons')
+                search_paths.insert(0, exe_dir.parent / 'Resources' / 'showberry' / 'share' / 'icons')
+
+            for p in search_paths:
+                if p.exists() and p.is_dir():
+                    icon_theme.add_search_path(str(p))
+        except Exception as e:
+            logger.warning(f"Error configuring icon theme search paths: {e}")
 
     def _setup_accelerators(self):
         self.set_accels_for_action("win.shortcuts", ["<Ctrl>question", "<Ctrl>slash"])
