@@ -70,9 +70,12 @@
   <releases>
     <release version="0.3.3" date="2026-09-15">
       <description>
-        <p>macOS library bundling fix, UI responsiveness, and diagnostics release:</p>
+        <p>macOS and Windows fixes, multiplatform stability, and new providers release:</p>
         <ul>
+          <li>Fixed Windows and macOS startup crash by bundling cryptography package</li>
+          <li>Added defensive provider import safeguards so missing optional packages never block application boot</li>
           <li>Fixed macOS libmpv and libtorrent loading by dereferencing symlinks and searching _internal runtime paths</li>
+          <li>Added Cinejoy (4K multi-server HLS) and Movy (14-city ultra-fast CDN) streaming providers</li>
           <li>Made movies and series grids fully responsive across wide screens and high-resolution displays</li>
           <li>Resolved missing filter, info, and library tab symbolic icons on macOS and Windows packages</li>
           <li>Fixed GTK theme parser warning for margin-end in stylesheet</li>

@@ -160,6 +160,7 @@ jobs:
             pillow \
             curl_cffi \
             pycryptodome \
+            cryptography \
             PyOpenGL \
             python-mpv \
             pyinstaller

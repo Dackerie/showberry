@@ -25,6 +25,7 @@ if ! command -v pyinstaller &>/dev/null; then
         pillow \
         curl_cffi \
         pycryptodome \
+        cryptography \
         PyOpenGL \
         python-mpv \
         pyinstaller
