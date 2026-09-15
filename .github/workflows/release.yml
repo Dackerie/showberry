@@ -154,7 +154,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
+          brew install gtk4 libadwaita adwaita-icon-theme python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
           python3 -m pip install --break-system-packages \
             requests \
             pillow \
