@@ -68,6 +68,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.3" date="2026-09-15">
+      <description>
+        <p>macOS library bundling fix, UI responsiveness, and diagnostics release:</p>
+        <ul>
+          <li>Fixed macOS libmpv and libtorrent loading by dereferencing symlinks and searching _internal runtime paths</li>
+          <li>Made movies and series grids fully responsive across wide screens and high-resolution displays</li>
+          <li>Resolved missing filter, info, and library tab symbolic icons on macOS and Windows packages</li>
+          <li>Fixed GTK theme parser warning for margin-end in stylesheet</li>
+          <li>Added persistent rotating file logging and diagnostic folder opener in Preferences</li>
+          <li>Forwarded command-line arguments through native macOS Swift launcher</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-09-15">
       <description>
         <p>Stability and multiplatform playback bugfix release:</p>

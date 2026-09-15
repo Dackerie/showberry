@@ -33,8 +33,8 @@ class LibraryPage(Gtk.Box):
         self._scroll.set_vexpand(True)
 
         self._clamp = Adw.Clamp()
-        self._clamp.set_maximum_size(1400)
-        self._clamp.set_tightening_threshold(800)
+        self._clamp.set_maximum_size(3840)
+        self._clamp.set_tightening_threshold(3840)
 
         self._content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
         self._content_box.set_margin_start(16)
@@ -103,6 +103,9 @@ class LibraryPage(Gtk.Box):
         self._wl_flowbox.set_row_spacing(14)
         self._wl_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self._wl_flowbox.set_halign(Gtk.Align.START)
+        self._wl_flowbox.set_hexpand(True)
+        self._wl_flowbox.set_min_children_per_line(2)
+        self._wl_flowbox.set_max_children_per_line(30)
         self._wl_flowbox.set_margin_start(4)
         self._wl_flowbox.set_margin_end(4)
         self._wl_flowbox.set_margin_top(4)
@@ -124,6 +127,9 @@ class LibraryPage(Gtk.Box):
         self._completed_flowbox.set_row_spacing(14)
         self._completed_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self._completed_flowbox.set_halign(Gtk.Align.START)
+        self._completed_flowbox.set_hexpand(True)
+        self._completed_flowbox.set_min_children_per_line(2)
+        self._completed_flowbox.set_max_children_per_line(30)
         self._completed_flowbox.set_margin_start(4)
         self._completed_flowbox.set_margin_end(4)
         self._completed_flowbox.set_margin_top(4)
@@ -138,7 +144,7 @@ class LibraryPage(Gtk.Box):
 
         # ── 3. Empty Status Page ───────────────────────────────────────────
         self._empty_status = Adw.StatusPage()
-        self._empty_status.set_icon_name('emblem-favorite-symbolic')
+        self._empty_status.set_icon_name('starred-symbolic')
         self._empty_status.set_title('Your Library is Empty')
         self._empty_status.set_description('Movies and TV series you watch or bookmark will appear here.')
         self._empty_status.set_vexpand(True)

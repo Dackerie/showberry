@@ -9,6 +9,8 @@ from gi.repository import Gtk, Adw, GLib, GObject, Gdk, Pango
 import locale
 locale.setlocale(locale.LC_NUMERIC, 'C')
 
+import sys
+import os
 import logging
 import subprocess
 import threading
@@ -172,6 +174,24 @@ class MpvWidget(Gtk.GLArea):
         initial_sub_pos = settings.sub_pos
         initial_sub_scale = settings.sub_scale
 
+        def _on_mpv_log(level, component, message):
+            msg = message.rstrip()
+            if not msg:
+                return
+            mpv_log = logging.getLogger(f"mpv.{component}")
+            lvl = level.lower()
+            if lvl in ('fatal', 'error'):
+                mpv_log.error("%s", msg)
+            elif lvl == 'warn':
+                mpv_log.warning("%s", msg)
+            elif lvl == 'info':
+                mpv_log.info("%s", msg)
+            else:
+                mpv_log.debug("%s", msg)
+
+        is_debug = ('--debug' in sys.argv or '--verbose' in sys.argv or os.environ.get('SHOWBERRY_DEBUG'))
+        mpv_loglevel = 'v' if is_debug else 'warn'
+
         self._mpv = MPV(
             vo='libmpv',
             keep_open='yes',
@@ -191,6 +211,8 @@ class MpvWidget(Gtk.GLArea):
             sub_pos=initial_sub_pos,
             sub_scale=initial_sub_scale,
             sub_margin_y=36,
+            log_handler=_on_mpv_log,
+            loglevel=mpv_loglevel,
         )
 
         @self._mpv.property_observer('paused-for-cache')
@@ -1910,7 +1932,7 @@ class PlayerPage(Adw.NavigationPage):
         self._switch_stream_btn.connect('clicked', self._on_open_stream_chooser)
         self._top_bar.append(self._switch_stream_btn)
 
-        self._stream_info_btn = Gtk.Button.new_from_icon_name('info-symbolic')
+        self._stream_info_btn = Gtk.Button.new_from_icon_name('dialog-information-symbolic')
         self._stream_info_btn.add_css_class('circular')
         self._stream_info_btn.add_css_class('flat')
         self._stream_info_btn.set_tooltip_text("Stream & buffer details")

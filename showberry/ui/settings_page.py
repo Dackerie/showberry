@@ -213,6 +213,14 @@ class SettingsPage(Gtk.Box):
         help_row.connect('activated', self._on_help_clicked)
         group.add(help_row)
 
+        # Diagnostic Logs row
+        logs_row = Adw.ActionRow()
+        logs_row.set_title('Diagnostic Logs')
+        logs_row.set_subtitle('Open the folder containing application logs for troubleshooting')
+        logs_row.set_activatable(True)
+        logs_row.connect('activated', self._on_open_logs_clicked)
+        group.add(logs_row)
+
         self._prefs_page.add(group)
 
     def _get_theme_index(self):
@@ -257,5 +265,11 @@ class SettingsPage(Gtk.Box):
             style_manager.set_color_scheme(Adw.ColorScheme.DEFAULT)
 
     def _on_help_clicked(self, row):
-        import subprocess
-        subprocess.Popen(['xdg-open', 'https://www.themoviedb.org/settings/api'])
+        try:
+            Gio.AppInfo.launch_default_for_uri('https://www.themoviedb.org/settings/api', None)
+        except Exception:
+            pass
+
+    def _on_open_logs_clicked(self, row):
+        from showberry.services.logger import open_log_folder
+        open_log_folder()

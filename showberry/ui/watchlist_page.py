@@ -29,8 +29,8 @@ class WatchlistPage(Gtk.Box):
         scroll.set_vexpand(True)
 
         self._clamp = Adw.Clamp()
-        self._clamp.set_maximum_size(1400)
-        self._clamp.set_tightening_threshold(800)
+        self._clamp.set_maximum_size(3840)
+        self._clamp.set_tightening_threshold(3840)
 
         self._content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=16)
         self._content_box.set_margin_top(16)
@@ -40,7 +40,7 @@ class WatchlistPage(Gtk.Box):
 
         # Empty state status page
         self._empty_status = Adw.StatusPage()
-        self._empty_status.set_icon_name('emblem-favorite-symbolic')
+        self._empty_status.set_icon_name('starred-symbolic')
         self._empty_status.set_title("Your Watchlist is Empty")
         self._empty_status.set_description("Bookmark movies and TV series to save them for later.")
         self._empty_status.set_vexpand(True)
@@ -50,7 +50,8 @@ class WatchlistPage(Gtk.Box):
         # FlowBox for responsive movie cards grid
         self._flowbox = Gtk.FlowBox()
         self._flowbox.set_valign(Gtk.Align.START)
-        self._flowbox.set_max_children_per_line(8)
+        self._flowbox.set_hexpand(True)
+        self._flowbox.set_max_children_per_line(30)
         self._flowbox.set_min_children_per_line(2)
         self._flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self._flowbox.set_column_spacing(16)

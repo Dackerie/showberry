@@ -59,11 +59,16 @@ elif sys.platform == 'darwin':
     import ctypes
     import ctypes.util
 
-    # On macOS, search Homebrew and bundle paths for libmpv.dylib
+    # On macOS, search Homebrew and bundle paths for libmpv.dylib and dependencies
     mac_paths = ['/opt/homebrew/lib', '/usr/local/lib']
     if getattr(sys, 'frozen', False):
         exe_parent = os.path.dirname(sys.executable)
-        mac_paths.insert(0, exe_parent)
+        bundle_dir = getattr(sys, '_MEIPASS', exe_parent)
+        internal_dir = os.path.join(exe_parent, '_internal')
+        bundle_internal = os.path.join(bundle_dir, '_internal')
+        for p in (internal_dir, bundle_internal, exe_parent, bundle_dir):
+            if p and os.path.isdir(p) and p not in mac_paths:
+                mac_paths.insert(0, os.path.abspath(p))
         mac_paths.insert(0, os.path.abspath(os.path.join(exe_parent, '..')))
         mac_paths.insert(0, os.path.abspath(os.path.join(exe_parent, '..', 'Resources')))
         mac_paths.insert(0, os.path.abspath(os.path.join(exe_parent, '..', 'Resources', 'showberry')))
@@ -84,8 +89,12 @@ elif sys.platform == 'darwin':
                     continue
                 for candidate in ('libmpv.2.dylib', 'libmpv.dylib', 'mpv.dylib'):
                     cand_path = os.path.join(d, candidate)
-                    if os.path.isfile(cand_path):
-                        return os.path.abspath(cand_path)
+                    try:
+                        real_p = os.path.realpath(cand_path)
+                        if os.path.isfile(real_p) and os.path.exists(real_p):
+                            return os.path.abspath(real_p)
+                    except Exception:
+                        pass
         return _orig_find_library(name)
     ctypes.util.find_library = _mac_find_library
 
@@ -97,10 +106,12 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
 from gi.repository import Gio, GLib
+from showberry.services.logger import setup_logging
 from showberry.application import ShowberryApplication
 
 
 def main():
+    setup_logging()
     app = ShowberryApplication()
     return app.run(sys.argv)
 

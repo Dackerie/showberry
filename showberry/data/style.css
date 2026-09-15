@@ -391,7 +391,7 @@ flowboxchild:focus .movie-card {
     border: 1px solid alpha(#33d17a, 0.35);
     border-radius: 9999px;
     padding: 3px 10px;
-    margin-end: 6px;
+    margin-right: 6px;
 }
 
 /* Top OSC Provider Pill Button */

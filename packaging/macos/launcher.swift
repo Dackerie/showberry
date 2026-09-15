@@ -5,9 +5,12 @@ let resourcesDir = bundleURL.appendingPathComponent("Contents/Resources")
 FileManager.default.changeCurrentDirectoryPath(resourcesDir.path)
 
 let execPath = resourcesDir.appendingPathComponent("showberry/showberry").path
-let args: [UnsafeMutablePointer<CChar>?] = [
-    strdup("showberry"),
-    nil
+var args: [UnsafeMutablePointer<CChar>?] = [
+    strdup("showberry")
 ]
+for arg in CommandLine.arguments.dropFirst() {
+    args.append(strdup(arg))
+}
+args.append(nil)
 
 execv(execPath, args)

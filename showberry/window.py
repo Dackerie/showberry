@@ -81,7 +81,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self._library_page.connect('play-movie', self._on_play_movie)
         self._library_page.connect('focus-tabs', lambda p: self.focus_tabs())
         p_library = self._view_stack.add_titled(self._library_page, 'library', 'Library')
-        p_library.set_icon_name('emblem-favorite-symbolic')
+        p_library.set_icon_name('starred-symbolic')
         self._view_stack.connect(
             'notify::visible-child-name',
             lambda s, p: self._library_page.schedule_refresh() if s.get_visible_child_name() == 'library' and hasattr(self, '_library_page') else None
