@@ -53,12 +53,33 @@ rm -rf build/ dist/showberry
 pyinstaller packaging/macos/showberry.spec --noconfirm
 mv dist/showberry "${APP_DIR}/Contents/Resources/showberry"
 
-echo "==> Bundling libmpv into macOS App bundle..."
-for mpv_cand in /opt/homebrew/lib/libmpv*.dylib /usr/local/lib/libmpv*.dylib; do
-    if [ -f "$mpv_cand" ]; then
-        cp -a "$mpv_cand" "${APP_DIR}/Contents/Resources/showberry/" 2>/dev/null || true
+echo "==> Bundling libmpv and libtorrent into macOS App bundle..."
+mkdir -p "${APP_DIR}/Contents/Resources/showberry/_internal"
+for lib_pattern in "libmpv*.dylib" "libtorrent-rasterbar*.dylib"; do
+    for cand in /opt/homebrew/lib/${lib_pattern} /usr/local/lib/${lib_pattern}; do
+        if [ -f "$cand" ]; then
+            cp -L "$cand" "${APP_DIR}/Contents/Resources/showberry/" 2>/dev/null || true
+            cp -L "$cand" "${APP_DIR}/Contents/Resources/showberry/_internal/" 2>/dev/null || true
+        fi
+    done
+done
+
+# Ensure fallback symlinks exist at top-level pointing to _internal if needed
+cd "${APP_DIR}/Contents/Resources/showberry"
+if [ -f "_internal/libmpv.dylib" ] && [ ! -f "libmpv.dylib" ]; then
+    ln -sf "_internal/libmpv.dylib" "libmpv.dylib"
+fi
+if [ -f "_internal/libmpv.2.dylib" ] && [ ! -f "libmpv.2.dylib" ]; then
+    ln -sf "_internal/libmpv.2.dylib" "libmpv.2.dylib"
+elif [ -f "_internal/libmpv.dylib" ] && [ ! -f "libmpv.2.dylib" ]; then
+    ln -sf "_internal/libmpv.dylib" "libmpv.2.dylib"
+fi
+for lt_lib in _internal/libtorrent-rasterbar*.dylib; do
+    if [ -f "$lt_lib" ] && [ ! -f "libtorrent-rasterbar.dylib" ]; then
+        ln -sf "$lt_lib" "libtorrent-rasterbar.dylib"
     fi
 done
+cd "${REPO_ROOT}"
 
 echo "==> Bundling icons into macOS App bundle..."
 for icon_base in /opt/homebrew/share/icons /usr/local/share/icons; do

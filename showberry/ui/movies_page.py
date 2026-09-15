@@ -64,7 +64,7 @@ class MoviesPage(Gtk.Box):
         self._filter_popover.connect('filter-changed', self._on_filter_changed)
 
         self._filter_button = Gtk.MenuButton()
-        self._filter_button.set_icon_name('view-filter-symbolic')
+        self._filter_button.set_icon_name('view-sort-descending-symbolic')
         self._filter_button.set_tooltip_text("Filter & Sort")
         self._filter_button.set_valign(Gtk.Align.CENTER)
         self._filter_button.set_popover(self._filter_popover)
@@ -91,21 +91,19 @@ class MoviesPage(Gtk.Box):
         self._scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self._scroll.set_vexpand(True)
 
-        grid_clamp = Adw.Clamp()
-        grid_clamp.set_maximum_size(1400)
-        grid_clamp.set_tightening_threshold(800)
-
         self._flowbox = Gtk.FlowBox()
         self._flowbox.set_homogeneous(True)
         self._flowbox.set_column_spacing(14)
         self._flowbox.set_row_spacing(14)
         self._flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
         self._flowbox.set_halign(Gtk.Align.CENTER)
-        self._flowbox.set_margin_start(16)
-        self._flowbox.set_margin_end(16)
+        self._flowbox.set_hexpand(True)
+        self._flowbox.set_min_children_per_line(2)
+        self._flowbox.set_max_children_per_line(30)
+        self._flowbox.set_margin_start(24)
+        self._flowbox.set_margin_end(24)
         self._flowbox.set_margin_top(14)
         self._flowbox.set_margin_bottom(24)
-
 
         # ── Infinite-scroll footer spinner ─────────────────────────────────
         self._footer_spinner = Gtk.Spinner()
@@ -115,11 +113,11 @@ class MoviesPage(Gtk.Box):
         self._footer_spinner.set_visible(False)
 
         scroll_content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        scroll_content_box.set_hexpand(True)
         scroll_content_box.append(self._flowbox)
         scroll_content_box.append(self._footer_spinner)
 
-        grid_clamp.set_child(scroll_content_box)
-        self._scroll.set_child(grid_clamp)
+        self._scroll.set_child(scroll_content_box)
         self._content_overlay.set_child(self._scroll)
 
         # ── Overlay spinner (initial load) ─────────────────────────────────
@@ -190,9 +188,8 @@ class MoviesPage(Gtk.Box):
             scroll_w = self._scroll.get_width()
             if scroll_w <= 1:
                 scroll_w = 1200
-            clamped_w = min(1400, 800 + (scroll_w - 800) * 0.5) if scroll_w > 800 else scroll_w
-            width = max(100, clamped_w - 32)
-        return max(1, int((width + 14) // 224))
+            width = max(100, scroll_w - 48)
+        return max(1, int((width + 14) // 218))
 
     def _on_card_navigate(self, card, direction: str):
         parent = card.get_parent()
