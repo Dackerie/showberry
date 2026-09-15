@@ -153,6 +153,14 @@ class TestProviders(unittest.TestCase):
         self.assertEqual(p.name, 'Cinejoy')
         self.assertEqual(p.base_url, 'https://cinejoy.to')
 
+    def test_cinejoy_without_cryptography_graceful_fallback(self):
+        from unittest.mock import patch
+        from showberry.providers.cinejoy import CinejoyProvider
+        p = CinejoyProvider()
+        with patch('showberry.providers.cinejoy.HAS_CRYPTOGRAPHY', False):
+            self.assertIsNone(p.get_stream_url(550))
+            self.assertEqual(p.fetch_stream_choices(550), [])
+
     def test_movy_provider_properties(self):
         from showberry.providers.movy import MovyProvider
         p = MovyProvider()

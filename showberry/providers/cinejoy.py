@@ -6,11 +6,15 @@ import logging
 import urllib.request
 from typing import Optional, Dict, Any, List
 
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+try:
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    HAS_CRYPTOGRAPHY = True
+except ImportError:
+    HAS_CRYPTOGRAPHY = False
 
 from showberry.providers.base import BaseProvider, StreamResult
 
@@ -37,6 +41,9 @@ SERVERS = [
 
 def _execute_query(path: str, payload: Dict[str, Any], timeout: float = 6.0) -> Optional[Dict[str, Any]]:
     """Encrypt request using ECDH + AES-GCM and decrypt server response."""
+    if not HAS_CRYPTOGRAPHY:
+        logger.debug("cryptography package is not available; Cinejoy request skipped.")
+        return None
     try:
         server_pub = ec.EllipticCurvePublicKey.from_encoded_point(
             ec.SECP256R1(), bytes.fromhex(SERVER_PUB_HEX)
@@ -95,6 +102,8 @@ class CinejoyProvider(BaseProvider):
     base_url = 'https://cinejoy.to'
 
     def get_stream_url(self, tmdb_id: int, season: int = None, episode: int = None) -> Optional[StreamResult]:
+        if not HAS_CRYPTOGRAPHY:
+            return None
         for srv in SERVERS:
             srv_name = srv['name']
             is_4k = srv.get('4k', False)
@@ -135,6 +144,8 @@ class CinejoyProvider(BaseProvider):
 
     def fetch_stream_choices(self, tmdb_id: int, season: int = None, episode: int = None) -> List[Dict[str, Any]]:
         """Fetch stream choices across all available Cinejoy servers."""
+        if not HAS_CRYPTOGRAPHY:
+            return []
         choices = []
         is_tv = (season is not None and episode is not None)
 

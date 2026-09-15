@@ -14,6 +14,7 @@ depends=(
     'python-requests'
     'python-pillow'
     'python-pycryptodome'
+    'python-cryptography'
     'libtorrent-rasterbar'
 )
 optdepends=(

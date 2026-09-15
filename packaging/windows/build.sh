@@ -19,6 +19,7 @@ pacman -S --noconfirm --needed \
     mingw-w64-ucrt-x86_64-python-pillow \
     mingw-w64-ucrt-x86_64-python-gobject \
     mingw-w64-ucrt-x86_64-python-pip \
+    mingw-w64-ucrt-x86_64-python-cryptography \
     mingw-w64-ucrt-x86_64-pyinstaller \
     mingw-w64-ucrt-x86_64-mpv \
     mingw-w64-ucrt-x86_64-gcc \
@@ -37,6 +38,7 @@ pip install --break-system-packages \
     pillow \
     curl_cffi \
     pycryptodome \
+    cryptography \
     PyOpenGL \
     python-mpv
 
