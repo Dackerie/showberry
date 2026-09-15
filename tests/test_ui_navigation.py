@@ -242,9 +242,9 @@ class TestUINavigation(unittest.TestCase):
         providers = ProviderManager.get_providers()
         names = [p.name for p in providers]
         self.assertEqual(names[0], 'Vidy')
-        self.assertEqual(names[1], 'VidLink')
-        self.assertEqual(names[2], 'VixSrc')
-        self.assertEqual(names[3], 'VidFast')
+        self.assertEqual(names[1], 'Cinejoy')
+        self.assertEqual(names[2], 'Movy')
+        self.assertEqual(names[3], 'VidLink')
 
 
     def test_movie_page_overview_none_handling(self):
