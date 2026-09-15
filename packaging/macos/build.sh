@@ -16,7 +16,7 @@ cd "${REPO_ROOT}"
 if ! command -v pyinstaller &>/dev/null; then
     echo "==> [1/6] Installing Homebrew dependencies..."
     if command -v brew &>/dev/null; then
-        brew install gtk4 libadwaita python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
+        brew install gtk4 libadwaita adwaita-icon-theme python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
     fi
 
     echo "==> [2/6] Installing Python dependencies..."
@@ -57,6 +57,19 @@ echo "==> Bundling libmpv into macOS App bundle..."
 for mpv_cand in /opt/homebrew/lib/libmpv*.dylib /usr/local/lib/libmpv*.dylib; do
     if [ -f "$mpv_cand" ]; then
         cp -a "$mpv_cand" "${APP_DIR}/Contents/Resources/showberry/" 2>/dev/null || true
+    fi
+done
+
+echo "==> Bundling icons into macOS App bundle..."
+for icon_base in /opt/homebrew/share/icons /usr/local/share/icons; do
+    if [ -d "$icon_base/Adwaita" ]; then
+        mkdir -p "${APP_DIR}/Contents/Resources/share/icons"
+        cp -a "$icon_base/Adwaita" "${APP_DIR}/Contents/Resources/share/icons/" 2>/dev/null || true
+        cp -a "$icon_base/hicolor" "${APP_DIR}/Contents/Resources/share/icons/" 2>/dev/null || true
+        mkdir -p "${APP_DIR}/Contents/Resources/showberry/share/icons"
+        cp -a "$icon_base/Adwaita" "${APP_DIR}/Contents/Resources/showberry/share/icons/" 2>/dev/null || true
+        cp -a "$icon_base/hicolor" "${APP_DIR}/Contents/Resources/showberry/share/icons/" 2>/dev/null || true
+        break
     fi
 done
 

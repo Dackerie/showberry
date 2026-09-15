@@ -27,6 +27,7 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self.set_title('Showberry')
         self.set_default_size(1200, 720)
         self._last_tab_cycle_time = 0.0
+        self._last_nav_time = 0.0
         self._pending_tab_focus_id = None
 
         self._setup_ui()
@@ -199,6 +200,13 @@ class ShowberryWindow(Adw.ApplicationWindow):
 
     def _on_movie_selected(self, page, movie_data):
         """Push movie detail page onto navigation view."""
+        now = time.monotonic()
+        mid = movie_data.get('id') if isinstance(movie_data, dict) else None
+        last_mid = getattr(self, '_last_nav_item_id', None)
+        if mid is not None and mid == last_mid and (now - getattr(self, '_last_nav_time', 0.0)) < 0.35:
+            return
+        self._last_nav_time = now
+        self._last_nav_item_id = mid
         movie_page = MoviePage(movie=movie_data)
         movie_page.connect('play-movie', self._on_play_movie)
         movie_page.connect('movie-selected', self._on_movie_selected)
@@ -208,6 +216,13 @@ class ShowberryWindow(Adw.ApplicationWindow):
 
     def _on_person_selected(self, page, person_data):
         """Push person filmography page onto navigation view."""
+        now = time.monotonic()
+        pid = person_data.get('id') if isinstance(person_data, dict) else None
+        last_pid = getattr(self, '_last_nav_item_id', None)
+        if pid is not None and pid == last_pid and (now - getattr(self, '_last_nav_time', 0.0)) < 0.35:
+            return
+        self._last_nav_time = now
+        self._last_nav_item_id = pid
         person_page = PersonPage(person_data=person_data)
         person_page.connect('movie-selected', self._on_movie_selected)
         person_page.connect('play-movie', self._on_play_movie)

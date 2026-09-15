@@ -160,9 +160,7 @@ class ProviderManager:
 
 def get_all_providers():
     """Get all available providers ordered by reliability and priority."""
-    from showberry.providers.videasy import VidEasyProvider
     from showberry.providers.vidy import VidyProvider
-    from showberry.providers.vidking import VidKingProvider
     from showberry.providers.vidlink import VidLinkProvider
     from showberry.providers.vixsrc import VixSrcProvider
     from showberry.providers.vidfast import VidFastProvider
@@ -176,9 +174,7 @@ def get_all_providers():
     from showberry.providers.torrent import TorrentProvider
 
     return [
-        VidEasyProvider(),
         VidyProvider(),
-        VidKingProvider(),
         VidLinkProvider(),
         VixSrcProvider(),
         VidFastProvider(),

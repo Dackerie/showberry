@@ -14,6 +14,14 @@ datas = [
     (os.path.join(repo_root, 'data', 'icons'), 'data/icons'),
 ]
 
+for icon_base in ['/ucrt64/share/icons', 'C:/msys64/ucrt64/share/icons']:
+    if os.path.isdir(icon_base):
+        for theme in ['Adwaita', 'hicolor']:
+            theme_path = os.path.join(icon_base, theme)
+            if os.path.isdir(theme_path):
+                datas.append((theme_path, f'share/icons/{theme}'))
+        break
+
 binaries = []
 # On MSYS2 UCRT64, bundle libmpv-2.dll and potential companion dlls if available
 for candidate in [
