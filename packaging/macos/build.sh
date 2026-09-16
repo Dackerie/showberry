@@ -16,7 +16,7 @@ cd "${REPO_ROOT}"
 if ! command -v pyinstaller &>/dev/null; then
     echo "==> [1/6] Installing Homebrew dependencies..."
     if command -v brew &>/dev/null; then
-        brew install gtk4 libadwaita adwaita-icon-theme python3 pygobject3 mpv create-dmg libtorrent-rasterbar || true
+        brew install gtk4 libadwaita adwaita-icon-theme python3 pygobject3 mpv create-dmg libtorrent-rasterbar dylibbundler || true
     fi
 
     echo "==> [2/6] Installing Python dependencies..."
@@ -53,6 +53,7 @@ echo "==> [5/6] Building PyInstaller bundle..."
 rm -rf build/ dist/showberry
 pyinstaller packaging/macos/showberry.spec --noconfirm
 mv dist/showberry "${APP_DIR}/Contents/Resources/showberry"
+chmod -R u+w "${APP_DIR}"
 
 echo "==> Bundling libmpv and libtorrent into macOS App bundle..."
 mkdir -p "${APP_DIR}/Contents/Resources/showberry/_internal"
@@ -64,6 +65,43 @@ for lib_pattern in "libmpv*.dylib" "libtorrent-rasterbar*.dylib"; do
         fi
     done
 done
+
+echo "==> Running dylibbundler to rewrite Mach-O load paths and bundle all transitive dependencies..."
+DYLIBBUNDLER_ARGS=(
+    -b
+    -d "${APP_DIR}/Contents/Resources/showberry/_internal"
+    -p "@loader_path/_internal"
+    -of
+)
+
+for d in /opt/homebrew/lib /usr/local/lib; do
+    if [ -d "$d" ]; then
+        DYLIBBUNDLER_ARGS+=(-s "$d")
+    fi
+done
+
+for f in "${APP_DIR}/Contents/Resources/showberry"/libmpv*.dylib "${APP_DIR}/Contents/Resources/showberry"/libtorrent-rasterbar*.dylib; do
+    if [ -f "$f" ]; then
+        DYLIBBUNDLER_ARGS+=(-x "$f")
+    fi
+done
+
+while IFS= read -r so_file; do
+    if [ -f "$so_file" ]; then
+        DYLIBBUNDLER_ARGS+=(-x "$so_file")
+    fi
+done < <(find "${APP_DIR}/Contents/Resources/showberry/_internal" -name "*libtorrent*.so" 2>/dev/null)
+
+if command -v dylibbundler &>/dev/null; then
+    dylibbundler "${DYLIBBUNDLER_ARGS[@]}" || {
+        echo "==> Warning: dylibbundler encountered warnings or non-zero exit; continuing..."
+    }
+else
+    echo "==> Warning: dylibbundler not found in PATH, skipping automatic Mach-O bundling"
+fi
+
+# Link _internal to . inside _internal so @loader_path/_internal/ resolves cleanly for child dylibs
+ln -sf . "${APP_DIR}/Contents/Resources/showberry/_internal/_internal" 2>/dev/null || true
 
 # Ensure fallback symlinks exist at top-level pointing to _internal if needed
 cd "${APP_DIR}/Contents/Resources/showberry"
@@ -94,6 +132,14 @@ for icon_base in /opt/homebrew/share/icons /usr/local/share/icons; do
         break
     fi
 done
+
+echo "==> Ensuring bundled symbolic icons are in macOS App bundle..."
+mkdir -p "${APP_DIR}/Contents/Resources/share/icons" \
+         "${APP_DIR}/Contents/Resources/showberry/share/icons" \
+         "${APP_DIR}/Contents/Resources/showberry/data/icons"
+cp -a "${REPO_ROOT}/data/icons/"* "${APP_DIR}/Contents/Resources/share/icons/" 2>/dev/null || true
+cp -a "${REPO_ROOT}/data/icons/"* "${APP_DIR}/Contents/Resources/showberry/share/icons/" 2>/dev/null || true
+cp -a "${REPO_ROOT}/data/icons/"* "${APP_DIR}/Contents/Resources/showberry/data/icons/" 2>/dev/null || true
 
 echo "==> Ad-hoc signing application bundle..."
 find "${APP_DIR}" -type f | while read -r file; do

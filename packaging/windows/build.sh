@@ -73,4 +73,14 @@ if [ -d "dist/showberry/_internal" ]; then
     cp "${SCRIPT_DIR}/icon.ico" dist/showberry/_internal/
 fi
 
+echo "==> Ensuring bundled symbolic icons are in Windows distribution..."
+mkdir -p dist/showberry/share/icons dist/showberry/data/icons
+cp -a data/icons/* dist/showberry/share/icons/ 2>/dev/null || true
+cp -a data/icons/* dist/showberry/data/icons/ 2>/dev/null || true
+if [ -d "dist/showberry/_internal" ]; then
+    mkdir -p dist/showberry/_internal/share/icons dist/showberry/_internal/data/icons
+    cp -a data/icons/* dist/showberry/_internal/share/icons/ 2>/dev/null || true
+    cp -a data/icons/* dist/showberry/_internal/data/icons/ 2>/dev/null || true
+fi
+
 echo "==> Showberry Windows binary bundle created at: ${REPO_ROOT}/dist/showberry"
