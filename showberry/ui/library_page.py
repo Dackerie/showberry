@@ -144,7 +144,7 @@ class LibraryPage(Gtk.Box):
 
         # ── 3. Empty Status Page ───────────────────────────────────────────
         self._empty_status = Adw.StatusPage()
-        self._empty_status.set_icon_name('starred-symbolic')
+        self._empty_status.set_icon_name('emblem-favorite-symbolic')
         self._empty_status.set_title('Your Library is Empty')
         self._empty_status.set_description('Movies and TV series you watch or bookmark will appear here.')
         self._empty_status.set_vexpand(True)

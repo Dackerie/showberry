@@ -64,7 +64,7 @@ class MoviesPage(Gtk.Box):
         self._filter_popover.connect('filter-changed', self._on_filter_changed)
 
         self._filter_button = Gtk.MenuButton()
-        self._filter_button.set_icon_name('view-sort-descending-symbolic')
+        self._filter_button.set_icon_name('view-filter-symbolic')
         self._filter_button.set_tooltip_text("Filter & Sort")
         self._filter_button.set_valign(Gtk.Align.CENTER)
         self._filter_button.set_popover(self._filter_popover)

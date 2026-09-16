@@ -72,12 +72,12 @@
       <description>
         <p>macOS and Windows fixes, multiplatform stability, and new providers release:</p>
         <ul>
+          <li>Integrated dylibbundler on macOS to bundle libmpv, libtorrent, and all transitive dynamic libraries (FFmpeg, libplacebo, libass) directly into the standalone app</li>
+          <li>Restored classic symbolic icons (emblem-favorite-symbolic, view-filter-symbolic, info-symbolic) and packaged vector assets directly into Windows and macOS installers</li>
           <li>Fixed Windows and macOS startup crash by bundling cryptography package</li>
           <li>Added defensive provider import safeguards so missing optional packages never block application boot</li>
-          <li>Fixed macOS libmpv and libtorrent loading by dereferencing symlinks and searching _internal runtime paths</li>
           <li>Added Cinejoy (4K multi-server HLS) and Movy (14-city ultra-fast CDN) streaming providers</li>
           <li>Made movies and series grids fully responsive across wide screens and high-resolution displays</li>
-          <li>Resolved missing filter, info, and library tab symbolic icons on macOS and Windows packages</li>
           <li>Fixed GTK theme parser warning for margin-end in stylesheet</li>
           <li>Added persistent rotating file logging and diagnostic folder opener in Preferences</li>
           <li>Forwarded command-line arguments through native macOS Swift launcher</li>

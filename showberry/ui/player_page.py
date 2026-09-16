@@ -1932,7 +1932,7 @@ class PlayerPage(Adw.NavigationPage):
         self._switch_stream_btn.connect('clicked', self._on_open_stream_chooser)
         self._top_bar.append(self._switch_stream_btn)
 
-        self._stream_info_btn = Gtk.Button.new_from_icon_name('dialog-information-symbolic')
+        self._stream_info_btn = Gtk.Button.new_from_icon_name('info-symbolic')
         self._stream_info_btn.add_css_class('circular')
         self._stream_info_btn.add_css_class('flat')
         self._stream_info_btn.set_tooltip_text("Stream & buffer details")

@@ -81,11 +81,12 @@ class ShowberryApplication(Adw.Application):
             ]
             if getattr(sys, 'frozen', False):
                 bundle_dir = getattr(sys, '_MEIPASS', Path(sys.executable).parent)
-                exe_dir = Path(sys.executable).parent
                 search_paths.insert(0, Path(bundle_dir) / 'share' / 'icons')
                 search_paths.insert(0, Path(bundle_dir) / 'data' / 'icons')
+                search_paths.insert(0, Path(bundle_dir) / '_internal' / 'share' / 'icons')
                 search_paths.insert(0, exe_dir / 'share' / 'icons')
                 search_paths.insert(0, exe_dir / 'data' / 'icons')
+                search_paths.insert(0, exe_dir / '_internal' / 'share' / 'icons')
                 search_paths.insert(0, exe_dir.parent / 'Resources' / 'share' / 'icons')
                 search_paths.insert(0, exe_dir.parent / 'Resources' / 'showberry' / 'share' / 'icons')
 

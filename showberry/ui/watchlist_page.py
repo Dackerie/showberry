@@ -40,7 +40,7 @@ class WatchlistPage(Gtk.Box):
 
         # Empty state status page
         self._empty_status = Adw.StatusPage()
-        self._empty_status.set_icon_name('starred-symbolic')
+        self._empty_status.set_icon_name('emblem-favorite-symbolic')
         self._empty_status.set_title("Your Watchlist is Empty")
         self._empty_status.set_description("Bookmark movies and TV series to save them for later.")
         self._empty_status.set_vexpand(True)
