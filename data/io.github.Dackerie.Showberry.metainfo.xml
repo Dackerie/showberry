@@ -68,6 +68,18 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.3.1" date="2026-09-24">
+      <description>
+        <p>Packaging and build-system compatibility update:</p>
+        <ul>
+          <li>Switched build system to setuptools to restore compatibility with Flatpak runtime and offline packaging environments</li>
+          <li>Bundled compiled GSettings schemas and stylesheets for portable Windows distribution</li>
+          <li>Integrated persistent JSON configuration fallback for environments without compiled GSettings schemas</li>
+          <li>Added native macOS Cocoa window foreground activation and Dock registration</li>
+          <li>Pre-loaded core GLib, GObject, GTK4, and Libadwaita dynamic libraries into global namespace on macOS</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-09-15">
       <description>
         <p>macOS and Windows fixes, multiplatform stability, and new providers release:</p>
