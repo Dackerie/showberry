@@ -1,6 +1,6 @@
 [project]
 name = "showberry"
-version = "0.3.3"
+version = "0.3.3.1"
 description = "A modern movie and TV series streaming application for GNOME"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,11 +19,15 @@ dependencies = [
 showberry = "showberry.main:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["showberry"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["showberry*"]
+
+[tool.setuptools.package-data]
+showberry = ["data/*"]
 
 
 [tool.pytest.ini_options]

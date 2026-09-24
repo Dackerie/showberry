@@ -43,7 +43,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install build hatchling pytest requests pillow curl_cffi pycryptodome cryptography PyOpenGL python-mpv
+          pip install build setuptools pytest requests pillow curl_cffi pycryptodome cryptography PyOpenGL python-mpv
 
       - name: Validate GSettings Schema
         run: |

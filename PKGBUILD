@@ -1,6 +1,6 @@
 # Maintainer: Dackerie <dackerie@showberry.dev>
 pkgname=showberry
-pkgver=0.3.3
+pkgver=0.3.3.1
 pkgrel=1
 pkgdesc="An elegant, modern movie and TV series streaming application for GNOME"
 arch=('any')
@@ -25,7 +25,7 @@ optdepends=(
 makedepends=(
     'python-build'
     'python-installer'
-    'python-hatchling'
+    'python-setuptools'
     'python-wheel'
 )
 
