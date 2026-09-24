@@ -80,10 +80,11 @@ class ShowberryApplication(Adw.Application):
                 Path('/ucrt64/share/icons'),
             ]
             if getattr(sys, 'frozen', False):
-                bundle_dir = getattr(sys, '_MEIPASS', Path(sys.executable).parent)
-                search_paths.insert(0, Path(bundle_dir) / 'share' / 'icons')
-                search_paths.insert(0, Path(bundle_dir) / 'data' / 'icons')
-                search_paths.insert(0, Path(bundle_dir) / '_internal' / 'share' / 'icons')
+                exe_dir = Path(sys.executable).parent
+                bundle_dir = Path(getattr(sys, '_MEIPASS', exe_dir))
+                search_paths.insert(0, bundle_dir / 'share' / 'icons')
+                search_paths.insert(0, bundle_dir / 'data' / 'icons')
+                search_paths.insert(0, bundle_dir / '_internal' / 'share' / 'icons')
                 search_paths.insert(0, exe_dir / 'share' / 'icons')
                 search_paths.insert(0, exe_dir / 'data' / 'icons')
                 search_paths.insert(0, exe_dir / '_internal' / 'share' / 'icons')
@@ -165,6 +166,30 @@ class ShowberryApplication(Adw.Application):
                 win.maximize()
 
         win.present()
+        import sys
+        if sys.platform == 'darwin':
+            try:
+                import ctypes
+                import ctypes.util
+                objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
+                objc.objc_getClass.restype = ctypes.c_void_p
+                objc.objc_getClass.argtypes = [ctypes.c_char_p]
+                objc.sel_registerName.restype = ctypes.c_void_p
+                objc.sel_registerName.argtypes = [ctypes.c_char_p]
+                objc_msg_send = objc.objc_msgSend
+                objc_msg_send.restype = ctypes.c_void_p
+                objc_msg_send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+                nsapp = objc_msg_send(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+
+                objc_msg_send_long = objc.objc_msgSend
+                objc_msg_send_long.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+                objc_msg_send_long(nsapp, objc.sel_registerName(b"setActivationPolicy:"), 0)
+
+                objc_msg_send_bool = objc.objc_msgSend
+                objc_msg_send_bool.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+                objc_msg_send_bool(nsapp, objc.sel_registerName(b"activateIgnoringOtherApps:"), True)
+            except Exception:
+                pass
 
     def get_settings(self):
         return self.settings

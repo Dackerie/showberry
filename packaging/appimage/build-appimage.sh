@@ -15,24 +15,30 @@ mkdir -p "${APP_DIR}/usr/bin" \
 
 echo "==> Installing Python dependencies into AppDir..."
 python3 -m pip install --break-system-packages --target "${APP_DIR}/usr/lib/python3/dist-packages" \
-    requests pillow curl_cffi pycryptodome PyOpenGL python-mpv
+    requests pillow curl_cffi pycryptodome cryptography PyOpenGL python-mpv
 
 echo "==> Installing Showberry package into AppDir..."
 python3 -m pip install --break-system-packages --target "${APP_DIR}/usr/lib/python3/dist-packages" --no-deps .
 
-echo "==> Bundling PyGObject (gi)..."
-GI_DIR="$(python3 -c 'import gi, os; print(os.path.dirname(gi.__file__))' 2>/dev/null || true)"
-if [ -n "$GI_DIR" ] && [ -d "$GI_DIR" ]; then
-    echo "Found gi at ${GI_DIR}, copying into AppDir..."
-    cp -r "$GI_DIR" "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
-fi
+echo "==> Bundling PyGObject (gi) and Cairo bindings..."
+for d in /usr/lib/python3/dist-packages /usr/lib/python3*/dist-packages /usr/local/lib/python3*/dist-packages; do
+    if [ -d "$d/gi" ]; then
+        cp -r "$d/gi" "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
+        cp -a "$d"/_gi*.so "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
+        cp -r "$d"/cairo "${APP_DIR}/usr/lib/python3/dist-packages/" 2>/dev/null || true
+        break
+    fi
+done
 
-echo "==> Installing desktop, icons, and metadata..."
+echo "==> Installing desktop, icons, styles, and metadata..."
 cp data/io.github.Dackerie.Showberry.desktop "${APP_DIR}/usr/share/applications/"
 cp data/io.github.Dackerie.Showberry.desktop "${APP_DIR}/"
 cp data/io.github.Dackerie.Showberry.metainfo.xml "${APP_DIR}/usr/share/metainfo/"
 cp data/io.github.Dackerie.Showberry.gschema.xml "${APP_DIR}/usr/share/glib-2.0/schemas/"
 glib-compile-schemas "${APP_DIR}/usr/share/glib-2.0/schemas/"
+
+mkdir -p "${APP_DIR}/usr/share/showberry"
+cp data/style.css "${APP_DIR}/usr/share/showberry/style.css"
 
 cp -r data/icons/* "${APP_DIR}/usr/share/icons/"
 cp data/icons/hicolor/512x512/apps/io.github.Dackerie.Showberry.png "${APP_DIR}/io.github.Dackerie.Showberry.png"
@@ -60,6 +66,7 @@ export PYTHONPATH="${HERE}/usr/lib/python3/dist-packages:${HERE}/usr/lib/python3
 export GI_TYPELIB_PATH="${HERE}/usr/lib/girepository-1.0:${HERE}/usr/lib/x86_64-linux-gnu/girepository-1.0:${GI_TYPELIB_PATH:-}"
 export GSETTINGS_SCHEMA_DIR="${HERE}/usr/share/glib-2.0/schemas:${GSETTINGS_SCHEMA_DIR:-}"
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-}"
+export GSK_RENDERER="${GSK_RENDERER:-gl}"
 
 # Check for Python 3
 if ! command -v python3 &>/dev/null; then

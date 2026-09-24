@@ -11,6 +11,8 @@ depends=(
     'libadwaita'
     'python-gobject'
     'mpv'
+    'python-mpv'
+    'python-opengl'
     'python-requests'
     'python-pillow'
     'python-pycryptodome'
@@ -19,13 +21,11 @@ depends=(
 )
 optdepends=(
     'python-curl-cffi: Enhanced TLS anti-bot evasion for streaming providers'
-    'python-opengl: Fast OpenGL display widget'
-    'python-mpv: Direct libmpv Python API bindings'
 )
 makedepends=(
     'python-build'
     'python-installer'
-    'python-setuptools'
+    'python-hatchling'
     'python-wheel'
 )
 
