@@ -1,14 +1,17 @@
-"""Settings service wrapper for GSettings."""
+"""Settings service wrapper for GSettings with persistent fallback."""
 
-import gi
-gi.require_version('Gtk', '4.0')
-
+import json
+import logging
 from pathlib import Path
+from typing import Any
+
 from gi.repository import Gio, GLib
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsService:
-    """Wrapper around GSettings for app preferences."""
+    """Wrapper around GSettings for app preferences with JSON file fallback."""
     _instance = None
 
     @classmethod
@@ -36,20 +39,49 @@ class SettingsService:
 
             for s_dir in candidate_schema_dirs:
                 if (s_dir / 'gschemas.compiled').exists():
-                    schema_source = Gio.SettingsSchemaSource.new_from_directory(
-                        str(s_dir),
-                        schema_source,
-                        False
-                    )
-                    schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
-                    if schema:
-                        break
+                    try:
+                        schema_source = Gio.SettingsSchemaSource.new_from_directory(
+                            str(s_dir),
+                            schema_source,
+                            False
+                        )
+                        schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
+                        if schema:
+                            break
+                    except Exception as e:
+                        logger.debug("Failed checking schema dir %s: %s", s_dir, e)
 
         if schema:
-            self._settings = Gio.Settings.new_full(schema, None, None)
+            try:
+                self._settings = Gio.Settings.new_full(schema, None, None)
+            except Exception as e:
+                logger.warning("Failed initializing Gio.Settings with schema: %s", e)
+                self._settings = None
         else:
             self._settings = None
-        self._fallback_store = {}
+
+        config_dir = Path(GLib.get_user_config_dir()) / 'showberry'
+        self._config_file = config_dir / 'settings.json'
+        self._fallback_store = self._load_fallback_store()
+
+    def _load_fallback_store(self) -> dict:
+        if self._config_file.is_file():
+            try:
+                with open(self._config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.debug("Could not read fallback settings JSON: %s", e)
+        return {}
+
+    def _set_fallback(self, key: str, value: Any):
+        self._fallback_store[key] = value
+        try:
+            self._config_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._config_file, 'w', encoding='utf-8') as f:
+                json.dump(self._fallback_store, f, indent=2)
+        except Exception as e:
+            logger.debug("Could not write fallback settings JSON: %s", e)
+
 
     @property
     def tmdb_api_key(self):
@@ -62,7 +94,7 @@ class SettingsService:
         if self._settings:
             self._settings.set_string('tmdb-api-key', value)
         else:
-            self._fallback_store['tmdb-api-key'] = value
+            self._set_fallback('tmdb-api-key', value)
 
     @property
     def default_provider(self):
@@ -75,7 +107,7 @@ class SettingsService:
         if self._settings:
             self._settings.set_string('default-provider', value)
         else:
-            self._fallback_store['default-provider'] = value
+            self._set_fallback('default-provider', value)
 
     @property
     def theme_variant(self):
@@ -88,7 +120,7 @@ class SettingsService:
         if self._settings:
             self._settings.set_string('theme-variant', value)
         else:
-            self._fallback_store['theme-variant'] = value
+            self._set_fallback('theme-variant', value)
 
     @property
     def preferred_torrent_quality(self) -> str:
@@ -101,7 +133,7 @@ class SettingsService:
         if self._settings:
             self._settings.set_string('preferred-torrent-quality', value)
         else:
-            self._fallback_store['preferred-torrent-quality'] = value
+            self._set_fallback('preferred-torrent-quality', value)
 
     @property
     def max_torrent_size_gb(self) -> int:
@@ -114,7 +146,7 @@ class SettingsService:
         if self._settings:
             self._settings.set_int('max-torrent-size-gb', value)
         else:
-            self._fallback_store['max-torrent-size-gb'] = value
+            self._set_fallback('max-torrent-size-gb', value)
 
     @property
     def torrent_cache_size_gb(self) -> int:
@@ -127,7 +159,7 @@ class SettingsService:
         if self._settings:
             self._settings.set_int('torrent-cache-size-gb', value)
         else:
-            self._fallback_store['torrent-cache-size-gb'] = value
+            self._set_fallback('torrent-cache-size-gb', value)
 
     def _has_schema_key(self, key: str) -> bool:
         if not self._settings:
@@ -149,7 +181,7 @@ class SettingsService:
         if self._has_schema_key('sub-pos'):
             self._settings.set_int('sub-pos', value)
         else:
-            self._fallback_store['sub-pos'] = value
+            self._set_fallback('sub-pos', value)
 
     @property
     def sub_scale(self) -> float:
@@ -162,7 +194,7 @@ class SettingsService:
         if self._has_schema_key('sub-scale'):
             self._settings.set_double('sub-scale', value)
         else:
-            self._fallback_store['sub-scale'] = value
+            self._set_fallback('sub-scale', value)
 
     @property
     def auto_skip_enabled(self) -> bool:
@@ -175,7 +207,7 @@ class SettingsService:
         if self._has_schema_key('auto-skip-enabled'):
             self._settings.set_boolean('auto-skip-enabled', value)
         else:
-            self._fallback_store['auto-skip-enabled'] = value
+            self._set_fallback('auto-skip-enabled', value)
 
     @property
     def auto_skip_countdown(self) -> int:
@@ -188,7 +220,7 @@ class SettingsService:
         if self._has_schema_key('auto-skip-countdown'):
             self._settings.set_int('auto-skip-countdown', value)
         else:
-            self._fallback_store['auto-skip-countdown'] = value
+            self._set_fallback('auto-skip-countdown', value)
 
     def get_settings(self):
         """Get the underlying GSettings object."""

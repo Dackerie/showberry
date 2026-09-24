@@ -98,23 +98,139 @@ elif sys.platform == 'darwin':
         return _orig_find_library(name)
     ctypes.util.find_library = _mac_find_library
 
+    # Pre-load core GLib / GObject / GTK4 / Libadwaita libraries into global namespace
+    # so girepository dlopen calls succeed even under macOS SIP / restricted dyld search
+    for lib_name in [
+        'libglib-2.0.0.dylib',
+        'libglib-2.0.dylib',
+        'libgobject-2.0.0.dylib',
+        'libgobject-2.0.dylib',
+        'libgmodule-2.0.0.dylib',
+        'libgio-2.0.0.dylib',
+        'libgio-2.0.dylib',
+        'libgirepository-1.0.1.dylib',
+        'libgirepository-2.0.0.dylib',
+        'libgtk-4.1.dylib',
+        'libgtk-4.dylib',
+        'libadwaita-1.0.dylib',
+        'libadwaita-1.dylib',
+    ]:
+        for d in mac_paths:
+            cand = os.path.join(d, lib_name)
+            if os.path.exists(cand):
+                try:
+                    ctypes.CDLL(cand, mode=ctypes.RTLD_GLOBAL)
+                    break
+                except Exception:
+                    pass
+
 # GTK stomps over locale settings needed by libmpv
 locale.setlocale(locale.LC_NUMERIC, 'C')
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
 
-from gi.repository import Gio, GLib
-from showberry.services.logger import setup_logging
-from showberry.application import ShowberryApplication
+def _handle_fatal_exception(exc_type, exc_val, exc_tb):
+    """Global crash handler writing persistent crash report and alerting user."""
+    import time
+    import traceback
+    err_text = "".join(traceback.format_exception(exc_type, exc_val, exc_tb))
+    sys.stderr.write(f"\nShowberry Fatal Crash:\n{err_text}\n")
+
+    crash_log = None
+    try:
+        from showberry.services.logger import get_log_dir
+        log_dir = get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        crash_log = log_dir / 'showberry_crash.log'
+        with open(crash_log, 'a', encoding='utf-8') as f:
+            f.write(f"\n--- Crash at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+            f.write(err_text)
+    except Exception:
+        pass
+
+    msg = f"Showberry encountered an unexpected fatal error and had to close.\n\nError: {exc_val}"
+    if crash_log:
+        msg += f"\n\nA crash log was saved to:\n{crash_log}"
+
+    try:
+        if sys.platform == 'win32':
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(0, msg, "Showberry Error", 0x10)
+        elif sys.platform == 'darwin':
+            import subprocess
+            escaped = msg.replace('\\', '\\\\').replace('"', '\\"')
+            subprocess.run([
+                'osascript', '-e',
+                f'display alert "Showberry Error" message "{escaped}" as critical buttons {{"OK"}} default button "OK"'
+            ], timeout=5)
+        elif sys.platform.startswith('linux'):
+            import subprocess
+            for tool in ('zenity', 'kdialog'):
+                if subprocess.run(['which', tool], capture_output=True).returncode == 0:
+                    if tool == 'zenity':
+                        subprocess.run(['zenity', '--error', '--title=Showberry Error', f'--text={msg}'], timeout=5)
+                    else:
+                        subprocess.run(['kdialog', '--error', msg, '--title', 'Showberry Error'], timeout=5)
+                    break
+    except Exception:
+        pass
+
+    sys.__excepthook__(exc_type, exc_val, exc_tb)
+
+
+sys.excepthook = _handle_fatal_exception
+
+
+def _activate_macos_app():
+    """Ensure macOS registers the process as a foreground GUI app with Dock icon and focus."""
+    if sys.platform != 'darwin':
+        return
+    try:
+        import ctypes
+        import ctypes.util
+        objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library('objc'))
+        objc.objc_getClass.restype = ctypes.c_void_p
+        objc.objc_getClass.argtypes = [ctypes.c_char_p]
+        objc.sel_registerName.restype = ctypes.c_void_p
+        objc.sel_registerName.argtypes = [ctypes.c_char_p]
+
+        nsapp_class = objc.objc_getClass(b"NSApplication")
+        shared_app_sel = objc.sel_registerName(b"sharedApplication")
+        objc_msg_send = objc.objc_msgSend
+        objc_msg_send.restype = ctypes.c_void_p
+        objc_msg_send.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        app_inst = objc_msg_send(nsapp_class, shared_app_sel)
+
+        set_policy_sel = objc.sel_registerName(b"setActivationPolicy:")
+        objc_msg_send_long = objc.objc_msgSend
+        objc_msg_send_long.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        objc_msg_send_long(app_inst, set_policy_sel, 0)
+
+        activate_sel = objc.sel_registerName(b"activateIgnoringOtherApps:")
+        objc_msg_send_bool = objc.objc_msgSend
+        objc_msg_send_bool.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_bool]
+        objc_msg_send_bool(app_inst, activate_sel, True)
+    except Exception:
+        pass
 
 
 def main():
-    setup_logging()
-    app = ShowberryApplication()
-    return app.run(sys.argv)
+    try:
+        _activate_macos_app()
+        import gi
+        gi.require_version('Gtk', '4.0')
+        gi.require_version('Adw', '1')
+
+        from showberry.services.logger import setup_logging
+        from showberry.application import ShowberryApplication
+
+        setup_logging()
+        app = ShowberryApplication()
+        return app.run(sys.argv)
+    except Exception as e:
+        _handle_fatal_exception(*sys.exc_info())
+        return 1
 
 
 if __name__ == '__main__':
     sys.exit(main())
+

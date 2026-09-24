@@ -6,9 +6,32 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
-from gi.repository import GLib
+import os
+import sys
+
+try:
+    from gi.repository import GLib
+except Exception:
+    GLib = None
 
 logger = logging.getLogger(__name__)
+
+
+def _get_user_data_dir() -> Path:
+    """Return the user data directory using GLib or platform fallbacks."""
+    if GLib is not None:
+        try:
+            return Path(GLib.get_user_data_dir())
+        except Exception:
+            pass
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support'
+    elif sys.platform == 'win32':
+        base = os.environ.get('APPDATA', str(Path.home() / 'AppData' / 'Roaming'))
+        return Path(base)
+    else:
+        base = os.environ.get('XDG_DATA_HOME', str(Path.home() / '.local' / 'share'))
+        return Path(base)
 
 
 class DatabaseService:
@@ -26,12 +49,13 @@ class DatabaseService:
             return
 
         if db_path is None:
-            data_dir = Path(GLib.get_user_data_dir()) / 'showberry'
+            user_data = _get_user_data_dir()
+            data_dir = user_data / 'showberry'
             data_dir.mkdir(parents=True, exist_ok=True)
             db_path = str(data_dir / 'showberry.db')
 
             # Migrate legacy database if it exists
-            legacy_db = Path(GLib.get_user_data_dir()) / 'kinema' / 'kinema.db'
+            legacy_db = user_data / 'kinema' / 'kinema.db'
             if not Path(db_path).exists() and legacy_db.exists():
                 try:
                     import shutil

@@ -101,6 +101,26 @@ def main():
 
     print(f"==> Successfully bundled {len(copied_dlls)} additional MSYS2 DLL dependencies!")
 
+    # Step 3: Ensure GSettings schemas and style.css are present in distribution
+    schemas_src = repo_root / 'data'
+    target_schema_dirs = [
+        dist_dir / 'share' / 'glib-2.0' / 'schemas',
+        dist_dir / 'data',
+    ]
+    if internal_dir.is_dir():
+        target_schema_dirs.extend([
+            internal_dir / 'share' / 'glib-2.0' / 'schemas',
+            internal_dir / 'data',
+        ])
+    for target in target_schema_dirs:
+        target.mkdir(parents=True, exist_ok=True)
+        for fname in ('io.github.Dackerie.Showberry.gschema.xml', 'gschemas.compiled', 'style.css'):
+            src_f = schemas_src / fname
+            if src_f.is_file():
+                shutil.copy2(src_f, target)
+
+    print("==> Successfully bundled GSettings schemas and style files into Windows distribution!")
+
 
 if __name__ == '__main__':
     main()

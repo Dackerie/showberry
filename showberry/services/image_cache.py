@@ -4,10 +4,17 @@ import os
 import hashlib
 from pathlib import Path
 import gi
-gi.require_version('Gdk', '4.0')
-from gi.repository import GLib, Gdk, GdkPixbuf
 
-from showberry.services.tmdb import TMDBClient
+try:
+    gi.require_version('Gdk', '4.0')
+    from gi.repository import Gdk, GdkPixbuf
+    HAS_GDK = True
+except (ValueError, ImportError, AttributeError):
+    Gdk = None
+    GdkPixbuf = None
+    HAS_GDK = False
+
+from gi.repository import GLib
 
 
 class ImageCache:
@@ -60,6 +67,8 @@ class ImageCache:
 
     def _load_texture(self, path, width=None, height=None):
         """Load a Gdk.Texture from a file path."""
+        if not HAS_GDK or Gdk is None or GdkPixbuf is None:
+            return None
         try:
             if width and height:
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(

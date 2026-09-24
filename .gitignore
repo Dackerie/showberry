@@ -25,4 +25,6 @@ Showberry.app/
 *.exe
 *.zip
 output/
-
+._*
+.DS_Store
+*.log

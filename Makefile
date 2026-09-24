@@ -6,15 +6,16 @@ install:
 	$(PYTHON) -m pip install -e .
 
 run:
-	GSETTINGS_SCHEMA_DIR=data $(PYTHON) -m showberry.main
+	GSETTINGS_SCHEMA_DIR=data DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib:$(DYLD_FALLBACK_LIBRARY_PATH) $(PYTHON) -m showberry.main
 
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	rm -rf build dist *.egg-info .pytest_cache
+	find . -name "._*" -delete
+	rm -rf build dist *.egg-info .pytest_cache uv.lock
 
 test:
-	$(PYTHON) -m pytest tests/ -v
+	DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib:$(DYLD_FALLBACK_LIBRARY_PATH) $(PYTHON) -m pytest tests/ -v
 
 build:
 	$(PYTHON) -m build --wheel --no-isolation
