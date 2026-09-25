@@ -87,7 +87,15 @@ class TorrentProvider(BaseProvider):
     def __init__(self):
         self._tmdb = TMDBClient()
 
-    def get_stream_url(self, tmdb_id: int, season: int = None, episode: int = None) -> Optional[StreamResult]:
+    def get_stream_url(
+        self,
+        tmdb_id: int,
+        season: int = None,
+        episode: int = None,
+        start_time: float = 0.0,
+        duration_secs: float = 0.0,
+        **kwargs
+    ) -> Optional[StreamResult]:
         if not HAS_LIBTORRENT:
             logger.warning("libtorrent is not installed; Torrent provider cannot stream.")
             return None
@@ -117,6 +125,8 @@ class TorrentProvider(BaseProvider):
                 file_idx=file_idx,
                 season=season,
                 episode=episode,
+                start_time=start_time,
+                duration_secs=duration_secs,
                 timeout=35
             )
 

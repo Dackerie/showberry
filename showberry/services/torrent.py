@@ -170,6 +170,9 @@ class TorrentStreamer:
         file_idx: Optional[int] = None,
         season: Optional[int] = None,
         episode: Optional[int] = None,
+        start_time: float = 0.0,
+        duration_secs: float = 0.0,
+        on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
         timeout: int = 35
     ) -> str:
         """
@@ -325,20 +328,40 @@ class TorrentStreamer:
         req_end = info.map_file(best_idx, max_size - 1, 1)
         self.start_piece = req_start.piece
         self.end_piece = req_end.piece
-        self._current_stream_piece = self.start_piece
 
-        # Zero out all pieces across entire torrent so peers don't waste bandwidth on random pieces
+        # Set all pieces belonging to the selected video file to Priority 1 (background download).
+        # This keeps peers interested and actively uploading across the swarm (no peer choking).
+        # Other files in the torrent remain at priority 0 via prioritize_files above.
         num_pieces = info.num_pieces()
+        piece_prio = [0] * num_pieces
+        for p in range(self.start_piece, min(self.end_piece + 1, num_pieces)):
+            piece_prio[p] = 1
         try:
-            self.handle.prioritize_pieces([0] * num_pieces)
+            self.handle.prioritize_pieces(piece_prio)
         except Exception as e:
-            logger.debug(f"Failed to initialize zero piece priorities: {e}")
+            logger.debug(f"Failed to initialize piece priorities: {e}")
 
-        # Prioritize header pieces (first 8 pieces) and footer pieces (last 4 pieces for MP4 moov / MKV cues)
+        # Compute target playback piece based on resume position
+        if start_time > 15.0 and duration_secs > 60.0:
+            target_byte = int((start_time / duration_secs) * max_size)
+            target_piece = info.map_file(best_idx, min(target_byte, max_size - 1), 1).piece
+        else:
+            target_piece = self.start_piece
+
+        self._current_stream_piece = target_piece
+
+        # Prioritize header pieces (first 8 pieces of video file)
         for p in range(self.start_piece, min(self.start_piece + 8, self.end_piece + 1)):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
 
+        # Prioritize target resume piece
+        if target_piece != self.start_piece:
+            for p in range(target_piece, min(target_piece + 4, self.end_piece + 1)):
+                self.handle.piece_priority(p, 7)
+                self.handle.set_piece_deadline(p, 0)
+
+        # Prioritize footer pieces (last 4 pieces for MP4 moov / MKV cues)
         for p in range(max(self.start_piece, self.end_piece - 4), self.end_piece + 1):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
@@ -348,13 +371,23 @@ class TorrentStreamer:
         self._start_sequential_worker()
         self.state_string = "buffering"
 
-        # Wait for start piece (container header) to ensure file creation before MPV connects
+        # Wait for start piece (container header) and target resume piece before MPV connects
         wait_start = time.time()
         while not self._stop_event.is_set():
             handle = self.handle
             if not handle or not handle.is_valid():
                 raise RuntimeError("Torrent handle became invalid or was stopped")
-            if handle.have_piece(self.start_piece):
+
+            if on_progress:
+                try:
+                    on_progress(self.get_status())
+                except Exception:
+                    pass
+
+            has_start = handle.have_piece(self.start_piece)
+            has_target = handle.have_piece(target_piece)
+
+            if has_start and has_target:
                 # Ensure OS file flush has occurred
                 for _ in range(40):
                     if os.path.exists(self.video_file_path) and os.path.getsize(self.video_file_path) > 0:
@@ -406,26 +439,27 @@ class TorrentStreamer:
                         handle.piece_priority(p, 7)
                         handle.set_piece_deadline(p, 0)
 
-                # 2. Buffer window: curr + 9 to curr + 32 (priority 7, graduated deadlines)
-                buf_end = min(curr + 33, self.end_piece + 1)
+                # 2. Buffer window: curr + 9 to curr + 24 (priority 7, graduated deadlines)
+                buf_end = min(curr + 25, self.end_piece + 1)
                 for p in range(urgent_end, buf_end):
                     if not handle.have_piece(p):
                         handle.piece_priority(p, 7)
-                        handle.set_piece_deadline(p, (p - curr) * 1000)
+                        handle.set_piece_deadline(p, (p - curr) * 500)
 
-                # 3. Lookahead window: curr + 33 to curr + 64 (priority 6)
-                lookahead_end = min(curr + 65, self.end_piece + 1)
+                # 3. Lookahead window: curr + 25 to curr + 50 (priority 6)
+                lookahead_end = min(curr + 51, self.end_piece + 1)
                 for p in range(buf_end, lookahead_end):
                     if not handle.have_piece(p):
                         handle.piece_priority(p, 6)
 
-                # 4. If playback head moved, de-prioritize far-ahead pieces to 0
+                # 4. If playback head moved, reset far-ahead pieces to Priority 1 (NEVER 0)
+                # This maintains swarm health and download speed without peer choking
                 if curr != last_window_center:
                     last_window_center = curr
                     footer_start = max(self.start_piece, self.end_piece - 4)
                     for p in range(lookahead_end, footer_start):
-                        if not handle.have_piece(p):
-                            handle.piece_priority(p, 0)
+                        if not handle.have_piece(p) and handle.piece_priority(p) > 1:
+                            handle.piece_priority(p, 1)
 
                 # 5. Always maintain footer pieces (essential for container duration/index)
                 for p in range(max(self.start_piece, self.end_piece - 4), self.end_piece + 1):
@@ -448,7 +482,9 @@ class TorrentStreamer:
 
         # Update current playback piece from requested offset
         req_piece = info.map_file(self.video_file_idx, offset, 1).piece
-        self._current_stream_piece = req_piece
+        # Don't let footer metadata probe displace sequential playback head
+        if req_piece < max(self.start_piece, self.end_piece - 4):
+            self._current_stream_piece = req_piece
 
         # If seeking to a piece that's not ready, prioritize it immediately
         if not self.handle.have_piece(req_piece):
@@ -518,27 +554,47 @@ class TorrentStreamer:
             logger.debug(f"stream_bytes error: {e}")
 
     def get_status(self) -> Dict[str, Any]:
-        """Return live torrent status dictionary."""
+        """Return live torrent status dictionary with accurate video file progress."""
         if not self.handle or not self.handle.is_valid():
             return {
                 'state': 'idle',
                 'progress': 0.0,
                 'download_rate': 0,
+                'upload_rate': 0,
                 'peers': 0,
                 'seeds': 0,
+                'total_done': 0,
+                'total_size': self.video_file_size,
+                'video_file_name': None,
                 'info_hash': self.current_info_hash,
                 'file_idx': self.current_file_idx,
             }
 
         st = self.handle.status()
+
+        # Compute exact byte progress for the specific video file
+        video_done = 0
+        if self.video_file_idx >= 0:
+            try:
+                file_progs = self.handle.file_progress()
+                if file_progs and self.video_file_idx < len(file_progs):
+                    video_done = file_progs[self.video_file_idx]
+            except Exception:
+                pass
+        if video_done == 0 and self.video_file_size > 0:
+            video_done = st.total_done
+
+        total_size = self.video_file_size if self.video_file_size > 0 else (st.total_wanted or 1)
+        video_progress = min(1.0, max(0.0, float(video_done) / float(total_size)))
+
         return {
             'state': self.state_string,
-            'progress': st.progress,
+            'progress': video_progress,
             'download_rate': st.download_rate,
             'upload_rate': st.upload_rate,
             'peers': st.num_peers,
             'seeds': st.num_seeds,
-            'total_done': st.total_done,
+            'total_done': video_done,
             'total_size': self.video_file_size,
             'video_file_name': os.path.basename(self.video_file_path) if self.video_file_path else None,
             'info_hash': self.current_info_hash,
