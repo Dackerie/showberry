@@ -1,5 +1,7 @@
 """Sequential torrent streaming service with built-in HTTP Range server."""
 
+from __future__ import annotations
+
 import os
 import re
 import sys
@@ -10,7 +12,7 @@ import logging
 import threading
 import mimetypes
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple, Callable, Union
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 import urllib.request

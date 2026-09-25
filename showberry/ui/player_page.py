@@ -1,5 +1,7 @@
 """Player page - MPV video player with controls, subtitle sync, and progress tracking."""
 
+from __future__ import annotations
+
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
