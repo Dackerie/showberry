@@ -215,6 +215,8 @@ class TorrentStreamer:
                 params = lt.add_torrent_params()
                 params.ti = ti
                 params.save_path = str(self.cache_dir)
+                if hasattr(lt, 'storage_mode_t'):
+                    params.storage_mode = lt.storage_mode_t.storage_mode_sparse
                 params.flags |= lt.torrent_flags.sequential_download
                 self.handle = self.session.add_torrent(params)
             except Exception as e:
@@ -229,6 +231,8 @@ class TorrentStreamer:
 
             params = lt.parse_magnet_uri(magnet_uri)
             params.save_path = str(self.cache_dir)
+            if hasattr(lt, 'storage_mode_t'):
+                params.storage_mode = lt.storage_mode_t.storage_mode_sparse
             params.flags |= lt.torrent_flags.sequential_download
             self.handle = self.session.add_torrent(params)
 
@@ -333,17 +337,21 @@ class TorrentStreamer:
         self._start_http_server()
         self.state_string = "buffering"
 
-        # Quick initial buffer check (max 3s) so MPV receives URL immediately and streams concurrently
+        # Wait for start piece (container header) to ensure file creation before MPV connects
         wait_start = time.time()
-        while True:
-            if self._stop_event.is_set():
-                raise RuntimeError("Torrent playback stopped")
+        while not self._stop_event.is_set():
             handle = self.handle
             if not handle or not handle.is_valid():
                 raise RuntimeError("Torrent handle became invalid or was stopped")
             if handle.have_piece(self.start_piece):
+                # Ensure OS file flush has occurred
+                for _ in range(30):
+                    if os.path.exists(self.video_file_path):
+                        break
+                    time.sleep(0.1)
                 break
-            if time.time() - wait_start > 3.0:
+            if time.time() - wait_start > 25.0:
+                logger.info("Initial piece wait timed out (25s); proceeding with streaming")
                 break
             time.sleep(0.2)
 
@@ -370,6 +378,32 @@ class TorrentStreamer:
 
         info = self.handle.torrent_file()
         bytes_sent = 0
+
+        # Wait for initial piece corresponding to the requested byte offset
+        p_initial = info.map_file(self.video_file_idx, offset, 1).piece
+        if not self.handle.have_piece(p_initial):
+            self.handle.piece_priority(p_initial, 7)
+            self.handle.set_piece_deadline(p_initial, 0)
+            wait_count = 0
+            while not self._stop_event.is_set():
+                if self.handle.have_piece(p_initial):
+                    break
+                time.sleep(0.1)
+                wait_count += 1
+                if wait_count > 300:  # 30s timeout
+                    break
+
+        # Wait for file to appear on disk if libtorrent disk I/O thread is flushing
+        wait_file_count = 0
+        while not self._stop_event.is_set() and not os.path.exists(self.video_file_path):
+            time.sleep(0.1)
+            wait_file_count += 1
+            if wait_file_count > 60:  # 6s timeout
+                break
+
+        if not os.path.exists(self.video_file_path):
+            logger.warning(f"Video file not yet on disk: {self.video_file_path}")
+            return
 
         try:
             with open(self.video_file_path, 'rb') as f:
@@ -423,8 +457,10 @@ class TorrentStreamer:
                         continue
                     wfile.write(data)
                     bytes_sent += len(data)
-        except Exception:
+        except (BrokenPipeError, ConnectionResetError):
             pass
+        except Exception as e:
+            logger.debug(f"stream_bytes error: {e}")
 
     def get_status(self) -> Dict[str, Any]:
         """Return live torrent status dictionary."""

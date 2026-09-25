@@ -118,10 +118,10 @@ class TorrentProvider(BaseProvider):
                                 q = t.get('quality', '720p')
                                 seeds = t.get('seeds', 0)
                                 size_str = t.get('size', '')
-                                size_part = f" 💾 {size_str}" if size_str else ""
+                                size_part = f" [{size_str}]" if size_str else ""
                                 torrents.append({
                                     'infoHash': h,
-                                    'title': f"YTS {q} 👤 {seeds}{size_part}",
+                                    'title': f"YTS {q} Seeds: {seeds}{size_part}",
                                     'name': f"YTS {t.get('type', 'bluray')}",
                                     'quality': q,
                                     'seeds': seeds,
@@ -196,11 +196,17 @@ class TorrentProvider(BaseProvider):
                 tl = title.lower()
                 if not s.get('quality'):
                     s['quality'] = '4K' if any(k in tl for k in ('4k', '2160', 'uhd')) else ('1080p' if '1080' in tl else ('720p' if '720' in tl else 'HD'))
-                if 'size_gb' not in s:
+                if 'size_gb' not in s or s['size_gb'] is None:
                     s['size_gb'] = parse_stream_size_gb(s)
                 if 'seeds' not in s or s['seeds'] is None:
-                    seeds_match = re.search(r'👤\s*(\d+)', title)
+                    seeds_match = re.search(r'(?:👤|seeds:?|\b)\s*(\d+)', title, re.IGNORECASE)
                     s['seeds'] = int(seeds_match.group(1)) if seeds_match else 0
+
+                # Sanitize title and name so raw emojis never cause Cairo rendering issues
+                s['title'] = re.sub(r'[\U00010000-\U0010ffff]', '', title).strip()
+                if 'name' in s and s['name']:
+                    s['name'] = re.sub(r'[\U00010000-\U0010ffff]', '', s['name']).strip()
+
                 unique_streams.append(s)
 
         return sorted(unique_streams, key=self._calculate_stream_score, reverse=True)
@@ -215,7 +221,7 @@ class TorrentProvider(BaseProvider):
         tl = title.lower()
         seeds = stream.get('seeds')
         if seeds is None:
-            seeds_match = re.search(r'👤\s*(\d+)', title)
+            seeds_match = re.search(r'(?:👤|seeds:?|\b)\s*(\d+)', title, re.IGNORECASE)
             seeds = int(seeds_match.group(1)) if seeds_match else 0
 
         seeds_score = min(seeds, 150)
