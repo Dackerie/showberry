@@ -28,3 +28,4 @@ output/
 ._*
 .DS_Store
 *.log
+scratch/

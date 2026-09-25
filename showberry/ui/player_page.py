@@ -319,7 +319,7 @@ class MpvWidget(Gtk.GLArea):
             'demuxer_max_bytes': 150 * 1024 * 1024,
             'demuxer_readahead_secs': 30,
             'cache_secs': 30,
-            'cache_pause_initial': 'no',
+            'cache_pause_initial': 'yes',
             'cache_pause_wait': 1.0,
             'network_timeout': 60,
             'hwdec': chosen_hwdec,
@@ -365,7 +365,24 @@ class MpvWidget(Gtk.GLArea):
         def _on_eof_reached(name, value):
             if value and getattr(self, '_is_active', False):
                 GLib.idle_add(self.emit, 'playback-ended')
+
+        @self._mpv.event_callback('playback-restart')
+        def _on_playback_restart(event):
+            if getattr(self, '_is_active', False):
+                GLib.idle_add(self._on_mpv_playback_restarted)
+
         self._current_sub_path = None
+
+    def _on_mpv_playback_restarted(self):
+        if not getattr(self, '_is_active', False):
+            return
+        self._has_drawn_first_frame = True
+        self._wait_first_frame = False
+        if getattr(self, '_unpause_watchdog_id', None):
+            GLib.source_remove(self._unpause_watchdog_id)
+            self._unpause_watchdog_id = None
+        self.emit('stream-ready')
+        self.queue_render()
 
     def activate(self):
         """Re-enable rendering and event handling."""
@@ -662,7 +679,7 @@ class MpvWidget(Gtk.GLArea):
         if getattr(self, '_unpause_watchdog_id', None):
             GLib.source_remove(self._unpause_watchdog_id)
             self._unpause_watchdog_id = None
-        self._unpause_watchdog_id = GLib.timeout_add(1500, self._safety_unpause)
+        self._unpause_watchdog_id = GLib.timeout_add(15000, self._safety_unpause)
         self.queue_render()
 
         self._pending_subtitles = list(subtitles or [])
@@ -1623,6 +1640,7 @@ class PlayerControls(Gtk.Box):
         self._last_progress_save = 0.0
         self._pre_mute_volume = 100.0
         self._updating_volume_scale = False
+        self._zero_pos_ticks = 0
 
         # Seek bar row with time
         seek_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -1850,6 +1868,7 @@ class PlayerControls(Gtk.Box):
         self._curr_time_label.set_text(self._format_time(start_pos))
         self._total_time_label.set_text(self._format_time(total_duration))
         self._play_button.set_icon_name('media-playback-start-symbolic')
+        self._zero_pos_ticks = 0
         if hasattr(self, '_sub_popover'):
             self._sub_popover.set_available_subtitles([])
 
@@ -1883,6 +1902,22 @@ class PlayerControls(Gtk.Box):
 
                 self._curr_time_label.set_text(self._format_time(pos))
                 self._total_time_label.set_text(self._format_time(dur))
+
+            # Kickstart watchdog: If MPV has loaded the media (dur > 0), has cache buffered,
+            # but is sitting at 0:00 without advancing, nudge it to ensure playback starts
+            if dur > 0 and pos <= 0.05 and not self._player.is_paused():
+                self._zero_pos_ticks = getattr(self, '_zero_pos_ticks', 0) + 1
+                if self._zero_pos_ticks >= 4:  # ~1.0-1.5 seconds stuck at 0:00
+                    try:
+                        cache = getattr(self._player._mpv, 'demuxer_cache_duration', 0) or 0
+                        if cache > 0.5:
+                            logger.info("Kickstart: nudging MPV to start playback at 0:00")
+                            self._player.resume()
+                            self._player.queue_render()
+                    except Exception:
+                        pass
+            else:
+                self._zero_pos_ticks = 0
 
             # Update play/pause icon
             if self._player.is_paused():
