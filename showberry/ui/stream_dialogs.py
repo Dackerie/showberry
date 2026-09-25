@@ -37,6 +37,8 @@ class TorrentStreamChooserDialog(Adw.Window):
         self._episode = episode
         self._on_stream_selected = on_stream_selected
         self._is_closed = False
+        self.connect('close-request', self._on_close_request)
+        self.connect('destroy', self._on_destroy)
 
         title = movie_data.get('title', 'Select Stream')
         if season is not None and episode is not None:
@@ -47,10 +49,23 @@ class TorrentStreamChooserDialog(Adw.Window):
         self._setup_ui()
         self._load_streams_async()
 
+    def _on_close_request(self, *_):
+        self._is_closed = True
+        return False
+
+    def _on_destroy(self, *_):
+        self._is_closed = True
+
     def _setup_ui(self):
         toolbar_view = Adw.ToolbarView()
         header_bar = Adw.HeaderBar()
         toolbar_view.add_top_bar(header_bar)
+
+        from showberry.services.torrent import HAS_LIBTORRENT
+        if not HAS_LIBTORRENT:
+            banner = Adw.Banner.new("Torrent streaming engine (libtorrent) is unavailable on this system. Direct stream providers are recommended.")
+            banner.set_revealed(True)
+            toolbar_view.add_top_bar(banner)
 
         self._content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self._content_box.set_margin_start(18)
@@ -107,80 +122,104 @@ class TorrentStreamChooserDialog(Adw.Window):
             return
 
         def _bg():
-            tp = TorrentProvider()
-            streams = tp.fetch_stream_choices(
-                tmdb_id=int(tmdb_id),
-                season=self._season,
-                episode=self._episode
-            )
-            if not self._is_closed:
-                GLib.idle_add(self._display_streams, streams)
+            try:
+                tp = TorrentProvider()
+                streams = tp.fetch_stream_choices(
+                    tmdb_id=int(tmdb_id),
+                    season=self._season,
+                    episode=self._episode
+                )
+                if not self._is_closed:
+                    GLib.idle_add(self._display_streams, streams)
+            except Exception as e:
+                logger.warning(f"Error loading streams in background: {e}")
+                if not self._is_closed:
+                    GLib.idle_add(self._display_streams, [])
 
         threading.Thread(target=_bg, daemon=True).start()
 
     def _display_streams(self, streams: List[Dict[str, Any]]):
-        self._spinner.stop()
-        self._loading_box.set_visible(False)
+        if self._is_closed:
+            return False
 
-        if not streams:
-            self._empty_label.set_visible(True)
-            return
+        try:
+            self._spinner.stop()
+            self._loading_box.set_visible(False)
 
-        self._scroll.set_visible(True)
+            if not streams:
+                self._empty_label.set_visible(True)
+                return False
 
-        for s in streams:
-            row = Adw.ActionRow()
-            title = s.get('title', 'Torrent Stream')
-            clean_title = title.split('\n')[0].strip()
-            row.set_title(clean_title)
-            row.set_subtitle(s.get('name') or s.get('provider') or 'Torrent')
-            row.set_title_lines(1)
-            row.set_subtitle_lines(1)
+            self._scroll.set_visible(True)
 
-            # Suffix badges
-            suffixes = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-            suffixes.set_valign(Gtk.Align.CENTER)
+            from showberry.services.torrent import HAS_LIBTORRENT
 
-            # Quality badge
-            q = s.get('quality', '1080p')
-            q_badge = Gtk.Label(label=q)
-            q_badge.add_css_class('badge')
-            suffixes.append(q_badge)
+            for s in streams:
+                if self._is_closed:
+                    return False
+                row = Adw.ActionRow()
+                title = s.get('title', 'Torrent Stream')
+                clean_title = title.split('\n')[0].strip()
+                row.set_title(GLib.markup_escape_text(clean_title))
+                sub_text = s.get('name') or s.get('provider') or 'Torrent'
+                row.set_subtitle(GLib.markup_escape_text(sub_text))
+                row.set_title_lines(1)
+                row.set_subtitle_lines(1)
 
-            # Size badge
-            size_gb = s.get('size_gb')
-            if size_gb:
-                s_badge = Gtk.Label(label=f"{size_gb:.1f} GB")
-                s_badge.add_css_class('badge')
-                s_badge.add_css_class('dim-label')
-                suffixes.append(s_badge)
+                # Suffix badges
+                suffixes = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+                suffixes.set_valign(Gtk.Align.CENTER)
 
-            # Seeds badge
-            seeds = s.get('seeds')
-            if seeds is not None:
-                seeds_badge = Gtk.Label(label=f"👤 {seeds}")
-                seeds_badge.add_css_class('badge')
-                if seeds >= 30:
-                    seeds_badge.add_css_class('suggested-action')
-                elif seeds >= 10:
-                    seeds_badge.add_css_class('warning')
+                # Quality badge
+                q = s.get('quality', '1080p')
+                q_badge = Gtk.Label(label=q)
+                q_badge.add_css_class('badge')
+                suffixes.append(q_badge)
+
+                # Size badge
+                size_gb = s.get('size_gb')
+                if size_gb:
+                    s_badge = Gtk.Label(label=f"{size_gb:.1f} GB")
+                    s_badge.add_css_class('badge')
+                    s_badge.add_css_class('dim-label')
+                    suffixes.append(s_badge)
+
+                # Seeds badge
+                seeds = s.get('seeds')
+                if seeds is not None:
+                    seeds_badge = Gtk.Label(label=f"Seeds: {seeds}")
+                    seeds_badge.add_css_class('badge')
+                    if seeds >= 30:
+                        seeds_badge.add_css_class('suggested-action')
+                    elif seeds >= 10:
+                        seeds_badge.add_css_class('warning')
+                    else:
+                        seeds_badge.add_css_class('dim-label')
+                    suffixes.append(seeds_badge)
+
+                # Play action button
+                play_btn = Gtk.Button.new_from_icon_name('media-playback-start-symbolic')
+                play_btn.add_css_class('flat')
+                if HAS_LIBTORRENT:
+                    play_btn.set_tooltip_text("Stream this torrent")
+                    play_btn.connect('clicked', self._on_row_play, s)
+                    row.set_activatable(True)
+                    row.connect('activated', self._on_row_play, s)
                 else:
-                    seeds_badge.add_css_class('dim-label')
-                suffixes.append(seeds_badge)
+                    play_btn.set_tooltip_text("Torrent streaming unavailable (libtorrent not installed)")
+                    play_btn.set_sensitive(False)
+                    row.set_activatable(False)
+                suffixes.append(play_btn)
 
-            # Play action button
-            play_btn = Gtk.Button.new_from_icon_name('media-playback-start-symbolic')
-            play_btn.add_css_class('flat')
-            play_btn.set_tooltip_text("Stream this torrent")
-            play_btn.connect('clicked', self._on_row_play, s)
-            suffixes.append(play_btn)
-
-            row.add_suffix(suffixes)
-            row.set_activatable(True)
-            row.connect('activated', self._on_row_play, s)
-            self._list_box.append(row)
+                row.add_suffix(suffixes)
+                self._list_box.append(row)
+        except Exception as e:
+            logger.warning(f"Error displaying streams: {e}")
+        return False
 
     def _on_row_play(self, widget, stream_info):
+        if self._is_closed:
+            return
         self._is_closed = True
         self.close()
         if self._on_stream_selected:

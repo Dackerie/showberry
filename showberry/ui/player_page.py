@@ -47,11 +47,16 @@ except Exception as e:
     MpvRenderContext = None
     HAS_MPV = False
 
-try:
-    from OpenGL import GL
-    HAS_OPENGL = True
-except ImportError:
+if sys.platform != 'win32':
+    try:
+        from OpenGL import GL
+        HAS_OPENGL = True
+    except ImportError:
+        HAS_OPENGL = False
+        GL = None
+else:
     HAS_OPENGL = False
+    GL = None
 
 from showberry.providers.base import StreamResult, ProviderManager
 from showberry.services.database import DatabaseService
@@ -309,8 +314,9 @@ class MpvWidget(Gtk.GLArea):
             'loglevel': mpv_loglevel,
         }
         if sys.platform == 'win32':
-            mpv_opts['hwdec'] = 'auto-copy-safe'
-            mpv_opts['gpu_api'] = 'opengl'
+            mpv_opts['hwdec'] = 'auto-safe'
+            mpv_opts['opengl_es'] = 'yes'
+            mpv_opts['vd_lavc_threads'] = 4
         else:
             mpv_opts['hwdec'] = 'auto-safe'
 
@@ -439,9 +445,9 @@ class MpvWidget(Gtk.GLArea):
 
     def _trigger_redraw(self, *_):
         self._redraw_pending = False
-        if not self._is_active:
+        if not self._is_active or not self._ctx:
             return False
-        if self._ctx and self._ctx.update():
+        if self._ctx.update():
             self.queue_render()
         return False
 
@@ -470,7 +476,7 @@ class MpvWidget(Gtk.GLArea):
             pass
 
         # Clear any residual OpenGL error flags from context switching
-        if HAS_OPENGL:
+        if HAS_OPENGL and GL:
             try:
                 while GL.glGetError() != GL.GL_NO_ERROR:
                     pass
@@ -479,13 +485,13 @@ class MpvWidget(Gtk.GLArea):
 
         # Query current FBO with safe fallback
         fbo = 0
-        if HAS_OPENGL:
+        if HAS_OPENGL and GL:
             try:
                 fbo = GL.glGetIntegerv(GL.GL_DRAW_FRAMEBUFFER_BINDING)
             except Exception:
                 fbo = 0
         if not fbo and sys.platform == 'win32':
-            # Check GLES first (ANGLE / EGL used by GTK4 on Windows)
+            # Check GLES (ANGLE / EGL used by GTK4 on Windows)
             try:
                 import ctypes
                 gles = ctypes.CDLL('libGLESv2.dll')
@@ -498,19 +504,6 @@ class MpvWidget(Gtk.GLArea):
                     fbo = raw_fbo.value
             except Exception:
                 pass
-            if not fbo:
-                try:
-                    import ctypes
-                    win_gl = ctypes.windll.opengl32
-                    glGetIntegerv = getattr(win_gl, 'glGetIntegerv', None)
-                    if glGetIntegerv:
-                        glGetIntegerv.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_int)]
-                        glGetIntegerv.restype = None
-                        raw_fbo = ctypes.c_int(0)
-                        glGetIntegerv(0x8CA6, ctypes.byref(raw_fbo))
-                        fbo = raw_fbo.value
-                except Exception:
-                    pass
 
         # Render MPV frame
         try:
@@ -519,13 +512,13 @@ class MpvWidget(Gtk.GLArea):
                 opengl_fbo={'w': width, 'h': height, 'fbo': fbo},
                 block_for_target_time=False,
             )
-        except Exception:
+        except Exception as e:
+            logger.error("MPV render error: %s", e)
             return False
 
-        # Clear any error state left by libmpv
+        # Ensure GTK buffers are attached and valid for snapshot/blit
         try:
-            while GL.glGetError() != GL.GL_NO_ERROR:
-                pass
+            self.attach_buffers()
         except Exception:
             pass
 
@@ -631,7 +624,7 @@ class MpvWidget(Gtk.GLArea):
         self._has_drawn_first_frame = False
         self._wait_first_frame = True
         try:
-            self._mpv.pause = True
+            self._mpv.pause = False
         except Exception:
             pass
         self._current_media_path = url
@@ -641,7 +634,8 @@ class MpvWidget(Gtk.GLArea):
         if getattr(self, '_unpause_watchdog_id', None):
             GLib.source_remove(self._unpause_watchdog_id)
             self._unpause_watchdog_id = None
-        self._unpause_watchdog_id = GLib.timeout_add(600, self._safety_unpause)
+        self._unpause_watchdog_id = GLib.timeout_add(1500, self._safety_unpause)
+        self.queue_render()
 
         self._pending_subtitles = list(subtitles or [])
         if self._pending_subtitles:
@@ -1004,6 +998,7 @@ class SubtitlePopover(Gtk.Popover):
 
     def __init__(self, player: Optional[MpvWidget] = None, on_timing_changed=None, on_auto_sync=None):
         super().__init__()
+        self.add_css_class('player-popover')
         self._player = player
         self._on_timing_changed = on_timing_changed
         self._on_auto_sync = on_auto_sync
@@ -1306,6 +1301,7 @@ class AudioPopover(Gtk.Popover):
 
     def __init__(self, player: Optional[MpvWidget] = None, on_audio_changed=None):
         super().__init__()
+        self.add_css_class('player-popover')
         self._player = player
         self._on_audio_changed = on_audio_changed
 
@@ -1412,6 +1408,7 @@ class SpeedPopover(Gtk.Popover):
 
     def __init__(self, player: Optional[MpvWidget] = None, on_speed_changed=None):
         super().__init__()
+        self.add_css_class('player-popover')
         self._player = player
         self._on_speed_changed = on_speed_changed
 
@@ -1476,6 +1473,8 @@ class ProviderPopover(Gtk.Popover):
 
     def __init__(self, on_provider_selected=None):
         super().__init__()
+        self.add_css_class('player-popover')
+        self.add_css_class('provider-popover')
         self._on_provider_selected = on_provider_selected
         self._current_provider = None
 
@@ -1546,9 +1545,12 @@ class ProviderPopover(Gtk.Popover):
 
         # Individual providers
         from showberry.providers import get_all_providers
+        from showberry.services.torrent import HAS_LIBTORRENT
         providers = get_all_providers()
         for p in providers:
             p_name = p.name
+            if 'torrent' in p_name.lower() and not HAS_LIBTORRENT:
+                continue
             btn = Gtk.Button()
             row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             lbl = Gtk.Label(label=p_name if p_name != 'Torrent' else 'Torrent Swarms (P2P)...')
@@ -1610,6 +1612,7 @@ class PlayerControls(Gtk.Box):
         # Seek Hover Timestamp Popover
         self._duration = 0.0
         self._seek_popover = Gtk.Popover.new()
+        self._seek_popover.add_css_class('seek-popover')
         self._seek_popover.set_autohide(False)
         self._seek_popover.set_has_arrow(True)
         self._seek_popover.set_position(Gtk.PositionType.TOP)
@@ -2509,6 +2512,8 @@ class PlayerPage(Adw.NavigationPage):
                 torrent_url = chosen_stream.get('torrent_url')
                 file_idx = chosen_stream.get('fileIdx')
                 streamer = get_torrent_streamer()
+                if not streamer:
+                    raise RuntimeError("Torrent streaming is unavailable because libtorrent is not installed on this system.")
                 http_url = streamer.start_stream(
                     info_hash,
                     torrent_url=torrent_url,
@@ -2967,7 +2972,11 @@ class PlayerPage(Adw.NavigationPage):
         if not self._stream_data or not self._mpv_widget:
             return
 
-        if provider_name.lower() == 'torrent':
+        if 'torrent' in provider_name.lower():
+            from showberry.services.torrent import HAS_LIBTORRENT
+            if not HAS_LIBTORRENT:
+                self.show_osd_notification("Torrent streaming is unavailable (libtorrent not installed).")
+                return
             self._on_open_stream_chooser(None)
             return
 
@@ -3208,6 +3217,10 @@ class PlayerPage(Adw.NavigationPage):
 
     def _on_open_stream_chooser(self, btn):
         """Open stream chooser to switch torrent streams on the fly."""
+        from showberry.services.torrent import HAS_LIBTORRENT
+        if not HAS_LIBTORRENT:
+            self.show_osd_notification("Torrent streaming is unavailable (libtorrent not installed).")
+            return
         from showberry.ui.stream_dialogs import TorrentStreamChooserDialog
         window = self.get_root()
         movie = self._stream_data.get('movie', {})
