@@ -41,10 +41,11 @@ elif sys.platform == 'win32':
             if abs_p not in os.environ.get('PATH', ''):
                 os.environ['PATH'] = abs_p + os.pathsep + os.environ.get('PATH', '')
 
-    # Hook ctypes.util.find_library so python-mpv receives the exact absolute path to libmpv-2.dll
+    # Hook ctypes.util.find_library so python-mpv and EGL receive exact absolute paths
     _orig_find_library = ctypes.util.find_library
     def _win_find_library(name):
-        if 'mpv' in name.lower():
+        name_lower = name.lower()
+        if 'mpv' in name_lower:
             for d in (exe_dir, internal_dir, bundle_dir):
                 if not d or not os.path.isdir(d):
                     continue
@@ -52,8 +53,37 @@ elif sys.platform == 'win32':
                     cand_path = os.path.join(d, candidate)
                     if os.path.isfile(cand_path):
                         return os.path.abspath(cand_path)
+        if 'egl' in name_lower:
+            for d in (exe_dir, internal_dir, bundle_dir):
+                if not d or not os.path.isdir(d):
+                    continue
+                for candidate in ('libEGL.dll', 'libEGL'):
+                    cand_path = os.path.join(d, candidate)
+                    if os.path.isfile(cand_path):
+                        return os.path.abspath(cand_path)
         return _orig_find_library(name)
     ctypes.util.find_library = _win_find_library
+
+    # Configure gdk-pixbuf loader paths and XDG_DATA_DIRS for icons on Windows
+    for cand in (
+        os.path.join(internal_dir, 'lib', 'gdk-pixbuf', 'loaders.cache'),
+        os.path.join(internal_dir, 'lib', 'gdk-pixbuf-2.0', '2.10.0', 'loaders.cache'),
+        os.path.join(exe_dir, 'lib', 'gdk-pixbuf', 'loaders.cache'),
+        os.path.join(bundle_dir, 'lib', 'gdk-pixbuf', 'loaders.cache'),
+        r'C:\msys64\ucrt64\lib\gdk-pixbuf-2.0\2.10.0\loaders.cache',
+    ):
+        if os.path.isfile(cand):
+            os.environ['GDK_PIXBUF_MODULE_FILE'] = os.path.abspath(cand)
+            os.environ['GDK_PIXBUF_MODULEDIR'] = os.path.abspath(os.path.dirname(cand))
+            break
+
+    xdg_dirs = os.environ.get('XDG_DATA_DIRS', '')
+    for d in (bundle_dir, exe_dir, internal_dir, r'C:\msys64\ucrt64'):
+        share_dir = os.path.join(d, 'share')
+        if os.path.isdir(share_dir) and share_dir not in xdg_dirs:
+            xdg_dirs = (share_dir + os.pathsep + xdg_dirs) if xdg_dirs else share_dir
+    if xdg_dirs:
+        os.environ['XDG_DATA_DIRS'] = xdg_dirs
 
 elif sys.platform == 'darwin':
     import ctypes
@@ -125,7 +155,16 @@ elif sys.platform == 'darwin':
                     pass
 
 # GTK stomps over locale settings needed by libmpv
-locale.setlocale(locale.LC_NUMERIC, 'C')
+try:
+    locale.setlocale(locale.LC_NUMERIC, 'C')
+except Exception:
+    pass
+if sys.platform == 'win32':
+    try:
+        import ctypes
+        ctypes.cdll.msvcrt.setlocale(4, b'C')
+    except Exception:
+        pass
 
 
 def _handle_fatal_exception(exc_type, exc_val, exc_tb):

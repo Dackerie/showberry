@@ -17,10 +17,16 @@ except (ValueError, ImportError, AttributeError):
 from gi.repository import GLib
 
 
+import threading
+import tempfile
+
+
 class ImageCache:
     """Cache for downloaded images."""
 
     _default_instance = None
+    _lock = threading.Lock()
+    _url_locks = {}
 
     @classmethod
     def get_default(cls):
@@ -36,7 +42,6 @@ class ImageCache:
 
     def load_image(self, url, callback, width=None, height=None):
         """Asynchronously load an image and invoke callback(texture) on main thread."""
-        import threading
         def _worker():
             tex = self.get_image(url, width, height)
             GLib.idle_add(callback, tex)
@@ -59,11 +64,26 @@ class ImageCache:
         cache_path = self._get_cache_path(url)
 
         # Try to load from cache
-        if cache_path.exists():
-            return self._load_texture(str(cache_path), width, height)
+        if cache_path.exists() and cache_path.stat().st_size > 0:
+            tex = self._load_texture(str(cache_path), width, height)
+            if tex is not None:
+                return tex
+            # If cached file was corrupted, remove it and re-download
+            try:
+                cache_path.unlink()
+            except Exception:
+                pass
 
-        # Download the image
-        return self._download_and_cache(url, cache_path, width, height)
+        # Download the image with per-URL locking to prevent concurrency races
+        with self._lock:
+            if url not in self._url_locks:
+                self._url_locks[url] = threading.Lock()
+            url_lock = self._url_locks[url]
+
+        with url_lock:
+            if cache_path.exists() and cache_path.stat().st_size > 0:
+                return self._load_texture(str(cache_path), width, height)
+            return self._download_and_cache(url, cache_path, width, height)
 
     def _load_texture(self, path, width=None, height=None):
         """Load a Gdk.Texture from a file path."""
@@ -74,6 +94,8 @@ class ImageCache:
                 pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
                     path, width, height, True
                 )
+                if hasattr(Gdk.Texture, 'new_for_pixbuf'):
+                    return Gdk.Texture.new_for_pixbuf(pixbuf)
                 succ, data = pixbuf.save_to_bufferv('png', [], [])
                 if succ:
                     return Gdk.Texture.new_from_bytes(GLib.Bytes.new(data))
@@ -84,19 +106,26 @@ class ImageCache:
             return None
 
     def _download_and_cache(self, url, cache_path, width=None, height=None):
-        """Download an image and cache it."""
+        """Download an image and cache it atomically."""
         import requests
 
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
 
-            # Write to cache
-            with open(cache_path, 'wb') as f:
+            # Write to temporary file first and atomically replace to avoid read races on Windows
+            tmp_path = cache_path.with_name(f"{cache_path.stem}_{threading.get_ident()}.tmp")
+            with open(tmp_path, 'wb') as f:
                 f.write(response.content)
 
+            try:
+                os.replace(tmp_path, cache_path)
+            except Exception:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+
             return self._load_texture(str(cache_path), width, height)
-        except (requests.RequestException, GLib.Error):
+        except (requests.RequestException, GLib.Error, Exception):
             return None
 
     def clear(self):

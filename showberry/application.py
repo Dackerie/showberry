@@ -94,6 +94,14 @@ class ShowberryApplication(Adw.Application):
             for p in search_paths:
                 if p.exists() and p.is_dir():
                     icon_theme.add_search_path(str(p))
+
+            if sys.platform == 'win32':
+                for cand in (Path('C:/msys64/ucrt64/share/icons'), Path('/ucrt64/share/icons')):
+                    if cand.exists() and cand.is_dir():
+                        icon_theme.add_search_path(str(cand))
+                settings = Gtk.Settings.get_default()
+                if settings:
+                    settings.set_property('gtk-icon-theme-name', 'Adwaita')
         except Exception as e:
             logger.warning(f"Error configuring icon theme search paths: {e}")
 
