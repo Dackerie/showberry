@@ -182,6 +182,37 @@ class TestProviders(unittest.TestCase):
         dec = _decrypt_movy(b64, seed, tmdb_id)
         self.assertEqual(dec, payload.decode('utf-8'))
 
+    def test_torrent_seed_parsing_accuracy(self):
+        from showberry.providers.torrent import parse_stream_seeds, parse_stream_size_gb
+
+        # 1. Torrentio format with silhouette emoji and release year
+        t1 = {
+            'title': "Fight Club (1999) 4320p HDR Ai Upscale 5.1 MultiSubs MKV -Mesc\n👤 6 💾 43.24 GB ⚙️ ThePirateBay\nMulti Subs"
+        }
+        self.assertEqual(parse_stream_seeds(t1), 6)
+        self.assertAlmostEqual(parse_stream_size_gb(t1), 43.24, places=2)
+
+        # 2. Torrentio format with 75 seeds and release year
+        t2 = {
+            'title': "Fight Club 1999 REPACK 2160p UHD Blu-ray Remux HDR HEVC DTS-HD MA 5 1-CiNEPHiLES\n👤 75 💾 74.43 GB ⚙️ 1337x"
+        }
+        self.assertEqual(parse_stream_seeds(t2), 75)
+
+        # 3. YTS format
+        t3 = {
+            'title': "YTS 1080p Seeds: 1500 [2.1 GB]",
+            'seeds': 1500,
+        }
+        self.assertEqual(parse_stream_seeds(t3), 1500)
+
+        # 4. Standard tracker format S: 42
+        t4 = {'title': "The Matrix 1080p [S: 42 P: 10]"}
+        self.assertEqual(parse_stream_seeds(t4), 42)
+
+        # 5. Title with year and quality but no seeds specified -> must NOT extract 1999 or 1080
+        t5 = {'title': "Fight Club (1999) 1080p BluRay x264"}
+        self.assertEqual(parse_stream_seeds(t5), 0)
+
 
 if __name__ == '__main__':
     unittest.main()
