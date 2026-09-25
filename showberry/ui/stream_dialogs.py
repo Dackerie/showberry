@@ -354,7 +354,7 @@ class StreamDetailsDialog(Adw.Window):
             done_mb = total_done / (1024 * 1024)
             size_mb = total_size / (1024 * 1024)
             if size_mb > 0:
-                pct = min(100.0, (done_mb / size_mb) * 100.0)
+                pct = min(100.0, max(0.0, (done_mb / size_mb) * 100.0))
                 self._progress_bar.set_fraction(pct / 100.0)
                 self._progress_val.set_text(f"{done_mb:.1f} / {size_mb:.1f} MB ({pct:.1f}%)")
             else:
