@@ -47,6 +47,38 @@ def parse_stream_size_gb(stream: Dict[str, Any]) -> Optional[float]:
     return None
 
 
+def parse_stream_seeds(stream: Dict[str, Any]) -> int:
+    """Accurately extract seed count from stream metadata or title without capturing years or resolutions."""
+    if 'seeds' in stream and stream['seeds'] is not None:
+        try:
+            return int(stream['seeds'])
+        except (ValueError, TypeError):
+            pass
+
+    title = stream.get('title', '')
+    # 1. Match bust-in-silhouette emoji (Torrentio format: 👤 45)
+    m = re.search(r'[\U0001f464👤]\s*(\d+)', title)
+    if m:
+        return int(m.group(1))
+
+    # 2. Match explicit 'seeds: 45' or 'seeders: 45' or 'seeds 45'
+    m = re.search(r'(?:seeds?|seeders?)\s*[:=]?\s*(\d+)', title, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+
+    # 3. Match '45 seeds' or '45 seeders'
+    m = re.search(r'\b(\d+)\s*(?:seeds?|seeders?)\b', title, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+
+    # 4. Match tracker shorthand 'S: 45' or '[S: 45]' or 'S:45/P:12'
+    m = re.search(r'\bS:\s*(\d+)\b', title, re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+
+    return 0
+
+
 class TorrentProvider(BaseProvider):
     """Provider that discovers torrents via Torrentio, MediaFusion & YTS and streams them sequentially via libtorrent."""
 
@@ -199,8 +231,7 @@ class TorrentProvider(BaseProvider):
                 if 'size_gb' not in s or s['size_gb'] is None:
                     s['size_gb'] = parse_stream_size_gb(s)
                 if 'seeds' not in s or s['seeds'] is None:
-                    seeds_match = re.search(r'(?:👤|seeds:?|\b)\s*(\d+)', title, re.IGNORECASE)
-                    s['seeds'] = int(seeds_match.group(1)) if seeds_match else 0
+                    s['seeds'] = parse_stream_seeds(s)
 
                 # Sanitize title and name so raw emojis never cause Cairo rendering issues
                 s['title'] = re.sub(r'[\U00010000-\U0010ffff]', '', title).strip()
@@ -221,8 +252,7 @@ class TorrentProvider(BaseProvider):
         tl = title.lower()
         seeds = stream.get('seeds')
         if seeds is None:
-            seeds_match = re.search(r'(?:👤|seeds:?|\b)\s*(\d+)', title, re.IGNORECASE)
-            seeds = int(seeds_match.group(1)) if seeds_match else 0
+            seeds = parse_stream_seeds(stream)
 
         seeds_score = min(seeds, 150)
 

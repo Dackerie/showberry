@@ -320,7 +320,7 @@ class MpvWidget(Gtk.GLArea):
             'demuxer_max_back_bytes': 50 * 1024 * 1024,
             'demuxer_readahead_secs': 120,
             'cache_secs': 120,
-            'network_timeout': 15,
+            'network_timeout': 60,
             'hwdec': chosen_hwdec,
             'video_sync': 'audio',
             'vd_lavc_threads': 0,

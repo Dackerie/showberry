@@ -137,6 +137,8 @@ class TorrentStreamer:
         self.is_running = False
         self._stop_event = threading.Event()
         self.state_string = "idle"
+        self._current_stream_piece: int = 0
+        self._sequential_thread: Optional[threading.Thread] = None
 
     def _init_session(self):
         """Initialize libtorrent session with DHT, LSD, and ephemeral port."""
@@ -323,18 +325,27 @@ class TorrentStreamer:
         req_end = info.map_file(best_idx, max_size - 1, 1)
         self.start_piece = req_start.piece
         self.end_piece = req_end.piece
+        self._current_stream_piece = self.start_piece
 
-        # Prioritize header pieces (first 6 pieces) and footer pieces (last 3 pieces)
-        for p in range(self.start_piece, min(self.start_piece + 7, self.end_piece + 1)):
+        # Zero out all pieces across entire torrent so peers don't waste bandwidth on random pieces
+        num_pieces = info.num_pieces()
+        try:
+            self.handle.prioritize_pieces([0] * num_pieces)
+        except Exception as e:
+            logger.debug(f"Failed to initialize zero piece priorities: {e}")
+
+        # Prioritize header pieces (first 8 pieces) and footer pieces (last 4 pieces for MP4 moov / MKV cues)
+        for p in range(self.start_piece, min(self.start_piece + 8, self.end_piece + 1)):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
 
-        for p in range(max(self.start_piece, self.end_piece - 3), self.end_piece + 1):
+        for p in range(max(self.start_piece, self.end_piece - 4), self.end_piece + 1):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
 
-        # Start HTTP server on an ephemeral free port
+        # Start HTTP server on an ephemeral free port and begin active sequential window scheduler
         self._start_http_server()
+        self._start_sequential_worker()
         self.state_string = "buffering"
 
         # Wait for start piece (container header) to ensure file creation before MPV connects
@@ -345,15 +356,15 @@ class TorrentStreamer:
                 raise RuntimeError("Torrent handle became invalid or was stopped")
             if handle.have_piece(self.start_piece):
                 # Ensure OS file flush has occurred
-                for _ in range(30):
-                    if os.path.exists(self.video_file_path):
+                for _ in range(40):
+                    if os.path.exists(self.video_file_path) and os.path.getsize(self.video_file_path) > 0:
                         break
-                    time.sleep(0.1)
+                    time.sleep(0.05)
                 break
-            if time.time() - wait_start > 25.0:
-                logger.info("Initial piece wait timed out (25s); proceeding with streaming")
+            if time.time() - wait_start > 30.0:
+                logger.info("Initial piece wait reached 30s limit; proceeding with streaming")
                 break
-            time.sleep(0.2)
+            time.sleep(0.1)
 
         self.state_string = "ready"
         return f"http://127.0.0.1:{self.http_port}/stream"
@@ -371,34 +382,88 @@ class TorrentStreamer:
         self.http_thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.http_thread.start()
 
+    def _start_sequential_worker(self):
+        """Start background sliding-window piece prioritizer."""
+        if self._sequential_thread and self._sequential_thread.is_alive():
+            return
+        self._sequential_thread = threading.Thread(target=self._sequential_loop, daemon=True)
+        self._sequential_thread.start()
+
+    def _sequential_loop(self):
+        """Continuously enforce an active sliding window around the current playback head."""
+        last_window_center = -1
+        while not self._stop_event.is_set():
+            handle = self.handle
+            if not handle or not handle.is_valid():
+                break
+
+            try:
+                curr = self._current_stream_piece
+                # 1. Urgent window: curr to curr + 8 (priority 7, deadline 0)
+                urgent_end = min(curr + 9, self.end_piece + 1)
+                for p in range(curr, urgent_end):
+                    if not handle.have_piece(p):
+                        handle.piece_priority(p, 7)
+                        handle.set_piece_deadline(p, 0)
+
+                # 2. Buffer window: curr + 9 to curr + 32 (priority 7, graduated deadlines)
+                buf_end = min(curr + 33, self.end_piece + 1)
+                for p in range(urgent_end, buf_end):
+                    if not handle.have_piece(p):
+                        handle.piece_priority(p, 7)
+                        handle.set_piece_deadline(p, (p - curr) * 1000)
+
+                # 3. Lookahead window: curr + 33 to curr + 64 (priority 6)
+                lookahead_end = min(curr + 65, self.end_piece + 1)
+                for p in range(buf_end, lookahead_end):
+                    if not handle.have_piece(p):
+                        handle.piece_priority(p, 6)
+
+                # 4. If playback head moved, de-prioritize far-ahead pieces to 0
+                if curr != last_window_center:
+                    last_window_center = curr
+                    footer_start = max(self.start_piece, self.end_piece - 4)
+                    for p in range(lookahead_end, footer_start):
+                        if not handle.have_piece(p):
+                            handle.piece_priority(p, 0)
+
+                # 5. Always maintain footer pieces (essential for container duration/index)
+                for p in range(max(self.start_piece, self.end_piece - 4), self.end_piece + 1):
+                    if not handle.have_piece(p):
+                        handle.piece_priority(p, 7)
+                        handle.set_piece_deadline(p, 0)
+
+            except Exception as ex:
+                logger.debug(f"Sequential loop error: {ex}")
+
+            time.sleep(0.2)
+
     def stream_bytes(self, wfile, offset: int, length: int, chunk_size: int = 65536):
-        """Read bytes from disk, strictly verifying piece completion before sending to prevent player corruption."""
+        """Stream bytes from disk, keeping HTTP connection open during buffering and enforcing piece readiness."""
         if not self.handle or not self.handle.is_valid():
             return
 
         info = self.handle.torrent_file()
         bytes_sent = 0
 
-        # Wait for initial piece corresponding to the requested byte offset
-        p_initial = info.map_file(self.video_file_idx, offset, 1).piece
-        if not self.handle.have_piece(p_initial):
-            self.handle.piece_priority(p_initial, 7)
-            self.handle.set_piece_deadline(p_initial, 0)
-            wait_count = 0
-            while not self._stop_event.is_set():
-                if self.handle.have_piece(p_initial):
-                    break
-                time.sleep(0.1)
-                wait_count += 1
-                if wait_count > 300:  # 30s timeout
-                    break
+        # Update current playback piece from requested offset
+        req_piece = info.map_file(self.video_file_idx, offset, 1).piece
+        self._current_stream_piece = req_piece
 
-        # Wait for file to appear on disk if libtorrent disk I/O thread is flushing
-        wait_file_count = 0
+        # If seeking to a piece that's not ready, prioritize it immediately
+        if not self.handle.have_piece(req_piece):
+            try:
+                self.handle.clear_piece_deadlines()
+            except Exception:
+                pass
+            self.handle.piece_priority(req_piece, 7)
+            self.handle.set_piece_deadline(req_piece, 0)
+
+        # Wait for file to appear on disk if libtorrent disk I/O thread is still writing initial blocks
+        wait_file_start = time.time()
         while not self._stop_event.is_set() and not os.path.exists(self.video_file_path):
-            time.sleep(0.1)
-            wait_file_count += 1
-            if wait_file_count > 60:  # 6s timeout
+            time.sleep(0.05)
+            if time.time() - wait_file_start > 15.0:
                 break
 
         if not os.path.exists(self.video_file_path):
@@ -411,51 +476,41 @@ class TorrentStreamer:
                     curr_pos = offset + bytes_sent
                     chunk_to_read = min(chunk_size, length - bytes_sent)
 
-                    # Map byte range to piece range
                     p_start = info.map_file(self.video_file_idx, curr_pos, 1).piece
                     p_end = info.map_file(self.video_file_idx, curr_pos + chunk_to_read - 1, 1).piece
+                    self._current_stream_piece = p_start
 
-                    # Verify all required pieces for this chunk are downloaded
-                    missing_pieces = [p for p in range(p_start, p_end + 1) if not self.handle.have_piece(p)]
-                    if missing_pieces:
-                        # Prioritize missing pieces with immediate deadline 0
-                        for p in missing_pieces:
-                            self.handle.piece_priority(p, 7)
-                            self.handle.set_piece_deadline(p, 0)
+                    # Check if all pieces required for this chunk are downloaded
+                    if not all(self.handle.have_piece(p) for p in range(p_start, p_end + 1)):
+                        self.state_string = "buffering"
+                        for p in range(p_start, p_end + 1):
+                            if not self.handle.have_piece(p):
+                                self.handle.piece_priority(p, 7)
+                                self.handle.set_piece_deadline(p, 0)
 
-                        # Prioritize next 16 pieces with graduated deadlines
-                        ahead_deadlines = min(p_start + 16, self.end_piece + 1)
-                        for idx, p in enumerate(range(p_start, ahead_deadlines)):
-                            self.handle.piece_priority(p, 7)
-                            self.handle.set_piece_deadline(p, idx * 50)
-
-                        # Prefetch next 48 pieces (priority 7) for smooth continuous streaming
-                        ahead_prefetch = min(p_start + 48, self.end_piece + 1)
-                        for p in range(ahead_deadlines, ahead_prefetch):
-                            self.handle.piece_priority(p, 7)
-
-                        # Wait for required pieces with timeout (never read unverified bytes!)
-                        wait_count = 0
-                        all_have = False
+                        # Wait patiently for required pieces without closing the HTTP socket
                         while not self._stop_event.is_set():
                             if all(self.handle.have_piece(p) for p in range(p_start, p_end + 1)):
-                                all_have = True
                                 break
-                            time.sleep(0.08)
-                            wait_count += 1
-                            if wait_count > 375:  # 30s timeout
-                                break
+                            time.sleep(0.04)
 
-                        if not all_have:
-                            logger.warning(f"Timeout waiting for piece(s) {missing_pieces} at offset {curr_pos}")
+                        if self._stop_event.is_set():
                             break
 
+                    self.state_string = "ready"
                     f.seek(curr_pos)
                     data = f.read(chunk_to_read)
                     if not data:
-                        time.sleep(0.05)
+                        time.sleep(0.02)
                         continue
-                    wfile.write(data)
+
+                    try:
+                        wfile.write(data)
+                        wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        # Client disconnected or seeked
+                        break
+
                     bytes_sent += len(data)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -495,6 +550,14 @@ class TorrentStreamer:
         self._stop_event.set()
         self.is_running = False
         self.state_string = "stopped"
+
+        if self._sequential_thread and self._sequential_thread.is_alive():
+            try:
+                self._sequential_thread.join(timeout=0.5)
+            except Exception:
+                pass
+            self._sequential_thread = None
+
 
         if self.httpd:
             try:
