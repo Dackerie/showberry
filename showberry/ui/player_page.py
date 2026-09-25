@@ -317,9 +317,10 @@ class MpvWidget(Gtk.GLArea):
             'volume_max': 130,
             'cache': 'yes',
             'demuxer_max_bytes': 150 * 1024 * 1024,
-            'demuxer_max_back_bytes': 50 * 1024 * 1024,
-            'demuxer_readahead_secs': 120,
-            'cache_secs': 120,
+            'demuxer_readahead_secs': 5,
+            'cache_secs': 15,
+            'cache_pause_initial': 'no',
+            'cache_pause_wait': 1.0,
             'network_timeout': 60,
             'hwdec': chosen_hwdec,
             'video_sync': 'audio',
@@ -2581,14 +2582,25 @@ class PlayerPage(Adw.NavigationPage):
                 torrent_url = chosen_stream.get('torrent_url')
                 file_idx = chosen_stream.get('fileIdx')
                 streamer = get_torrent_streamer()
-                if not streamer:
-                    raise RuntimeError("Torrent streaming is unavailable because libtorrent is not installed on this system.")
+                start_time = float(self._start_pos or 0)
+                duration_secs = float(movie.get('runtime', 0) * 60) if movie.get('runtime') else 7200.0
+
+                def _on_torrent_progress(st):
+                    if session_id == self._session_id:
+                        down_mb = st.get('download_rate', 0) / (1024 * 1024)
+                        peers = st.get('peers', 0)
+                        if down_mb > 0.05 or peers > 0:
+                            GLib.idle_add(self._spinner_label.set_text, f"Buffering stream • {down_mb:.1f} MB/s ({peers} peers)...")
+
                 http_url = streamer.start_stream(
                     info_hash,
                     torrent_url=torrent_url,
                     file_idx=file_idx,
                     season=season,
                     episode=episode,
+                    start_time=start_time,
+                    duration_secs=duration_secs,
+                    on_progress=_on_torrent_progress,
                 )
                 if session_id != self._session_id:
                     return
@@ -2600,11 +2612,15 @@ class PlayerPage(Adw.NavigationPage):
                     quality=chosen_stream.get('quality', '1080p')
                 )
             else:
+                start_time = float(self._start_pos or 0)
+                duration_secs = float(movie.get('runtime', 0) * 60) if movie.get('runtime') else 7200.0
                 result = ProviderManager.resolve_stream(
                     tmdb_id=tmdb_id,
                     season=season,
                     episode=episode,
-                    preferred_provider_name=provider_name
+                    preferred_provider_name=provider_name,
+                    start_time=start_time,
+                    duration_secs=duration_secs,
                 )
 
             if session_id != self._session_id:
@@ -2986,6 +3002,15 @@ class PlayerPage(Adw.NavigationPage):
 
         pos = self._mpv_widget.get_position()
         dur = self._mpv_widget.get_duration()
+
+        # Guard: strictly verify that playback reached at least 85% of total runtime
+        # before marking completed or deleting from watch history.
+        # This prevents premature EOF (e.g. network disconnect, buffer dip, container probe)
+        # from erroneously marking the movie as watched.
+        if dur <= 30 or pos < (dur * 0.85):
+            logger.warning(f"Premature EOF encountered (pos={pos:.1f}s / dur={dur:.1f}s). Ignoring playback-ended.")
+            return
+
         movie = self._stream_data.get('movie', {})
         tmdb_id = movie.get('id')
         if tmdb_id:

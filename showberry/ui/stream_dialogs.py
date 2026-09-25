@@ -347,16 +347,19 @@ class StreamDetailsDialog(Adw.Window):
 
         if is_torrent:
             st = streamer.get_status()
-            progress = st.get('progress', 0.0)
-            self._progress_bar.set_fraction(progress)
-
             total_done = st.get('total_done', 0)
             total_size = st.get('total_size', 0) or st.get('video_file_size', 0)
+            if total_size <= 0 and streamer:
+                total_size = getattr(streamer, 'video_file_size', 0)
             done_mb = total_done / (1024 * 1024)
             size_mb = total_size / (1024 * 1024)
             if size_mb > 0:
-                self._progress_val.set_text(f"{done_mb:.1f} / {size_mb:.1f} MB ({progress * 100:.1f}%)")
+                pct = min(100.0, (done_mb / size_mb) * 100.0)
+                self._progress_bar.set_fraction(pct / 100.0)
+                self._progress_val.set_text(f"{done_mb:.1f} / {size_mb:.1f} MB ({pct:.1f}%)")
             else:
+                progress = st.get('progress', 0.0)
+                self._progress_bar.set_fraction(progress)
                 self._progress_val.set_text(f"{progress * 100:.1f}%")
 
             down_rate = st.get('download_rate', 0) / (1024 * 1024)

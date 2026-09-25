@@ -1263,13 +1263,15 @@ class TestUINavigation(unittest.TestCase):
 
             # Execute thread worker directly
             target_fn(*args)
-            mock_streamer.start_stream.assert_called_once_with(
-                'abcd1234ef',
-                torrent_url=None,
-                file_idx=None,
-                season=None,
-                episode=None
-            )
+            call_args, call_kwargs = mock_streamer.start_stream.call_args
+            self.assertEqual(call_args[0], 'abcd1234ef')
+            self.assertIsNone(call_kwargs.get('torrent_url'))
+            self.assertIsNone(call_kwargs.get('file_idx'))
+            self.assertIsNone(call_kwargs.get('season'))
+            self.assertIsNone(call_kwargs.get('episode'))
+            self.assertEqual(call_kwargs.get('start_time'), 0.0)
+            self.assertEqual(call_kwargs.get('duration_secs'), 7200.0)
+            self.assertTrue(callable(call_kwargs.get('on_progress')))
 
         # 4. Keyboard shortcuts T and I in PlayerPage
         mock_open_chooser = MagicMock()

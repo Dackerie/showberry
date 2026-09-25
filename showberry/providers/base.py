@@ -108,11 +108,13 @@ class ProviderManager:
         tmdb_id: int,
         season: int = None,
         episode: int = None,
-        preferred_provider_name: Optional[str] = None
+        preferred_provider_name: Optional[str] = None,
+        **kwargs
     ) -> Optional[StreamResult]:
         """
         Resolve stream for given media, falling back through available providers.
         """
+        import inspect
         all_providers = cls.get_providers()
         ordered_providers: List[BaseProvider] = []
 
@@ -139,7 +141,9 @@ class ProviderManager:
         for provider in ordered_providers:
             try:
                 logger.info(f"Attempting stream resolution with {provider.name} for TMDB {tmdb_id}")
-                res = provider.get_stream_url(tmdb_id, season=season, episode=episode)
+                sig = inspect.signature(provider.get_stream_url)
+                call_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
+                res = provider.get_stream_url(tmdb_id, season=season, episode=episode, **call_kwargs)
                 if res and res.url:
                     if not res.provider_name:
                         res.provider_name = provider.name
