@@ -16,6 +16,16 @@ from showberry.services.torrent import get_torrent_streamer
 logger = logging.getLogger(__name__)
 
 
+def clean_ui_text(text: Any) -> str:
+    """Strip supplementary plane emojis and symbols that crash Windows Cairo font rendering."""
+    if not text:
+        return ""
+    import re
+    cleaned = re.sub(r'[\U00010000-\U0010ffff]', '', str(text))
+    cleaned = re.sub(r'[\u2600-\u26ff\u2700-\u27bf]', '', cleaned)
+    return re.sub(r'\s+', ' ', cleaned).strip()
+
+
 class TorrentStreamChooserDialog(Adw.Window):
     """Modal dialog allowing the user to view and choose from all available torrent streams."""
 
@@ -159,10 +169,10 @@ class TorrentStreamChooserDialog(Adw.Window):
                     return False
                 row = Adw.ActionRow()
                 title = s.get('title', 'Torrent Stream')
-                clean_title = title.split('\n')[0].strip()
-                row.set_title(GLib.markup_escape_text(clean_title))
-                sub_text = s.get('name') or s.get('provider') or 'Torrent'
-                row.set_subtitle(GLib.markup_escape_text(sub_text))
+                clean_title = clean_ui_text(title.split('\n')[0].strip())
+                row.set_title(GLib.markup_escape_text(clean_title or 'Torrent Stream'))
+                sub_text = clean_ui_text(s.get('name') or s.get('provider') or 'Torrent')
+                row.set_subtitle(GLib.markup_escape_text(sub_text or 'Torrent'))
                 row.set_title_lines(1)
                 row.set_subtitle_lines(1)
 
@@ -351,18 +361,18 @@ class StreamDetailsDialog(Adw.Window):
 
             down_rate = st.get('download_rate', 0) / (1024 * 1024)
             up_rate = st.get('upload_rate', 0) / (1024 * 1024)
-            self._speed_val.set_text(f"⬇ {down_rate:.2f} MB/s  •  ⬆ {up_rate:.2f} MB/s")
+            self._speed_val.set_text(f"↓ {down_rate:.2f} MB/s  •  ↑ {up_rate:.2f} MB/s")
 
             seeds = st.get('seeds', 0)
             peers = st.get('peers', 0)
-            self._swarm_val.set_text(f"👤 {seeds} seeds, {peers} peers")
+            self._swarm_val.set_text(f"{seeds} seeds, {peers} peers")
 
-            fname = st.get('video_file_name') or movie.get('title', 'Video')
+            fname = clean_ui_text(st.get('video_file_name') or movie.get('title', 'Video'))
             self._file_val.set_text(fname)
         else:
             self._speed_row.set_visible(False)
             self._swarm_row.set_visible(False)
-            self._file_val.set_text(movie.get('title', 'HTTP Stream'))
+            self._file_val.set_text(clean_ui_text(movie.get('title', 'HTTP Stream')))
             self._progress_val.set_text("Direct Stream")
             self._progress_bar.set_fraction(1.0)
 
