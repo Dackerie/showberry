@@ -119,6 +119,16 @@ jobs:
           msystem: UCRT64
           update: true
 
+      - name: Cache libtorrent build
+        id: cache-libtorrent
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/msys64/ucrt64/lib/python*/site-packages/libtorrent*
+          key: ${{ runner.os }}-libtorrent-v2.1.1
+          restore-keys: |
+            ${{ runner.os }}-libtorrent-
+
       - name: Run Windows build script in UCRT64
         shell: msys2 {0}
         run: |
@@ -132,7 +142,8 @@ jobs:
       - name: Create Windows Portable Zip
         shell: pwsh
         run: |
-          Compress-Archive -Path dist\showberry\* -DestinationPath Showberry-Windows-Portable-x86_64.zip
+          New-Item -ItemType Directory -Force -Path output
+          Compress-Archive -Path dist\showberry\* -DestinationPath output\Showberry-Windows-Portable-x86_64.zip -Force
 
       - name: Upload Windows Installer
         uses: actions/upload-artifact@v4
@@ -145,7 +156,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable
-          path: Showberry-Windows-Portable-x86_64.zip
+          path: output/Showberry-Windows-Portable-x86_64.zip
           if-no-files-found: error
 
   build-macos:
