@@ -105,7 +105,18 @@ class SettingsPage(Gtk.Box):
         countdown_row.connect('notify::selected', self._on_countdown_changed)
         group.add(countdown_row)
 
+        # Hardware Acceleration
+        hwdec_row = Adw.ComboRow()
+        hwdec_row.set_title('Hardware Acceleration')
+        hwdec_row.set_subtitle('GPU video decoding (disable if playback micro-stutters or displays black video)')
+        hwdec_row.set_model(Gtk.StringList.new(['Auto (Recommended)', 'Enabled (Force)', 'Disabled (Software)']))
+        hwdec_modes = {'auto': 0, 'on': 1, 'off': 2}
+        hwdec_row.set_selected(hwdec_modes.get(self._settings.hwdec_mode, 0))
+        hwdec_row.connect('notify::selected', self._on_hwdec_changed)
+        group.add(hwdec_row)
+
         self._prefs_page.add(group)
+
 
     def _setup_torrent_group(self):
         """Setup torrent & P2P streaming settings group."""
@@ -249,6 +260,13 @@ class SettingsPage(Gtk.Box):
         idx = row.get_selected()
         if 0 <= idx < len(self._countdown_values):
             self._settings.auto_skip_countdown = self._countdown_values[idx]
+
+    def _on_hwdec_changed(self, row, pspec):
+        modes = ['auto', 'on', 'off']
+        idx = row.get_selected()
+        if 0 <= idx < len(modes):
+            self._settings.hwdec_mode = modes[idx]
+
 
     def _apply_theme(self, theme):
         """Apply the selected theme."""

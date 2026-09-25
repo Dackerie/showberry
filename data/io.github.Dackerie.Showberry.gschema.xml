@@ -16,6 +16,11 @@
       <summary>Theme Variant</summary>
       <description>Theme variant (default, light, dark)</description>
     </key>
+    <key name="hwdec-mode" type="s">
+      <default>'auto'</default>
+      <summary>Hardware Acceleration Mode</summary>
+      <description>Hardware acceleration mode (auto, enabled, disabled)</description>
+    </key>
     <key name="window-width" type="i">
       <default>1200</default>
       <summary>Window Width</summary>

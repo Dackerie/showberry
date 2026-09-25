@@ -58,9 +58,29 @@ class ShowberryApplication(Adw.Application):
 
     def do_startup(self):
         Adw.Application.do_startup(self)
+        self._apply_theme()
         self._load_css()
         self._setup_icon_theme()
         self._setup_accelerators()
+
+    def _apply_theme(self):
+        """Apply user's saved theme preference on startup."""
+        try:
+            from showberry.services.settings import SettingsService
+            theme = SettingsService.get_instance().theme_variant
+            style_manager = Adw.StyleManager.get_default()
+            if not style_manager:
+                return
+            if theme == 'light':
+                style_manager.set_color_scheme(Adw.ColorScheme.FORCE_LIGHT)
+            elif theme == 'dark':
+                style_manager.set_color_scheme(Adw.ColorScheme.FORCE_DARK)
+            else:
+                style_manager.set_color_scheme(Adw.ColorScheme.DEFAULT)
+            logger.info("Applied theme variant on startup: %s", theme)
+        except Exception as e:
+            logger.warning("Failed applying startup theme variant: %s", e)
+
 
     def _setup_icon_theme(self):
         """Ensure bundled and system icon directories are registered with Gtk.IconTheme."""
