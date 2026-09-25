@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+import math
 import socket
 import logging
 import threading
@@ -84,6 +85,22 @@ class TorrentStreamRequestHandler(BaseHTTPRequestHandler):
         content_type, _ = mimetypes.guess_type(file_path)
         if not content_type:
             content_type = 'video/mp4' if file_path.endswith('.mp4') else 'video/x-matroska'
+
+        # Ensure piece for range start is verified before committing HTTP response headers
+        if not head_only and streamer.handle and streamer.handle.is_valid():
+            try:
+                info = streamer.handle.torrent_file()
+                req_piece = info.map_file(streamer.video_file_idx, start, 1).piece
+                if not streamer.handle.have_piece(req_piece):
+                    streamer.handle.piece_priority(req_piece, 7)
+                    streamer.handle.set_piece_deadline(req_piece, 0)
+                    wait_p = time.time()
+                    while not streamer._stop_event.is_set() and not streamer.handle.have_piece(req_piece):
+                        if time.time() - wait_p > 35.0:
+                            break
+                        time.sleep(0.04)
+            except Exception as ex:
+                logger.debug(f"Pre-header piece wait error: {ex}")
 
         if range_header:
             self.send_response(206)
@@ -329,18 +346,6 @@ class TorrentStreamer:
         self.start_piece = req_start.piece
         self.end_piece = req_end.piece
 
-        # Set all pieces belonging to the selected video file to Priority 1 (background download).
-        # This keeps peers interested and actively uploading across the swarm (no peer choking).
-        # Other files in the torrent remain at priority 0 via prioritize_files above.
-        num_pieces = info.num_pieces()
-        piece_prio = [0] * num_pieces
-        for p in range(self.start_piece, min(self.end_piece + 1, num_pieces)):
-            piece_prio[p] = 1
-        try:
-            self.handle.prioritize_pieces(piece_prio)
-        except Exception as e:
-            logger.debug(f"Failed to initialize piece priorities: {e}")
-
         # Compute target playback piece based on resume position
         if start_time > 15.0 and duration_secs > 60.0:
             target_byte = int((start_time / duration_secs) * max_size)
@@ -350,29 +355,39 @@ class TorrentStreamer:
 
         self._current_stream_piece = target_piece
 
-        # Prioritize header pieces (first 8 pieces of video file)
-        for p in range(self.start_piece, min(self.start_piece + 8, self.end_piece + 1)):
+        # 1. Urgent startup piece prioritization:
+        # Concentrate 100% of initial swarm capacity on the critical container header & footer pieces
+        piece_len = info.piece_length()
+        pieces_for_header = max(2, min(6, int(math.ceil((6.0 * 1024 * 1024) / max(1, piece_len)))))
+        header_end = min(self.start_piece + pieces_for_header - 1, self.end_piece)
+        for p in range(self.start_piece, header_end + 1):
             self.handle.piece_priority(p, 7)
             self.handle.set_piece_deadline(p, 0)
 
-        # Prioritize target resume piece
+        # Footer pieces (last 4 pieces for MP4 moov / MKV cues)
+        footer_start = max(self.start_piece, self.end_piece - 3)
+        for p in range(footer_start, self.end_piece + 1):
+            self.handle.piece_priority(p, 7)
+            self.handle.set_piece_deadline(p, 0)
+
+        # Target resume piece if seeking
         if target_piece != self.start_piece:
             for p in range(target_piece, min(target_piece + 4, self.end_piece + 1)):
                 self.handle.piece_priority(p, 7)
                 self.handle.set_piece_deadline(p, 0)
 
-        # Prioritize footer pieces (last 4 pieces for MP4 moov / MKV cues)
-        for p in range(max(self.start_piece, self.end_piece - 4), self.end_piece + 1):
-            self.handle.piece_priority(p, 7)
-            self.handle.set_piece_deadline(p, 0)
+        # Immediate lookahead pieces (next 15 pieces) with priority 6
+        for p in range(header_end + 1, min(header_end + 16, footer_start)):
+            self.handle.piece_priority(p, 6)
 
-        # Start HTTP server on an ephemeral free port and begin active sequential window scheduler
+        # Start HTTP server on an ephemeral free port
         self._start_http_server()
-        self._start_sequential_worker()
         self.state_string = "buffering"
 
-        # Wait for start piece (container header) and target resume piece before MPV connects
+        # Wait for start pieces (container header) and target resume piece before returning stream URL
         wait_start = time.time()
+        min_required_count = max(1, min(3, int(math.ceil((5.0 * 1024 * 1024) / max(1, piece_len)))))
+        min_required_header = min(self.start_piece + min_required_count - 1, self.end_piece)
         while not self._stop_event.is_set():
             handle = self.handle
             if not handle or not handle.is_valid():
@@ -384,21 +399,25 @@ class TorrentStreamer:
                 except Exception:
                     pass
 
-            has_start = handle.have_piece(self.start_piece)
+            has_start = all(handle.have_piece(p) for p in range(self.start_piece, min_required_header + 1))
             has_target = handle.have_piece(target_piece)
+            has_footer = handle.have_piece(self.end_piece)
 
-            if has_start and has_target:
+            if has_start and has_target and (has_footer or (time.time() - wait_start > 15.0)):
                 # Ensure OS file flush has occurred
                 for _ in range(40):
                     if os.path.exists(self.video_file_path) and os.path.getsize(self.video_file_path) > 0:
                         break
                     time.sleep(0.05)
                 break
-            if time.time() - wait_start > 30.0:
-                logger.info("Initial piece wait reached 30s limit; proceeding with streaming")
+
+            if time.time() - wait_start > 50.0:
+                logger.warning("Initial piece wait reached 50s timeout; proceeding with streaming")
                 break
             time.sleep(0.1)
 
+        # Now start background sequential worker to maintain sliding window and engage full swarm
+        self._start_sequential_worker()
         self.state_string = "ready"
         return f"http://127.0.0.1:{self.http_port}/stream"
 
@@ -452,13 +471,13 @@ class TorrentStreamer:
                     if not handle.have_piece(p):
                         handle.piece_priority(p, 6)
 
-                # 4. If playback head moved, reset far-ahead pieces to Priority 1 (NEVER 0)
+                # 4. If playback head moved, ensure background pieces of video file are at Priority 1 (NEVER 0)
                 # This maintains swarm health and download speed without peer choking
                 if curr != last_window_center:
                     last_window_center = curr
                     footer_start = max(self.start_piece, self.end_piece - 4)
-                    for p in range(lookahead_end, footer_start):
-                        if not handle.have_piece(p) and handle.piece_priority(p) > 1:
+                    for p in range(self.start_piece, footer_start):
+                        if not handle.have_piece(p) and handle.piece_priority(p) == 0:
                             handle.piece_priority(p, 1)
 
                 # 5. Always maintain footer pieces (essential for container duration/index)
