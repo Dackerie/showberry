@@ -83,44 +83,79 @@ class SettingsService:
             logger.debug("Could not write fallback settings JSON: %s", e)
 
 
+    def _has_schema_key(self, key: str) -> bool:
+        if not self._settings:
+            return False
+        try:
+            schema = getattr(self._settings.props, 'settings_schema', None)
+            return schema.has_key(key) if schema else False
+        except Exception:
+            return False
+
     @property
     def tmdb_api_key(self):
-        if self._settings:
+        if self._has_schema_key('tmdb-api-key'):
             return self._settings.get_string('tmdb-api-key')
         return self._fallback_store.get('tmdb-api-key', '')
 
     @tmdb_api_key.setter
     def tmdb_api_key(self, value):
-        if self._settings:
+        if self._has_schema_key('tmdb-api-key'):
             self._settings.set_string('tmdb-api-key', value)
         else:
             self._set_fallback('tmdb-api-key', value)
 
     @property
     def default_provider(self):
-        if self._settings:
+        if self._has_schema_key('default-provider'):
             return self._settings.get_string('default-provider')
         return self._fallback_store.get('default-provider', 'vidy')
 
     @default_provider.setter
     def default_provider(self, value):
-        if self._settings:
+        if self._has_schema_key('default-provider'):
             self._settings.set_string('default-provider', value)
         else:
             self._set_fallback('default-provider', value)
 
     @property
     def theme_variant(self):
-        if self._settings:
-            return self._settings.get_string('theme-variant')
+        if self._has_schema_key('theme-variant'):
+            try:
+                val = self._settings.get_string('theme-variant')
+                if val:
+                    return val
+            except Exception:
+                pass
         return self._fallback_store.get('theme-variant', 'dark')
 
     @theme_variant.setter
     def theme_variant(self, value):
-        if self._settings:
-            self._settings.set_string('theme-variant', value)
-        else:
-            self._set_fallback('theme-variant', value)
+        if self._has_schema_key('theme-variant'):
+            try:
+                self._settings.set_string('theme-variant', value)
+            except Exception:
+                pass
+        self._set_fallback('theme-variant', value)
+
+    @property
+    def hwdec_mode(self) -> str:
+        if self._has_schema_key('hwdec-mode'):
+            try:
+                return self._settings.get_string('hwdec-mode')
+            except Exception:
+                pass
+        return self._fallback_store.get('hwdec-mode', 'auto')
+
+    @hwdec_mode.setter
+    def hwdec_mode(self, value: str):
+        if self._has_schema_key('hwdec-mode'):
+            try:
+                self._settings.set_string('hwdec-mode', value)
+            except Exception:
+                pass
+        self._set_fallback('hwdec-mode', value)
+
 
     @property
     def preferred_torrent_quality(self) -> str:
@@ -161,14 +196,6 @@ class SettingsService:
         else:
             self._set_fallback('torrent-cache-size-gb', value)
 
-    def _has_schema_key(self, key: str) -> bool:
-        if not self._settings:
-            return False
-        try:
-            schema = self._settings.props.settings_schema
-            return schema.has_key(key) if schema else False
-        except Exception:
-            return False
 
     @property
     def sub_pos(self) -> int:

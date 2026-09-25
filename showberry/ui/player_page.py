@@ -289,8 +289,25 @@ class MpvWidget(Gtk.GLArea):
             else:
                 mpv_log.debug("%s", msg)
 
+            # Auto-fallback to software decode if display driver or VM fails hardware surface allocation
+            if any(s in msg for s in ('AVHWFramesContext', 'dxva2_vld', 'Failed to allocate AVHWDeviceContext', 'VK_ERROR')):
+                if getattr(self, '_mpv', None):
+                    try:
+                        cur_hwdec = self._mpv['hwdec']
+                        if cur_hwdec != ['no'] and cur_hwdec != 'no':
+                            logger.warning("Hardware acceleration failed on display driver/VM; falling back to software decoding")
+                            self._mpv['hwdec'] = 'no'
+                    except Exception:
+                        pass
+
         is_debug = ('--debug' in sys.argv or '--verbose' in sys.argv or os.environ.get('SHOWBERRY_DEBUG'))
         mpv_loglevel = 'v' if is_debug else 'warn'
+
+        hwdec_pref = getattr(settings, 'hwdec_mode', 'auto')
+        if hwdec_pref == 'off':
+            chosen_hwdec = 'no'
+        else:
+            chosen_hwdec = 'auto-safe'
 
         mpv_opts = {
             'vo': 'libmpv',
@@ -304,6 +321,13 @@ class MpvWidget(Gtk.GLArea):
             'demuxer_readahead_secs': 120,
             'cache_secs': 120,
             'network_timeout': 15,
+            'hwdec': chosen_hwdec,
+            'video_sync': 'audio',
+            'vd_lavc_threads': 0,
+            'framedrop': 'vo',
+            'scale': 'bilinear',
+            'cscale': 'bilinear',
+            'dscale': 'bilinear',
             'slang': 'eng,en,enUS,en-US',
             'sub_scale_with_window': 'yes',
             'sub_font_size': 55,
@@ -314,11 +338,8 @@ class MpvWidget(Gtk.GLArea):
             'loglevel': mpv_loglevel,
         }
         if sys.platform == 'win32':
-            mpv_opts['hwdec'] = 'auto-safe'
             mpv_opts['opengl_es'] = 'yes'
-            mpv_opts['vd_lavc_threads'] = 4
-        else:
-            mpv_opts['hwdec'] = 'auto-safe'
+
 
         # Ensure C numeric locale for libmpv across platforms
         try:
@@ -439,16 +460,15 @@ class MpvWidget(Gtk.GLArea):
                 return
             if not getattr(self, '_redraw_pending', False):
                 self._redraw_pending = True
-                GLib.idle_add(self._trigger_redraw)
+                GLib.idle_add(self._trigger_redraw, priority=GLib.PRIORITY_HIGH)
         except Exception:
             pass
 
     def _trigger_redraw(self, *_):
         self._redraw_pending = False
-        if not self._is_active or not self._ctx:
+        if not self._is_active:
             return False
-        if self._ctx.update():
-            self.queue_render()
+        self.queue_render()
         return False
 
     def _on_render(self, area, gl_context):
@@ -505,6 +525,12 @@ class MpvWidget(Gtk.GLArea):
             except Exception:
                 pass
 
+        # Advance internal presentation timing right at moment of render
+        try:
+            self._ctx.update()
+        except Exception:
+            pass
+
         # Render MPV frame
         try:
             self._ctx.render(
@@ -515,6 +541,7 @@ class MpvWidget(Gtk.GLArea):
         except Exception as e:
             logger.error("MPV render error: %s", e)
             return False
+
 
         # Ensure GTK buffers are attached and valid for snapshot/blit
         try:
@@ -2025,6 +2052,13 @@ class PlayerPage(Adw.NavigationPage):
         self._setup_keybindings()
         self.connect('unrealize', lambda w: self._set_cursor_visible(True))
 
+        # Setup dynamic theme synchronization
+        style_mgr = Adw.StyleManager.get_default()
+        if style_mgr:
+            style_mgr.connect('notify::dark', lambda *_: self._update_theme_classes())
+        self._update_theme_classes()
+
+
     def _setup_ui(self):
         self._overlay = Gtk.Overlay()
         self._overlay.set_hexpand(True)
@@ -2191,7 +2225,40 @@ class PlayerPage(Adw.NavigationPage):
         scroll_controller.connect('scroll', self._on_video_scroll)
         self._overlay.add_controller(scroll_controller)
 
+    def _update_theme_classes(self):
+        """Sync player page, controls, top bar, and all popovers with current light/dark scheme."""
+        style_mgr = Adw.StyleManager.get_default()
+        is_dark = style_mgr.get_dark() if style_mgr else True
+
+        target_add = 'player-theme-dark' if is_dark else 'player-theme-light'
+        target_remove = 'player-theme-light' if is_dark else 'player-theme-dark'
+
+        self.remove_css_class(target_remove)
+        self.add_css_class(target_add)
+
+        widgets = [
+            getattr(self, '_top_bar', None),
+            getattr(self, '_controls', None),
+            getattr(self, '_spinner_box', None),
+            getattr(self, '_next_ep_card', None),
+            getattr(self, '_provider_popover', None),
+        ]
+        if hasattr(self, '_controls'):
+            for attr in ('_sub_popover', '_audio_popover', '_speed_popover', '_seek_popover'):
+                pop = getattr(self._controls, attr, None)
+                if pop:
+                    widgets.append(pop)
+
+        for w in widgets:
+            if w:
+                try:
+                    w.remove_css_class(target_remove)
+                    w.add_css_class(target_add)
+                except Exception:
+                    pass
+
     def show_osd_notification(self, text: str):
+
         """Show temporary floating OSD pill on video surface."""
         self._osd_pill.set_text(text)
         is_boosted = False
@@ -2436,6 +2503,8 @@ class PlayerPage(Adw.NavigationPage):
         self._controls.reset(self._start_pos, 0.0)
         self._available_subtitles = []
         self._controls.set_available_subtitles([])
+        self._update_theme_classes()
+
 
         # Reset Next Episode and Intro state
         self._next_stream_data = None

@@ -135,47 +135,24 @@ flowboxchild:focus .movie-card {
 }
 
 .player-controls {
-    background-color: alpha(#161618, 0.88);
     backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 18px;
     padding: 10px 20px 12px 20px;
     margin: 0 24px 20px 24px;
-    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
     transition: opacity 250ms cubic-bezier(0.25, 1, 0.5, 1);
-    color: #ffffff;
 }
 
-.player-controls button,
-.player-controls label,
-.player-controls image {
-    color: #ffffff;
-}
-
-.player-controls button.flat {
-    color: rgba(255, 255, 255, 0.88);
-    background: transparent;
-    transition: color 150ms ease, background-color 150ms ease;
-}
-
-.player-controls button.flat:hover {
-    color: #ffffff;
-    background-color: rgba(255, 255, 255, 0.15);
-}
-
-.player-controls button.flat:active {
-    color: #ffffff;
-    background-color: rgba(255, 255, 255, 0.22);
-}
-
-.player-controls .dim-label {
-    color: rgba(255, 255, 255, 0.72);
+.player-top-bar {
+    backdrop-filter: blur(24px);
+    border-radius: 16px;
+    padding: 6px 16px;
+    margin: 16px 24px 0 24px;
+    transition: opacity 250ms cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .player-controls scale trough {
     min-height: 4px;
     border-radius: 2px;
-    background-color: rgba(255, 255, 255, 0.22);
 }
 
 .player-controls scale highlight {
@@ -193,12 +170,100 @@ flowboxchild:focus .movie-card {
     border-radius: 2px;
 }
 
-/* Player & Provider Popovers */
+/* ========================================================
+   PLAYER DARK THEME (Default & .player-theme-dark)
+   ======================================================== */
+.player-controls,
+.player-theme-dark .player-controls {
+    background-color: alpha(#161618, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65), 0 2px 8px rgba(0, 0, 0, 0.4);
+    color: #ffffff;
+}
+
+.player-top-bar,
+.player-theme-dark .player-top-bar {
+    background-color: alpha(#161618, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55);
+    color: #ffffff;
+}
+
+.player-controls button,
+.player-controls label,
+.player-controls image,
+.player-top-bar button,
+.player-top-bar label,
+.player-top-bar image,
+.player-theme-dark .player-controls button,
+.player-theme-dark .player-controls label,
+.player-theme-dark .player-controls image,
+.player-theme-dark .player-top-bar button,
+.player-theme-dark .player-top-bar label,
+.player-theme-dark .player-top-bar image {
+    color: #ffffff;
+}
+
+.player-controls button.flat,
+.player-top-bar button.flat,
+.player-theme-dark .player-controls button.flat,
+.player-theme-dark .player-top-bar button.flat {
+    color: rgba(255, 255, 255, 0.88);
+    background: transparent;
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.player-controls button.flat:hover,
+.player-top-bar button.flat:hover,
+.player-theme-dark .player-controls button.flat:hover,
+.player-theme-dark .player-top-bar button.flat:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.player-controls button.flat:active,
+.player-top-bar button.flat:active,
+.player-theme-dark .player-controls button.flat:active,
+.player-theme-dark .player-top-bar button.flat:active {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.player-controls .dim-label,
+.player-top-bar .dim-label,
+.player-theme-dark .player-controls .dim-label,
+.player-theme-dark .player-top-bar .dim-label {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+.player-controls scale trough,
+.player-theme-dark .player-controls scale trough {
+    background-color: rgba(255, 255, 255, 0.22);
+}
+
+.player-spinner-box,
+.player-theme-dark .player-spinner-box {
+    background-color: rgba(18, 18, 18, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+    padding: 24px 36px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.65);
+    color: #ffffff;
+}
+
+.player-spinner-box label,
+.player-theme-dark .player-spinner-box label {
+    color: #ffffff;
+}
+
+/* Dark Popovers */
 popover.player-popover contents,
 popover.provider-popover contents,
 popover.seek-popover contents,
-.player-controls popover contents,
-.player-page popover contents {
+popover.player-theme-dark contents,
+.player-theme-dark popover.player-popover contents,
+.player-theme-dark popover.provider-popover contents,
+.player-theme-dark popover.seek-popover contents {
     background-color: #1c1c1e;
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -210,27 +275,35 @@ popover.seek-popover contents,
 popover.player-popover arrow,
 popover.provider-popover arrow,
 popover.seek-popover arrow,
-.player-controls popover arrow,
-.player-page popover arrow {
+popover.player-theme-dark arrow,
+.player-theme-dark popover.player-popover arrow,
+.player-theme-dark popover.provider-popover arrow,
+.player-theme-dark popover.seek-popover arrow {
     background-color: #1c1c1e;
     border-color: rgba(255, 255, 255, 0.2);
 }
 
 popover.player-popover label,
 popover.provider-popover label,
-.player-page popover label {
+popover.player-theme-dark label,
+.player-theme-dark popover.player-popover label,
+.player-theme-dark popover.provider-popover label {
     color: #ffffff;
 }
 
 popover.player-popover label.dim-label,
 popover.provider-popover label.dim-label,
-.player-page popover label.dim-label {
+popover.player-theme-dark label.dim-label,
+.player-theme-dark popover.player-popover label.dim-label,
+.player-theme-dark popover.provider-popover label.dim-label {
     color: rgba(255, 255, 255, 0.7);
 }
 
 popover.player-popover button,
 popover.provider-popover button,
-.player-page popover button {
+popover.player-theme-dark button,
+.player-theme-dark popover.player-popover button,
+.player-theme-dark popover.provider-popover button {
     color: #ffffff;
     border-radius: 6px;
     padding: 6px 10px;
@@ -238,28 +311,169 @@ popover.provider-popover button,
 
 popover.player-popover button:hover,
 popover.provider-popover button:hover,
-.player-page popover button:hover {
+popover.player-theme-dark button:hover,
+.player-theme-dark popover.player-popover button:hover,
+.player-theme-dark popover.provider-popover button:hover {
     background-color: rgba(255, 255, 255, 0.12);
     color: #ffffff;
 }
 
 popover.player-popover image,
 popover.provider-popover image,
-.player-page popover image {
+popover.player-theme-dark image,
+.player-theme-dark popover.player-popover image,
+.player-theme-dark popover.provider-popover image {
     color: #ffffff;
 }
 
 popover.player-popover separator,
 popover.provider-popover separator,
-.player-page popover separator {
+popover.player-theme-dark separator,
+.player-theme-dark popover.player-popover separator,
+.player-theme-dark popover.provider-popover separator {
     background-color: rgba(255, 255, 255, 0.15);
 }
 
-.seek-popover-label {
+.seek-popover-label,
+.player-theme-dark .seek-popover-label {
     color: #ffffff;
     font-weight: 700;
     font-size: 0.85rem;
 }
+
+/* ========================================================
+   PLAYER LIGHT THEME (.player-theme-light)
+   ======================================================== */
+.player-theme-light .player-controls {
+    background-color: alpha(#ffffff, 0.92);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.12);
+    color: #111111;
+}
+
+.player-theme-light .player-top-bar {
+    background-color: alpha(#ffffff, 0.90);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+    color: #111111;
+}
+
+.player-theme-light .player-controls button,
+.player-theme-light .player-controls label,
+.player-theme-light .player-controls image,
+.player-theme-light .player-top-bar button,
+.player-theme-light .player-top-bar label,
+.player-theme-light .player-top-bar image {
+    color: #111111;
+}
+
+.player-theme-light .player-controls button.flat,
+.player-theme-light .player-top-bar button.flat {
+    color: rgba(0, 0, 0, 0.85);
+    background: transparent;
+    transition: color 150ms ease, background-color 150ms ease;
+}
+
+.player-theme-light .player-controls button.flat:hover,
+.player-theme-light .player-top-bar button.flat:hover {
+    color: #000000;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.player-theme-light .player-controls button.flat:active,
+.player-theme-light .player-top-bar button.flat:active {
+    color: #000000;
+    background-color: rgba(0, 0, 0, 0.15);
+}
+
+.player-theme-light .player-controls .dim-label,
+.player-theme-light .player-top-bar .dim-label {
+    color: rgba(0, 0, 0, 0.62);
+}
+
+.player-theme-light .player-controls scale trough {
+    background-color: rgba(0, 0, 0, 0.16);
+}
+
+.player-theme-light .player-spinner-box {
+    background-color: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 16px;
+    padding: 24px 36px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    color: #111111;
+}
+
+.player-theme-light .player-spinner-box label {
+    color: #111111;
+}
+
+/* Light Popovers */
+popover.player-theme-light contents,
+.player-theme-light popover.player-popover contents,
+.player-theme-light popover.provider-popover contents,
+.player-theme-light popover.seek-popover contents {
+    background-color: #ffffff;
+    color: #111111;
+    border: 1px solid rgba(0, 0, 0, 0.14);
+    border-radius: 10px;
+    padding: 6px 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+popover.player-theme-light arrow,
+.player-theme-light popover.player-popover arrow,
+.player-theme-light popover.provider-popover arrow,
+.player-theme-light popover.seek-popover arrow {
+    background-color: #ffffff;
+    border-color: rgba(0, 0, 0, 0.14);
+}
+
+popover.player-theme-light label,
+.player-theme-light popover.player-popover label,
+.player-theme-light popover.provider-popover label {
+    color: #111111;
+}
+
+popover.player-theme-light label.dim-label,
+.player-theme-light popover.player-popover label.dim-label,
+.player-theme-light popover.provider-popover label.dim-label {
+    color: rgba(0, 0, 0, 0.60);
+}
+
+popover.player-theme-light button,
+.player-theme-light popover.player-popover button,
+.player-theme-light popover.provider-popover button {
+    color: #111111;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+popover.player-theme-light button:hover,
+.player-theme-light popover.player-popover button:hover,
+.player-theme-light popover.provider-popover button:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+    color: #000000;
+}
+
+popover.player-theme-light image,
+.player-theme-light popover.player-popover image,
+.player-theme-light popover.provider-popover image {
+    color: #111111;
+}
+
+popover.player-theme-light separator,
+.player-theme-light popover.player-popover separator,
+.player-theme-light popover.provider-popover separator {
+    background-color: rgba(0, 0, 0, 0.12);
+}
+
+.player-theme-light .seek-popover-label {
+    color: #111111;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
 
 /* Navigation & Header */
 .navigation-sidebar {

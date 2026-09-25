@@ -86,20 +86,22 @@ def main():
             dep_key = dep_name.lower()
             dep_src = bin_dir / dep_name
 
+            # Exclude unused encoder-only DLLs that bloat the bundle
+            if dep_key in ('librav1e.dll', 'libsvtav1enc-4.dll'):
+                continue
+
             # If dependency exists in MSYS2 bin and hasn't been bundled yet
             if dep_src.is_file() and dep_key not in copied_dlls:
                 copied_dlls.add(dep_key)
 
-                # Copy to dist_dir root
-                shutil.copy2(dep_src, dist_dir)
-                # Also copy to _internal if it exists
-                if internal_dir.is_dir():
-                    shutil.copy2(dep_src, internal_dir)
+                # Bundle into _internal where PyInstaller 6 runtime and main.py search for DLLs
+                target_dest = internal_dir if internal_dir.is_dir() else dist_dir
+                shutil.copy2(dep_src, target_dest)
 
                 # Queue the newly found DLL to discover its dependencies
                 queue.append(dep_src)
 
-    print(f"==> Successfully bundled {len(copied_dlls)} additional MSYS2 DLL dependencies!")
+    print(f"==> Successfully bundled {len(copied_dlls)} additional MSYS2 DLL dependencies into _internal!")
 
     # Step 2b: Ensure ANGLE / EGL DLLs are bundled (required by GTK4 GLArea on Windows)
     egl_dlls = ['libEGL.dll', 'libGLESv2.dll', 'd3dcompiler_47.dll']
@@ -110,15 +112,15 @@ def main():
         windir / 'System32' / 'Microsoft-Edge-WebView',
         windir / 'System32',
     ]
+    target_dest = internal_dir if internal_dir.is_dir() else dist_dir
     for dll_name in egl_dlls:
         for sdir in angle_search_dirs:
             candidate = sdir / dll_name
             if candidate.is_file():
                 print(f"==> Bundling EGL/ANGLE component: {candidate}")
-                shutil.copy2(candidate, dist_dir)
-                if internal_dir.is_dir():
-                    shutil.copy2(candidate, internal_dir)
+                shutil.copy2(candidate, target_dest)
                 break
+
 
     # Step 3: Ensure GSettings schemas and style.css are present in distribution
     schemas_src = repo_root / 'data'
@@ -173,6 +175,19 @@ def main():
 
     print("==> Successfully bundled gdk-pixbuf loaders and icon themes into Windows distribution!")
 
+    # Step 6: Prune duplicate root DLLs to optimize bundle size (all DLLs reside in _internal)
+    if internal_dir.is_dir():
+        pruned_count = 0
+        for dll_file in dist_dir.glob('*.dll'):
+            try:
+                dll_file.unlink()
+                pruned_count += 1
+            except Exception:
+                pass
+        if pruned_count > 0:
+            print(f"==> Pruned {pruned_count} duplicate root DLLs (kept in _internal/) to save ~230 MB disk space!")
+
 
 if __name__ == '__main__':
     main()
+
