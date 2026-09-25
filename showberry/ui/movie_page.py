@@ -1077,7 +1077,8 @@ class MoviePage(Adw.NavigationPage):
 
 
     def _setup_providers(self):
-        providers = get_all_providers()
+        from showberry.services.torrent import HAS_LIBTORRENT
+        providers = [p for p in get_all_providers() if 'torrent' not in p.name.lower() or HAS_LIBTORRENT]
         from showberry.services.settings import SettingsService
         default_prov = SettingsService().default_provider or 'Vidy'
         auto_label = f"Auto (Best • {default_prov})"

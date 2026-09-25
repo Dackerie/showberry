@@ -193,6 +193,74 @@ flowboxchild:focus .movie-card {
     border-radius: 2px;
 }
 
+/* Player & Provider Popovers */
+popover.player-popover contents,
+popover.provider-popover contents,
+popover.seek-popover contents,
+.player-controls popover contents,
+.player-page popover contents {
+    background-color: #1c1c1e;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    padding: 6px 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+popover.player-popover arrow,
+popover.provider-popover arrow,
+popover.seek-popover arrow,
+.player-controls popover arrow,
+.player-page popover arrow {
+    background-color: #1c1c1e;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+popover.player-popover label,
+popover.provider-popover label,
+.player-page popover label {
+    color: #ffffff;
+}
+
+popover.player-popover label.dim-label,
+popover.provider-popover label.dim-label,
+.player-page popover label.dim-label {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+popover.player-popover button,
+popover.provider-popover button,
+.player-page popover button {
+    color: #ffffff;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+popover.player-popover button:hover,
+popover.provider-popover button:hover,
+.player-page popover button:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+}
+
+popover.player-popover image,
+popover.provider-popover image,
+.player-page popover image {
+    color: #ffffff;
+}
+
+popover.player-popover separator,
+popover.provider-popover separator,
+.player-page popover separator {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.seek-popover-label {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.85rem;
+}
+
 /* Navigation & Header */
 .navigation-sidebar {
     background-color: alpha(@window_bg_color, 0.95);
