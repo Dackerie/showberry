@@ -10,31 +10,56 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 cd "${REPO_ROOT}"
 
+# Configure pacman to avoid download aborts on slow or congested mirrors
+echo "==> Configuring MSYS2 pacman settings..."
+sed -i 's/^#DisableDownloadTimeout/DisableDownloadTimeout/' /etc/pacman.conf 2>/dev/null || true
+if ! grep -q "^DisableDownloadTimeout" /etc/pacman.conf 2>/dev/null; then
+    echo "DisableDownloadTimeout" >> /etc/pacman.conf
+fi
+
 echo "==> [1/5] Installing MSYS2 UCRT64 dependencies..."
-pacman -S --noconfirm --needed \
-    mingw-w64-ucrt-x86_64-python \
-    mingw-w64-ucrt-x86_64-gtk4 \
-    mingw-w64-ucrt-x86_64-libadwaita \
-    mingw-w64-ucrt-x86_64-adwaita-icon-theme \
-    mingw-w64-ucrt-x86_64-python-pillow \
-    mingw-w64-ucrt-x86_64-python-gobject \
-    mingw-w64-ucrt-x86_64-python-pip \
-    mingw-w64-ucrt-x86_64-python-cryptography \
-    mingw-w64-ucrt-x86_64-pyinstaller \
-    mingw-w64-ucrt-x86_64-mpv \
-    mingw-w64-ucrt-x86_64-gcc \
-    mingw-w64-ucrt-x86_64-glib2 \
-    mingw-w64-ucrt-x86_64-openssl \
-    mingw-w64-ucrt-x86_64-cmake \
-    mingw-w64-ucrt-x86_64-ninja \
-    mingw-w64-ucrt-x86_64-git \
-    mingw-w64-ucrt-x86_64-boost \
-    mingw-w64-ucrt-x86_64-boost-libs \
-    mingw-w64-ucrt-x86_64-ntldd \
+PACKAGES=(
+    mingw-w64-ucrt-x86_64-python
+    mingw-w64-ucrt-x86_64-gtk4
+    mingw-w64-ucrt-x86_64-libadwaita
+    mingw-w64-ucrt-x86_64-adwaita-icon-theme
+    mingw-w64-ucrt-x86_64-python-pillow
+    mingw-w64-ucrt-x86_64-python-gobject
+    mingw-w64-ucrt-x86_64-python-pip
+    mingw-w64-ucrt-x86_64-python-cryptography
+    mingw-w64-ucrt-x86_64-pyinstaller
+    mingw-w64-ucrt-x86_64-mpv
+    mingw-w64-ucrt-x86_64-gcc
+    mingw-w64-ucrt-x86_64-glib2
+    mingw-w64-ucrt-x86_64-openssl
+    mingw-w64-ucrt-x86_64-cmake
+    mingw-w64-ucrt-x86_64-ninja
+    mingw-w64-ucrt-x86_64-git
+    mingw-w64-ucrt-x86_64-boost
+    mingw-w64-ucrt-x86_64-boost-libs
+    mingw-w64-ucrt-x86_64-ntldd
     mingw-w64-ucrt-x86_64-angleproject
+)
+
+MAX_RETRIES=5
+for i in $(seq 1 $MAX_RETRIES); do
+    echo "==> Pacman installation attempt $i of $MAX_RETRIES..."
+    rm -f /var/lib/pacman/db.lck 2>/dev/null || true
+    if pacman -S --disable-download-timeout --noconfirm --needed "${PACKAGES[@]}"; then
+        echo "==> All MSYS2 dependencies installed successfully."
+        break
+    else
+        if [ "$i" -eq "$MAX_RETRIES" ]; then
+            echo "==> Error: Pacman installation failed after $MAX_RETRIES attempts."
+            exit 1
+        fi
+        echo "==> Pacman encountered an issue. Retrying in 5 seconds..."
+        sleep 5
+    fi
+done
 
 echo "==> [2/5] Installing Python PIP packages..."
-pip install --break-system-packages \
+pip install --break-system-packages --retries 5 --timeout 60 \
     requests \
     pillow \
     curl_cffi \
@@ -49,18 +74,20 @@ if python -c "import libtorrent" 2>/dev/null; then
 else
     echo "==> Building and installing Libtorrent from source..."
     (
+        set -e
         git clone --recursive "https://github.com/arvidn/libtorrent"
         cd libtorrent
         git switch --detach 578e06824c3546f3371ab43967ab288a7e253eca
-        mkdir build && cd build
+        mkdir -p build && cd build
         cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Release -Dpython-bindings=ON -DBUILD_SHARED_LIBS=OFF -Dstatic_runtime=ON -DPython3_EXECUTABLE="$(which python)"
         cmake --build .
         cmake --install . --prefix /ucrt64
-        cd ../..
+        cd "${REPO_ROOT}"
         rm -rf libtorrent
         echo "==> Libtorrent built and installed into /ucrt64 successfully!"
     ) || {
         echo "==> Warning: Libtorrent build failed or skipped. Continuing build without torrent streaming..."
+        cd "${REPO_ROOT}"
         rm -rf libtorrent 2>/dev/null || true
     }
 fi

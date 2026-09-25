@@ -119,12 +119,21 @@ jobs:
           msystem: UCRT64
           update: true
 
+      - name: Configure pacman download options
+        shell: msys2 {0}
+        run: |
+          sed -i 's/^#DisableDownloadTimeout/DisableDownloadTimeout/' /etc/pacman.conf 2>/dev/null || true
+          if ! grep -q "^DisableDownloadTimeout" /etc/pacman.conf 2>/dev/null; then
+            echo "DisableDownloadTimeout" >> /etc/pacman.conf
+          fi
+
       - name: Cache libtorrent build
         id: cache-libtorrent
         uses: actions/cache@v4
         with:
           path: |
             C:/msys64/ucrt64/lib/python*/site-packages/libtorrent*
+            C:/msys64/ucrt64/bin/libtorrent*
           key: ${{ runner.os }}-libtorrent-v2.1.1
           restore-keys: |
             ${{ runner.os }}-libtorrent-
