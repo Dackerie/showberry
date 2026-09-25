@@ -82,6 +82,7 @@ def get_proc_address_wrapper():
     import ctypes
     import sys
 
+    epoxy_get_proc = None
     wgl_get_proc = None
     wgl_get_current_ctx = None
     win_gl = None
@@ -93,7 +94,18 @@ def get_proc_address_wrapper():
     mac_gl = None
 
     if sys.platform == 'win32':
-        # Check for EGL / ANGLE (used by GTK 4 on Windows)
+        # Check for libepoxy (used by GTK 4 on Windows to resolve GL/GLES/WGL/EGL)
+        for epoxy_name in ('libepoxy-0.dll', 'libepoxy.dll', 'epoxy-0.dll'):
+            try:
+                epoxy = ctypes.CDLL(epoxy_name)
+                epoxy_get_proc = epoxy.epoxy_get_proc_address
+                epoxy_get_proc.restype = ctypes.c_void_p
+                epoxy_get_proc.argtypes = [ctypes.c_char_p]
+                break
+            except Exception:
+                pass
+
+        # Check for EGL / ANGLE (used by GTK 4 on Windows when GLES is used)
         for egl_name in ('libEGL.dll', 'libEGL'):
             try:
                 egl = ctypes.CDLL(egl_name)
@@ -116,7 +128,7 @@ def get_proc_address_wrapper():
             except Exception:
                 pass
 
-        # Check for WGL / Desktop OpenGL
+        # Check for WGL / Desktop OpenGL (used by GTK 4 on Windows with native GPU drivers)
         try:
             win_gl = ctypes.windll.opengl32
             wgl_get_proc = win_gl.wglGetProcAddress
@@ -166,27 +178,36 @@ def get_proc_address_wrapper():
 
         res = None
 
-        # On Windows, determine whether EGL or WGL is current
+        # 1. Try libepoxy if available (matches GTK4's active context resolver)
+        if epoxy_get_proc:
+            try:
+                res = epoxy_get_proc(name_bytes)
+            except Exception:
+                res = None
+            if res and (res <= 3 or res in (-1, 0xFFFFFFFFFFFFFFFF, 18446744073709551615)):
+                res = None
+
+        # 2. On Windows, determine whether EGL or WGL is current
         is_egl_current = False
-        if sys.platform == 'win32' and egl_get_current_ctx:
+        if not res and sys.platform == 'win32' and egl_get_current_ctx:
             try:
                 is_egl_current = bool(egl_get_current_ctx())
             except Exception:
                 pass
 
-        if is_egl_current or not win_gl:
+        if not res and (is_egl_current or not win_gl):
             # Query EGL proc address first, then GLES export
             if egl_get_proc:
                 try:
                     res = egl_get_proc(name_bytes)
                 except Exception:
                     res = None
-            if (not res or res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF)) and gles_lib:
+            if (not res or res <= 3 or res in (-1, 0xFFFFFFFFFFFFFFFF, 18446744073709551615)) and gles_lib:
                 try:
                     res = ctypes.cast(getattr(gles_lib, name_str), ctypes.c_void_p).value
                 except Exception:
                     res = None
-            if res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF):
+            if res and (res <= 3 or res in (-1, 0xFFFFFFFFFFFFFFFF, 18446744073709551615)):
                 res = None
 
         if not res and win_gl:
@@ -194,12 +215,12 @@ def get_proc_address_wrapper():
                 res = ctypes.cast(getattr(win_gl, name_str), ctypes.c_void_p).value
             except Exception:
                 res = None
-            if (not res or res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF)) and wgl_get_proc:
+            if (not res or res <= 3 or res in (-1, 0xFFFFFFFFFFFFFFFF, 18446744073709551615)) and wgl_get_proc:
                 try:
                     res = wgl_get_proc(name_bytes)
                 except Exception:
                     res = None
-            if res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF):
+            if res and (res <= 3 or res in (-1, 0xFFFFFFFFFFFFFFFF, 18446744073709551615)):
                 res = None
 
         # Fallback to EGL / GLES if not queried yet
@@ -208,7 +229,7 @@ def get_proc_address_wrapper():
                 res = egl_get_proc(name_bytes)
             except Exception:
                 pass
-            if res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF):
+            if res and (res <= 3 or res in (-1, 0xFFFFFFFFFFFFFFFF, 18446744073709551615)):
                 res = None
         if not res and gles_lib:
             try:
@@ -292,12 +313,16 @@ class MpvWidget(Gtk.GLArea):
                 mpv_log.debug("%s", msg)
 
             # Auto-fallback to software decode if display driver or VM fails hardware surface allocation
-            if any(s in msg for s in ('AVHWFramesContext', 'dxva2_vld', 'Failed to allocate AVHWDeviceContext', 'VK_ERROR')):
+            if any(s in msg for s in (
+                'AVHWFramesContext', 'dxva2_vld', 'Failed to allocate AVHWDeviceContext',
+                'VK_ERROR', 'hwaccel', 'hardware decoding failed', 'Could not create the surfaces',
+                'Failed setup for format', 'Error creating an internal frame pool', 'd3d11va', 'dxva2'
+            )):
                 if getattr(self, '_mpv', None):
                     try:
                         cur_hwdec = self._mpv['hwdec']
                         if cur_hwdec != ['no'] and cur_hwdec != 'no':
-                            logger.warning("Hardware acceleration failed on display driver/VM; falling back to software decoding")
+                            logger.warning("Hardware acceleration failed on display driver (%s); falling back to software decoding", msg)
                             self._mpv['hwdec'] = 'no'
                     except Exception:
                         pass
@@ -308,6 +333,14 @@ class MpvWidget(Gtk.GLArea):
         hwdec_pref = getattr(settings, 'hwdec_mode', 'auto')
         if hwdec_pref == 'off':
             chosen_hwdec = 'no'
+        elif sys.platform == 'win32':
+            # On Windows with OpenGL FBO rendering in Gtk.GLArea:
+            # Direct zero-copy hwdec (d3d11va) outputs D3D11 surfaces that cannot be directly
+            # displayed on the OpenGL FBO without specialized interop, causing a black video screen.
+            # 'auto-copy' (d3d11va-copy / dxva2-copy / nvdec-copy) performs hardware decoding on GPU
+            # and copies the decoded frames to system RAM to upload as standard OpenGL textures.
+            # This is 100% reliable across all Windows GPUs (NVIDIA, AMD, Intel) and drivers.
+            chosen_hwdec = 'auto-copy'
         else:
             chosen_hwdec = 'auto-safe'
 
@@ -341,7 +374,7 @@ class MpvWidget(Gtk.GLArea):
             'loglevel': mpv_loglevel,
         }
         if sys.platform == 'win32':
-            mpv_opts['opengl_es'] = 'yes'
+            mpv_opts['gpu_api'] = 'opengl'
 
 
         # Ensure C numeric locale for libmpv across platforms
@@ -430,6 +463,13 @@ class MpvWidget(Gtk.GLArea):
 
         self.make_current()
         curr_gdk_ctx = self.get_context()
+        if curr_gdk_ctx:
+            try:
+                use_es = curr_gdk_ctx.get_use_es()
+                ver = curr_gdk_ctx.get_version()
+                logger.info("Realized GdkGLContext: use_es=%s, version=%s", use_es, ver)
+            except Exception:
+                pass
 
         # If the underlying GdkGLContext was recreated (e.g. across navigation pops and pushes),
         # the previous MpvRenderContext is bound to a destroyed OpenGL context and cannot render.
@@ -509,9 +549,10 @@ class MpvWidget(Gtk.GLArea):
         if width <= 0 or height <= 0:
             return False
 
-        # Ensure Gtk.GLArea context is current
+        # Ensure Gtk.GLArea context is current and buffers are attached
         try:
             self.make_current()
+            self.attach_buffers()
         except Exception:
             pass
 
@@ -523,27 +564,71 @@ class MpvWidget(Gtk.GLArea):
             except Exception:
                 pass
 
-        # Query current FBO with safe fallback
+        # Query current FBO with safe fallback across Desktop OpenGL and GLES
         fbo = 0
         if HAS_OPENGL and GL:
             try:
                 fbo = GL.glGetIntegerv(GL.GL_DRAW_FRAMEBUFFER_BINDING)
             except Exception:
                 fbo = 0
+
         if not fbo and sys.platform == 'win32':
-            # Check GLES (ANGLE / EGL used by GTK4 on Windows)
+            # 1. Desktop OpenGL (opengl32.dll) - used by GTK4 with native NVIDIA / AMD / Intel drivers
             try:
                 import ctypes
-                gles = ctypes.CDLL('libGLESv2.dll')
-                glGetIntegerv = getattr(gles, 'glGetIntegerv', None)
-                if glGetIntegerv:
-                    glGetIntegerv.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_int)]
-                    glGetIntegerv.restype = None
+                win_gl = ctypes.windll.opengl32
+                gl_get_int = getattr(win_gl, 'glGetIntegerv', None)
+                if gl_get_int:
+                    gl_get_int.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_int)]
+                    gl_get_int.restype = None
                     raw_fbo = ctypes.c_int(0)
-                    glGetIntegerv(0x8CA6, ctypes.byref(raw_fbo))  # GL_DRAW_FRAMEBUFFER_BINDING
+                    gl_get_int(0x8CA6, ctypes.byref(raw_fbo))  # GL_DRAW_FRAMEBUFFER_BINDING
                     fbo = raw_fbo.value
+                    if not fbo:
+                        gl_get_int(0x8CA7, ctypes.byref(raw_fbo))  # GL_FRAMEBUFFER_BINDING fallback
+                        fbo = raw_fbo.value
             except Exception:
                 pass
+
+            # 2. GLES (libGLESv2.dll) - used by ANGLE / EGL on Windows
+            if not fbo:
+                try:
+                    import ctypes
+                    gles = ctypes.CDLL('libGLESv2.dll')
+                    gles_get_int = getattr(gles, 'glGetIntegerv', None)
+                    if gles_get_int:
+                        gles_get_int.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_int)]
+                        gles_get_int.restype = None
+                        raw_fbo = ctypes.c_int(0)
+                        gles_get_int(0x8CA6, ctypes.byref(raw_fbo))  # GL_DRAW_FRAMEBUFFER_BINDING
+                        fbo = raw_fbo.value
+                        if not fbo:
+                            gles_get_int(0x8CA7, ctypes.byref(raw_fbo))  # GL_FRAMEBUFFER_BINDING fallback
+                            fbo = raw_fbo.value
+                except Exception:
+                    pass
+
+            # 3. Dynamic resolver via epoxy_get_proc_address
+            if not fbo:
+                try:
+                    import ctypes
+                    epoxy = ctypes.CDLL('libepoxy-0.dll')
+                    get_proc = getattr(epoxy, 'epoxy_get_proc_address', None)
+                    if get_proc:
+                        get_proc.restype = ctypes.c_void_p
+                        get_proc.argtypes = [ctypes.c_char_p]
+                        ptr = get_proc(b'glGetIntegerv')
+                        if ptr and ptr > 3:
+                            PROTO = ctypes.CFUNCTYPE(None, ctypes.c_uint, ctypes.POINTER(ctypes.c_int))
+                            func = PROTO(ptr)
+                            raw_fbo = ctypes.c_int(0)
+                            func(0x8CA6, ctypes.byref(raw_fbo))
+                            fbo = raw_fbo.value
+                            if not fbo:
+                                func(0x8CA7, ctypes.byref(raw_fbo))
+                                fbo = raw_fbo.value
+                except Exception:
+                    pass
 
         # Advance internal presentation timing right at moment of render
         try:
@@ -561,13 +646,6 @@ class MpvWidget(Gtk.GLArea):
         except Exception as e:
             logger.error("MPV render error: %s", e)
             return False
-
-
-        # Ensure GTK buffers are attached and valid for snapshot/blit
-        try:
-            self.attach_buffers()
-        except Exception:
-            pass
 
         if self._is_stream_active and not self._has_drawn_first_frame:
             try:
@@ -1920,6 +1998,24 @@ class PlayerControls(Gtk.Box):
                         pass
             else:
                 self._zero_pos_ticks = 0
+
+            # Self-healing black screen watchdog:
+            # If audio has been playing and advancing (pos >= 1.0s), but no video frame has been
+            # successfully presented to the OpenGL FBO (self._player._has_drawn_first_frame is False),
+            # and hardware decoding is enabled (hwdec != 'no'), automatically fall back to software decoding!
+            if pos >= 1.0 and not getattr(self._player, '_has_drawn_first_frame', False):
+                try:
+                    cur_hwdec = self._player._mpv['hwdec']
+                    if cur_hwdec != ['no'] and cur_hwdec != 'no':
+                        logger.warning(
+                            "Black screen watchdog: Audio is advancing (pos=%.1fs) but no video frame rendered; "
+                            "automatically disabling hardware decoding (falling back to software decoding)",
+                            pos
+                        )
+                        self._player._mpv['hwdec'] = 'no'
+                        self._player.queue_render()
+                except Exception:
+                    pass
 
             # Update play/pause icon
             if self._player.is_paused():
