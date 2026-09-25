@@ -386,6 +386,9 @@ class MoviesPage(Gtk.Box):
 
                 movies = filtered
 
+        for m in movies:
+            m['media_type'] = 'movie'
+
         GLib.idle_add(self._render_movies, movies, query, page, reset)
 
     def _render_movies(self, movies: List[Dict[str, Any]], query: str, page: int, reset: bool):

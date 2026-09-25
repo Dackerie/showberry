@@ -16,6 +16,24 @@ import subprocess
 import threading
 from typing import Optional, List, Dict, Any, Tuple
 
+if sys.platform == 'win32':
+    for p in (
+        os.path.dirname(sys.executable),
+        os.path.join(os.path.dirname(sys.executable), '_internal'),
+        getattr(sys, '_MEIPASS', ''),
+        os.getcwd(),
+        r'C:\msys64\ucrt64\bin',
+    ):
+        if p and os.path.isdir(p):
+            abs_p = os.path.abspath(p)
+            if hasattr(os, 'add_dll_directory'):
+                try:
+                    os.add_dll_directory(abs_p)
+                except Exception:
+                    pass
+            if abs_p not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = abs_p + os.pathsep + os.environ.get('PATH', '')
+
 try:
     import mpv
     from mpv import MPV, MpvGlGetProcAddressFn, MpvRenderContext
@@ -58,18 +76,50 @@ def get_proc_address_wrapper():
     import sys
 
     wgl_get_proc = None
+    wgl_get_current_ctx = None
     win_gl = None
     egl_get_proc = None
+    egl_get_current_ctx = None
+    gles_lib = None
     gl_get_proc = None
     gl_lib = None
     mac_gl = None
 
     if sys.platform == 'win32':
+        # Check for EGL / ANGLE (used by GTK 4 on Windows)
+        for egl_name in ('libEGL.dll', 'libEGL'):
+            try:
+                egl = ctypes.CDLL(egl_name)
+                egl_get_proc = egl.eglGetProcAddress
+                egl_get_proc.restype = ctypes.c_void_p
+                egl_get_proc.argtypes = [ctypes.c_char_p]
+                try:
+                    egl_get_current_ctx = egl.eglGetCurrentContext
+                    egl_get_current_ctx.restype = ctypes.c_void_p
+                except Exception:
+                    pass
+                break
+            except Exception:
+                pass
+
+        for gles_name in ('libGLESv2.dll', 'libGLESv2'):
+            try:
+                gles_lib = ctypes.CDLL(gles_name)
+                break
+            except Exception:
+                pass
+
+        # Check for WGL / Desktop OpenGL
         try:
             win_gl = ctypes.windll.opengl32
             wgl_get_proc = win_gl.wglGetProcAddress
             wgl_get_proc.restype = ctypes.c_void_p
             wgl_get_proc.argtypes = [ctypes.c_char_p]
+            try:
+                wgl_get_current_ctx = win_gl.wglGetCurrentContext
+                wgl_get_current_ctx.restype = ctypes.c_void_p
+            except Exception:
+                pass
         except Exception:
             pass
     elif sys.platform == 'darwin':
@@ -108,22 +158,67 @@ def get_proc_address_wrapper():
             name_str = name.decode('utf-8', errors='ignore')
 
         res = None
-        if wgl_get_proc:
-            res = wgl_get_proc(name_bytes)
+
+        # On Windows, determine whether EGL or WGL is current
+        is_egl_current = False
+        if sys.platform == 'win32' and egl_get_current_ctx:
+            try:
+                is_egl_current = bool(egl_get_current_ctx())
+            except Exception:
+                pass
+
+        if is_egl_current or not win_gl:
+            # Query EGL proc address first, then GLES export
+            if egl_get_proc:
+                try:
+                    res = egl_get_proc(name_bytes)
+                except Exception:
+                    res = None
+            if (not res or res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF)) and gles_lib:
+                try:
+                    res = ctypes.cast(getattr(gles_lib, name_str), ctypes.c_void_p).value
+                except Exception:
+                    res = None
+            if res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF):
+                res = None
+
         if not res and win_gl:
             try:
                 res = ctypes.cast(getattr(win_gl, name_str), ctypes.c_void_p).value
             except Exception:
+                res = None
+            if (not res or res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF)) and wgl_get_proc:
+                try:
+                    res = wgl_get_proc(name_bytes)
+                except Exception:
+                    res = None
+            if res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF):
+                res = None
+
+        # Fallback to EGL / GLES if not queried yet
+        if not res and egl_get_proc:
+            try:
+                res = egl_get_proc(name_bytes)
+            except Exception:
                 pass
+            if res in (1, 2, 3, -1, 0xFFFFFFFFFFFFFFFF):
+                res = None
+        if not res and gles_lib:
+            try:
+                res = ctypes.cast(getattr(gles_lib, name_str), ctypes.c_void_p).value
+            except Exception:
+                pass
+
         if not res and mac_gl:
             try:
                 res = ctypes.cast(getattr(mac_gl, name_str), ctypes.c_void_p).value
             except Exception:
                 pass
-        if not res and egl_get_proc:
-            res = egl_get_proc(name_bytes)
         if not res and gl_get_proc:
-            res = gl_get_proc(name_bytes)
+            try:
+                res = gl_get_proc(name_bytes)
+            except Exception:
+                pass
         if not res and gl_lib:
             try:
                 res = ctypes.cast(getattr(gl_lib, name_str), ctypes.c_void_p).value
@@ -192,28 +287,46 @@ class MpvWidget(Gtk.GLArea):
         is_debug = ('--debug' in sys.argv or '--verbose' in sys.argv or os.environ.get('SHOWBERRY_DEBUG'))
         mpv_loglevel = 'v' if is_debug else 'warn'
 
-        self._mpv = MPV(
-            vo='libmpv',
-            keep_open='yes',
-            hwdec='auto-safe',
-            input_default_bindings=False,
-            cursor_autohide=1000,
-            volume_max=130,
-            cache='yes',
-            demuxer_max_bytes=150 * 1024 * 1024,
-            demuxer_max_back_bytes=50 * 1024 * 1024,
-            demuxer_readahead_secs=120,
-            cache_secs=120,
-            network_timeout=15,
-            slang='eng,en,enUS,en-US',
-            sub_scale_with_window='yes',
-            sub_font_size=55,
-            sub_pos=initial_sub_pos,
-            sub_scale=initial_sub_scale,
-            sub_margin_y=36,
-            log_handler=_on_mpv_log,
-            loglevel=mpv_loglevel,
-        )
+        mpv_opts = {
+            'vo': 'libmpv',
+            'keep_open': 'yes',
+            'input_default_bindings': False,
+            'cursor_autohide': 1000,
+            'volume_max': 130,
+            'cache': 'yes',
+            'demuxer_max_bytes': 150 * 1024 * 1024,
+            'demuxer_max_back_bytes': 50 * 1024 * 1024,
+            'demuxer_readahead_secs': 120,
+            'cache_secs': 120,
+            'network_timeout': 15,
+            'slang': 'eng,en,enUS,en-US',
+            'sub_scale_with_window': 'yes',
+            'sub_font_size': 55,
+            'sub_pos': initial_sub_pos,
+            'sub_scale': initial_sub_scale,
+            'sub_margin_y': 36,
+            'log_handler': _on_mpv_log,
+            'loglevel': mpv_loglevel,
+        }
+        if sys.platform == 'win32':
+            mpv_opts['hwdec'] = 'auto-copy-safe'
+            mpv_opts['gpu_api'] = 'opengl'
+        else:
+            mpv_opts['hwdec'] = 'auto-safe'
+
+        # Ensure C numeric locale for libmpv across platforms
+        try:
+            locale.setlocale(locale.LC_NUMERIC, 'C')
+        except Exception:
+            pass
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                ctypes.cdll.msvcrt.setlocale(4, b'C')
+            except Exception:
+                pass
+
+        self._mpv = MPV(**mpv_opts)
 
         @self._mpv.property_observer('paused-for-cache')
         def _on_paused_for_cache(name, value):
@@ -229,6 +342,8 @@ class MpvWidget(Gtk.GLArea):
     def activate(self):
         """Re-enable rendering and event handling."""
         self._is_active = True
+        if self._ctx:
+            self._ctx.update_cb = self._on_mpv_callback
 
     def deactivate(self):
         """Immediately stop playback and disable render callbacks to prevent deadlocks."""
@@ -250,8 +365,22 @@ class MpvWidget(Gtk.GLArea):
             pass
 
     def _on_realize(self, *_):
+        self._is_active = True
         if not getattr(self, '_mpv', None):
             return
+
+        # GTK realize can overwrite numeric locale
+        try:
+            locale.setlocale(locale.LC_NUMERIC, 'C')
+        except Exception:
+            pass
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                ctypes.cdll.msvcrt.setlocale(4, b'C')
+            except Exception:
+                pass
+
         self.make_current()
         curr_gdk_ctx = self.get_context()
 
@@ -320,8 +449,13 @@ class MpvWidget(Gtk.GLArea):
         return self.do_render(gl_context)
 
     def do_render(self, *_):
-        if not self._is_active or not self._ctx:
+        if not self._is_active:
             return False
+
+        if not self._ctx:
+            self._on_realize()
+            if not self._ctx:
+                return False
 
         factor = self.get_scale_factor()
         width = int(self.get_width() * factor)
@@ -336,17 +470,47 @@ class MpvWidget(Gtk.GLArea):
             pass
 
         # Clear any residual OpenGL error flags from context switching
-        try:
-            while GL.glGetError() != GL.GL_NO_ERROR:
+        if HAS_OPENGL:
+            try:
+                while GL.glGetError() != GL.GL_NO_ERROR:
+                    pass
+            except Exception:
                 pass
-        except Exception:
-            pass
 
         # Query current FBO with safe fallback
-        try:
-            fbo = GL.glGetIntegerv(GL.GL_DRAW_FRAMEBUFFER_BINDING)
-        except Exception:
-            fbo = 0
+        fbo = 0
+        if HAS_OPENGL:
+            try:
+                fbo = GL.glGetIntegerv(GL.GL_DRAW_FRAMEBUFFER_BINDING)
+            except Exception:
+                fbo = 0
+        if not fbo and sys.platform == 'win32':
+            # Check GLES first (ANGLE / EGL used by GTK4 on Windows)
+            try:
+                import ctypes
+                gles = ctypes.CDLL('libGLESv2.dll')
+                glGetIntegerv = getattr(gles, 'glGetIntegerv', None)
+                if glGetIntegerv:
+                    glGetIntegerv.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_int)]
+                    glGetIntegerv.restype = None
+                    raw_fbo = ctypes.c_int(0)
+                    glGetIntegerv(0x8CA6, ctypes.byref(raw_fbo))  # GL_DRAW_FRAMEBUFFER_BINDING
+                    fbo = raw_fbo.value
+            except Exception:
+                pass
+            if not fbo:
+                try:
+                    import ctypes
+                    win_gl = ctypes.windll.opengl32
+                    glGetIntegerv = getattr(win_gl, 'glGetIntegerv', None)
+                    if glGetIntegerv:
+                        glGetIntegerv.argtypes = [ctypes.c_uint, ctypes.POINTER(ctypes.c_int)]
+                        glGetIntegerv.restype = None
+                        raw_fbo = ctypes.c_int(0)
+                        glGetIntegerv(0x8CA6, ctypes.byref(raw_fbo))
+                        fbo = raw_fbo.value
+                except Exception:
+                    pass
 
         # Render MPV frame
         try:
@@ -412,6 +576,9 @@ class MpvWidget(Gtk.GLArea):
 
     def play(self, url, referer=None, origin=None, headers=None, subtitles=None, start_pos=0):
         """Play a video URL with custom referer/origin headers and subtitles."""
+        self._is_active = True
+        if self._ctx:
+            self._ctx.update_cb = self._on_mpv_callback
         self._is_stream_active = True
         self._has_drawn_first_frame = False
         self._wait_first_frame = True

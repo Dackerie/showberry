@@ -68,6 +68,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.3.2" date="2026-09-25">
+      <description>
+        <p>Windows stability fixes, video rendering improvements, and UI refinements:</p>
+        <ul>
+          <li>Fixed Windows application crash when clicking movie cards or entering series details from "More Like This"</li>
+          <li>Fixed video player black screen on Windows by correcting core OpenGL procedure resolution and setting auto-copy-safe hardware decoding</li>
+          <li>Restored missing symbolic icons across the Windows application with dynamic gdk-pixbuf loader discovery and AdwaitaLegacy fallbacks</li>
+          <li>Eliminated Windows file locking conflicts and race conditions in ImageCache with thread URL locking and atomic file replacement</li>
+          <li>Optimized torrent streaming file descriptors to eliminate OS handle exhaustion on Windows</li>
+          <li>Maintained complete cross-platform stability across Windows, macOS, and Linux without platform regression</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.3.1" date="2026-09-24">
       <description>
         <p>Packaging and build-system compatibility update:</p>

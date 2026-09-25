@@ -61,6 +61,7 @@ class BackdropWidget(Gtk.Widget):
             self._paintable.snapshot(snapshot, w, h)
             return
 
+        import math
         scale = max(w / pw, h / ph)
         draw_w = pw * scale
         draw_h = ph * scale
@@ -71,12 +72,17 @@ class BackdropWidget(Gtk.Widget):
         else:
             draw_y = (h - draw_h) / 2.0
 
+        if not math.isfinite(draw_x) or not math.isfinite(draw_y):
+            return
+
         rect = Graphene.Rect()
-        rect.init(0, 0, w, h)
+        rect.init(0, 0, float(w), float(h))
         snapshot.push_clip(rect)
         snapshot.save()
-        snapshot.translate(Graphene.Point().init(draw_x, draw_y))
-        self._paintable.snapshot(snapshot, draw_w, draw_h)
+        pt = Graphene.Point()
+        pt.init(float(draw_x), float(draw_y))
+        snapshot.translate(pt)
+        self._paintable.snapshot(snapshot, float(draw_w), float(draw_h))
         snapshot.restore()
         snapshot.pop()
 
@@ -293,16 +299,16 @@ class MoviePage(Adw.NavigationPage):
         self._director_box.set_valign(Gtk.Align.CENTER)
         self._director_box.set_visible(False)
 
-        self._director_chips_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self._director_chips_box.set_valign(Gtk.Align.CENTER)
-        self._director_box.append(self._director_chips_box)
-
         self._director_label = Gtk.Label()
         self._director_label.add_css_class('dim-label')
         self._director_label.set_xalign(0)
         self._director_label.set_wrap(False)
         self._director_label.set_visible(False)
         self._director_box.append(self._director_label)
+
+        self._director_chips_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self._director_chips_box.set_valign(Gtk.Align.CENTER)
+        self._director_box.append(self._director_chips_box)
 
         self._details.append(self._director_box)
 
@@ -611,6 +617,11 @@ class MoviePage(Adw.NavigationPage):
         is_tv = (self._movie.get('media_type') == 'tv')
         prefix = "Created by" if is_tv else "Directed by"
 
+        # Safely detach _director_label if currently parented inside a chip
+        if self._director_label.get_parent() and self._director_label.get_parent() != self._director_box:
+            self._director_label.get_parent().remove(self._director_label)
+            self._director_box.prepend(self._director_label)
+
         while True:
             child = self._director_chips_box.get_first_child()
             if child is None:
@@ -695,9 +706,6 @@ class MoviePage(Adw.NavigationPage):
         else:
             self._director_label.set_text(f"{prefix}:")
             self._director_label.set_visible(True)
-            if self._director_label.get_parent():
-                self._director_label.get_parent().remove(self._director_label)
-            self._director_box.prepend(self._director_label)
 
             for p in items:
                 chip = Gtk.Button()
@@ -999,7 +1007,8 @@ class MoviePage(Adw.NavigationPage):
         else:
             rt_str = f'{mins}m'
         ends_at = datetime.now() + timedelta(minutes=runtime_minutes)
-        ends_str = ends_at.strftime('%-I:%M %p')
+        h_12 = ends_at.hour % 12 or 12
+        ends_str = f"{h_12}:{ends_at.strftime('%M %p')}"
         return f'{rt_str} • Ends at {ends_str}'
 
     def _update_watchlist_btn_state(self):

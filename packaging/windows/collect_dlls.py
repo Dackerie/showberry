@@ -101,6 +101,25 @@ def main():
 
     print(f"==> Successfully bundled {len(copied_dlls)} additional MSYS2 DLL dependencies!")
 
+    # Step 2b: Ensure ANGLE / EGL DLLs are bundled (required by GTK4 GLArea on Windows)
+    egl_dlls = ['libEGL.dll', 'libGLESv2.dll', 'd3dcompiler_47.dll']
+    windir = Path(os.environ.get('WINDIR', 'C:/Windows'))
+    angle_search_dirs = [
+        bin_dir,
+        Path('C:/Windows/System32/Microsoft-Edge-WebView'),
+        windir / 'System32' / 'Microsoft-Edge-WebView',
+        windir / 'System32',
+    ]
+    for dll_name in egl_dlls:
+        for sdir in angle_search_dirs:
+            candidate = sdir / dll_name
+            if candidate.is_file():
+                print(f"==> Bundling EGL/ANGLE component: {candidate}")
+                shutil.copy2(candidate, dist_dir)
+                if internal_dir.is_dir():
+                    shutil.copy2(candidate, internal_dir)
+                break
+
     # Step 3: Ensure GSettings schemas and style.css are present in distribution
     schemas_src = repo_root / 'data'
     target_schema_dirs = [
@@ -120,6 +139,39 @@ def main():
                 shutil.copy2(src_f, target)
 
     print("==> Successfully bundled GSettings schemas and style files into Windows distribution!")
+
+    # Step 4: Ensure gdk-pixbuf loaders and loaders.cache are present at root and internal
+    msys_lib = bin_dir.parent / 'lib'
+    msys_loaders_dir = msys_lib / 'gdk-pixbuf-2.0' / '2.10.0' / 'loaders'
+    msys_cache = msys_lib / 'gdk-pixbuf-2.0' / '2.10.0' / 'loaders.cache'
+
+    target_lib_dirs = [dist_dir / 'lib' / 'gdk-pixbuf' / 'loaders']
+    if internal_dir.is_dir():
+        target_lib_dirs.append(internal_dir / 'lib' / 'gdk-pixbuf' / 'loaders')
+
+    for t_loaders in target_lib_dirs:
+        t_loaders.mkdir(parents=True, exist_ok=True)
+        if msys_loaders_dir.is_dir():
+            for f in msys_loaders_dir.glob('*.dll'):
+                shutil.copy2(f, t_loaders)
+        if msys_cache.is_file():
+            shutil.copy2(msys_cache, t_loaders.parent / 'loaders.cache')
+
+    if internal_dir.is_dir() and (internal_dir / 'lib').is_dir():
+        shutil.copytree(internal_dir / 'lib', dist_dir / 'lib', dirs_exist_ok=True)
+
+    # Step 5: Ensure Adwaita, AdwaitaLegacy, and hicolor icon themes are mirrored
+    msys_icons = bin_dir.parent / 'share' / 'icons'
+    if msys_icons.is_dir():
+        for theme in ('Adwaita', 'AdwaitaLegacy', 'hicolor'):
+            theme_src = msys_icons / theme
+            if theme_src.is_dir():
+                for target_share in [dist_dir / 'share' / 'icons', internal_dir / 'share' / 'icons']:
+                    target_theme = target_share / theme
+                    if not target_theme.is_dir():
+                        shutil.copytree(theme_src, target_theme, dirs_exist_ok=True)
+
+    print("==> Successfully bundled gdk-pixbuf loaders and icon themes into Windows distribution!")
 
 
 if __name__ == '__main__':

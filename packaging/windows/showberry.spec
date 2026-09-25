@@ -2,6 +2,18 @@
 import os
 import sys
 from pathlib import Path
+
+if sys.platform == 'win32':
+    for p in ['C:/msys64/ucrt64/bin', '/ucrt64/bin']:
+        if os.path.isdir(p):
+            abs_p = os.path.abspath(p)
+            if hasattr(os, 'add_dll_directory'):
+                try:
+                    os.add_dll_directory(abs_p)
+                except Exception:
+                    pass
+            if abs_p not in os.environ.get('PATH', ''):
+                os.environ['PATH'] = abs_p + os.pathsep + os.environ.get('PATH', '')
 spec_dir = SPECPATH if 'SPECPATH' in globals() else (os.path.dirname(__file__) if '__file__' in globals() else os.getcwd())
 repo_root = os.path.abspath(os.path.join(spec_dir, '..', '..'))
 
@@ -16,7 +28,7 @@ datas = [
 
 for icon_base in ['/ucrt64/share/icons', 'C:/msys64/ucrt64/share/icons']:
     if os.path.isdir(icon_base):
-        for theme in ['Adwaita', 'hicolor']:
+        for theme in ['Adwaita', 'AdwaitaLegacy', 'hicolor']:
             theme_path = os.path.join(icon_base, theme)
             if os.path.isdir(theme_path):
                 datas.append((theme_path, f'share/icons/{theme}'))
@@ -31,6 +43,18 @@ for candidate in [
     if os.path.exists(candidate):
         binaries.append((candidate, '.'))
         break
+
+for egl_cand_name in ['libEGL.dll', 'libGLESv2.dll', 'd3dcompiler_47.dll']:
+    for sdir in [
+        '/ucrt64/bin',
+        'C:/msys64/ucrt64/bin',
+        'C:/Windows/System32/Microsoft-Edge-WebView',
+        'C:/Windows/System32',
+    ]:
+        cand_p = os.path.join(sdir, egl_cand_name)
+        if os.path.isfile(cand_p):
+            binaries.append((cand_p, '.'))
+            break
 
 hiddenimports = [
     'showberry',

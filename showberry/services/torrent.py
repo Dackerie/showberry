@@ -371,53 +371,51 @@ class TorrentStreamer:
         info = self.handle.torrent_file()
         bytes_sent = 0
 
-        while bytes_sent < length and not self._stop_event.is_set():
-            curr_pos = offset + bytes_sent
-            chunk_to_read = min(chunk_size, length - bytes_sent)
+        try:
+            with open(self.video_file_path, 'rb') as f:
+                while bytes_sent < length and not self._stop_event.is_set():
+                    curr_pos = offset + bytes_sent
+                    chunk_to_read = min(chunk_size, length - bytes_sent)
 
-            # Map byte range to piece range
-            p_start = info.map_file(self.video_file_idx, curr_pos, 1).piece
-            p_end = info.map_file(self.video_file_idx, curr_pos + chunk_to_read - 1, 1).piece
+                    # Map byte range to piece range
+                    p_start = info.map_file(self.video_file_idx, curr_pos, 1).piece
+                    p_end = info.map_file(self.video_file_idx, curr_pos + chunk_to_read - 1, 1).piece
 
-            # Verify all required pieces for this chunk are downloaded
-            missing_pieces = [p for p in range(p_start, p_end + 1) if not self.handle.have_piece(p)]
-            if missing_pieces:
-                # Prioritize missing pieces with immediate deadline 0
-                for p in missing_pieces:
-                    self.handle.piece_priority(p, 7)
-                    self.handle.set_piece_deadline(p, 0)
+                    # Verify all required pieces for this chunk are downloaded
+                    missing_pieces = [p for p in range(p_start, p_end + 1) if not self.handle.have_piece(p)]
+                    if missing_pieces:
+                        # Prioritize missing pieces with immediate deadline 0
+                        for p in missing_pieces:
+                            self.handle.piece_priority(p, 7)
+                            self.handle.set_piece_deadline(p, 0)
 
-                # Prioritize next 16 pieces with graduated deadlines
-                ahead_deadlines = min(p_start + 16, self.end_piece + 1)
-                for idx, p in enumerate(range(p_start, ahead_deadlines)):
-                    self.handle.piece_priority(p, 7)
-                    self.handle.set_piece_deadline(p, idx * 50)
+                        # Prioritize next 16 pieces with graduated deadlines
+                        ahead_deadlines = min(p_start + 16, self.end_piece + 1)
+                        for idx, p in enumerate(range(p_start, ahead_deadlines)):
+                            self.handle.piece_priority(p, 7)
+                            self.handle.set_piece_deadline(p, idx * 50)
 
-                # Prefetch next 48 pieces (priority 7) for smooth continuous streaming
-                ahead_prefetch = min(p_start + 48, self.end_piece + 1)
-                for p in range(ahead_deadlines, ahead_prefetch):
-                    self.handle.piece_priority(p, 7)
+                        # Prefetch next 48 pieces (priority 7) for smooth continuous streaming
+                        ahead_prefetch = min(p_start + 48, self.end_piece + 1)
+                        for p in range(ahead_deadlines, ahead_prefetch):
+                            self.handle.piece_priority(p, 7)
 
-                # Wait for required pieces with timeout (never read unverified bytes!)
-                wait_count = 0
-                all_have = False
-                while not self._stop_event.is_set():
-                    if all(self.handle.have_piece(p) for p in range(p_start, p_end + 1)):
-                        all_have = True
-                        break
-                    time.sleep(0.08)
-                    wait_count += 1
-                    if wait_count > 375:  # 30s timeout
-                        break
+                        # Wait for required pieces with timeout (never read unverified bytes!)
+                        wait_count = 0
+                        all_have = False
+                        while not self._stop_event.is_set():
+                            if all(self.handle.have_piece(p) for p in range(p_start, p_end + 1)):
+                                all_have = True
+                                break
+                            time.sleep(0.08)
+                            wait_count += 1
+                            if wait_count > 375:  # 30s timeout
+                                break
 
-                if not all_have:
-                    # Timeout waiting for piece from swarm; abort chunk rather than sending corrupt null bytes
-                    logger.warning(f"Timeout waiting for piece(s) {missing_pieces} at offset {curr_pos}")
-                    break
+                        if not all_have:
+                            logger.warning(f"Timeout waiting for piece(s) {missing_pieces} at offset {curr_pos}")
+                            break
 
-            # Read chunk from file now that we are 100% sure the pieces are verified by libtorrent
-            try:
-                with open(self.video_file_path, 'rb') as f:
                     f.seek(curr_pos)
                     data = f.read(chunk_to_read)
                     if not data:
@@ -425,8 +423,8 @@ class TorrentStreamer:
                         continue
                     wfile.write(data)
                     bytes_sent += len(data)
-            except Exception as e:
-                break
+        except Exception:
+            pass
 
     def get_status(self) -> Dict[str, Any]:
         """Return live torrent status dictionary."""
