@@ -34,7 +34,7 @@ Since Showberry does not yet have a remote git repository, the first step is pus
 5. Click **Create repository**.
 
 ### 2. Push Your Local Commits
-In your terminal inside `/home/vishwam/code/showberry`:
+In your terminal inside `~/code/showberry`:
 
 ```bash
 # If using SSH (recommended):
@@ -94,7 +94,7 @@ Flathub is the standard app distribution platform for the Linux desktop, enablin
 
 4. **Add and Commit the Manifest**:
    ```bash
-   cp /home/vishwam/code/showberry/packaging/flathub/io.github.Dackerie.Showberry.json .
+   cp packaging/flathub/io.github.Dackerie.Showberry.json .
    git add io.github.Dackerie.Showberry.json
    git commit -m "Add io.github.Dackerie.Showberry"
    git push -u origin add-showberry
