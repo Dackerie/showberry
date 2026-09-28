@@ -132,6 +132,10 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(pp._top_handle.get_visible())
         self.assertFalse(pp._cursor_hidden)
 
+        # Pointer leave schedules faster dismissal
+        pp._on_pointer_leave(None)
+        self.assertIsNotNone(pp._hide_timeout)
+
     def test_mpv_gl_proc_address_resolution(self):
         from showberry.ui.player_page import get_proc_address_wrapper
         proc = get_proc_address_wrapper()

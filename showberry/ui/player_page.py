@@ -2357,6 +2357,7 @@ class PlayerPage(Adw.NavigationPage):
         motion = Gtk.EventControllerMotion.new()
         motion.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
         motion.connect('motion', self._on_motion)
+        motion.connect('leave', self._on_pointer_leave)
         self._overlay.add_controller(motion)
 
         # Single click: play/pause, Double click: fullscreen
@@ -3423,7 +3424,16 @@ class PlayerPage(Adw.NavigationPage):
         except Exception:
             pass
 
-    def _show_controls_briefly(self):
+    def _on_pointer_leave(self, controller):
+        """Accelerate hiding controls when the cursor leaves the player area."""
+        self._last_pointer_x = None
+        self._last_pointer_y = None
+        if not self._mpv_widget.is_paused():
+            if self._hide_timeout:
+                GLib.source_remove(self._hide_timeout)
+            self._hide_timeout = GLib.timeout_add(800, self._hide_controls)
+
+    def _show_controls_briefly(self, timeout_ms: int = 1500):
         if self._cursor_hidden:
             self._set_cursor_visible(True)
         if hasattr(self, '_top_handle'):
@@ -3435,7 +3445,7 @@ class PlayerPage(Adw.NavigationPage):
         self._controls.set_visible(True)
         if self._hide_timeout:
             GLib.source_remove(self._hide_timeout)
-        self._hide_timeout = GLib.timeout_add(3000, self._hide_controls)
+        self._hide_timeout = GLib.timeout_add(timeout_ms, self._hide_controls)
 
     def _hide_controls(self):
         # Don't hide if user is currently interacting with controls

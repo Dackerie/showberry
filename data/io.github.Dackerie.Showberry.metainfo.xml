@@ -77,6 +77,7 @@
           <li>Added legal and privacy risk confirmation dialog prior to enabling peer-to-peer torrent streaming</li>
           <li>Dynamically hide torrent stream selection menus, popovers, and keyboard shortcuts when torrenting is disabled</li>
           <li>Improved default provider fallback behavior and settings schema discovery</li>
+          <li>Refined player OSC auto-hide delay to 1.5 seconds with accelerated dismissal when cursor leaves the player area</li>
         </ul>
       </description>
     </release>
