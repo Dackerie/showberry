@@ -25,6 +25,7 @@ class TestUINavigation(unittest.TestCase):
         s.preferred_torrent_quality = '1080p'
         s.max_torrent_size_gb = 0
         s.torrent_cache_size_gb = 10
+        s.torrent_enabled = False
 
     def tearDown(self):
         from showberry.services.settings import SettingsService
@@ -32,6 +33,7 @@ class TestUINavigation(unittest.TestCase):
         s.preferred_torrent_quality = '1080p'
         s.max_torrent_size_gb = 0
         s.torrent_cache_size_gb = 10
+        s.torrent_enabled = False
         super().tearDown()
 
     def test_navigation_flow(self):
@@ -98,6 +100,9 @@ class TestUINavigation(unittest.TestCase):
         pp = PlayerPage()
         self.assertEqual(pp.get_tag(), 'player')
         self.assertIsNotNone(pp._top_bar)
+        self.assertIsNotNone(pp._top_handle)
+        self.assertIsInstance(pp._top_handle, Gtk.WindowHandle)
+        self.assertEqual(pp._top_handle.get_child(), pp._top_bar)
         self.assertIsNotNone(pp._controls)
         self.assertIsNotNone(pp._mpv_widget)
 
@@ -110,18 +115,21 @@ class TestUINavigation(unittest.TestCase):
         pp._show_controls_briefly()
         self.assertTrue(pp._controls.get_visible())
         self.assertTrue(pp._top_bar.get_visible())
+        self.assertTrue(pp._top_handle.get_visible())
         self.assertFalse(pp._cursor_hidden)
 
         # Trigger hide controls
         pp._hide_controls()
         self.assertFalse(pp._controls.get_visible())
         self.assertFalse(pp._top_bar.get_visible())
+        self.assertFalse(pp._top_handle.get_visible())
         self.assertTrue(pp._cursor_hidden)
 
         # Motion reveals controls and cursor
         pp._on_motion(None, 50, 50)
         self.assertTrue(pp._controls.get_visible())
         self.assertTrue(pp._top_bar.get_visible())
+        self.assertTrue(pp._top_handle.get_visible())
         self.assertFalse(pp._cursor_hidden)
 
     def test_mpv_gl_proc_address_resolution(self):
@@ -1045,7 +1053,7 @@ class TestUINavigation(unittest.TestCase):
         self.assertTrue(pp._spinner_box.has_css_class('player-spinner-box'))
 
     def test_settings_torrent_preferences(self):
-        """SettingsService properly handles preferred_torrent_quality, max_torrent_size_gb, torrent_cache_size_gb."""
+        """SettingsService properly handles preferred_torrent_quality, max_torrent_size_gb, torrent_cache_size_gb, and torrent_enabled."""
         from showberry.services.settings import SettingsService
         s = SettingsService()
         s.preferred_torrent_quality = '720p'
@@ -1054,6 +1062,10 @@ class TestUINavigation(unittest.TestCase):
         self.assertEqual(s.max_torrent_size_gb, 4)
         s.torrent_cache_size_gb = 20
         self.assertEqual(s.torrent_cache_size_gb, 20)
+        s.torrent_enabled = True
+        self.assertTrue(s.torrent_enabled)
+        s.torrent_enabled = False
+        self.assertFalse(s.torrent_enabled)
 
     def test_torrent_size_limit_and_quality_selection(self):
         """TorrentProvider._select_best_stream penalizes streams exceeding max size and favors preferred quality."""
@@ -1128,6 +1140,7 @@ class TestUINavigation(unittest.TestCase):
             'preferred-torrent-quality',
             'max-torrent-size-gb',
             'torrent-cache-size-gb',
+            'torrent-enabled',
         ]
         for key in required_keys:
             self.assertIn(key, keys, f"Missing required GSettings key: {key}")
@@ -1280,6 +1293,14 @@ class TestUINavigation(unittest.TestCase):
         pp._on_open_stream_details = mock_open_details
 
         ctrl = MagicMock()
+        # When torrenting is disabled, 't' shows notification and does not open chooser
+        pp._settings.torrent_enabled = False
+        res_t_disabled = pp._on_key_pressed(ctrl, Gdk.KEY_t, 0, Gdk.ModifierType(0))
+        self.assertTrue(res_t_disabled)
+        mock_open_chooser.assert_not_called()
+
+        # When torrenting is enabled, 't' opens chooser
+        pp._settings.torrent_enabled = True
         res_t = pp._on_key_pressed(ctrl, Gdk.KEY_t, 0, Gdk.ModifierType(0))
         self.assertTrue(res_t)
         mock_open_chooser.assert_called_once()
@@ -1498,6 +1519,24 @@ class TestUINavigation(unittest.TestCase):
         self.assertIsNotNone(c0)
         self.assertFalse(c0.get_focusable())
         self.assertFalse(c0.get_focus_on_click())
+
+    def test_settings_page_torrent_toggle_and_subrows(self):
+        """SettingsPage initializes torrent toggle, subrows visibility, and default provider updates."""
+        from showberry.ui.settings_page import SettingsPage
+        from showberry.services.settings import SettingsService
+        settings = SettingsService()
+        settings.torrent_enabled = False
+
+        sp = SettingsPage()
+        self.assertFalse(sp._torrent_switch.get_active())
+        self.assertFalse(sp._quality_row.get_visible())
+        self.assertFalse(sp._size_row.get_visible())
+        self.assertFalse(sp._cache_row.get_visible())
+
+        # Test toggling OFF manually cleans up default provider if set to torrent
+        settings.default_provider = 'vidy'
+        sp._on_torrent_switch_toggled(sp._torrent_switch, None)
+        self.assertFalse(settings.torrent_enabled)
 
 
 if __name__ == '__main__':

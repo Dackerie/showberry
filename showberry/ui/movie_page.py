@@ -182,7 +182,9 @@ class MoviePage(Adw.NavigationPage):
             self._on_watchlist_toggled(None)
             return True
         elif keyval in (Gdk.KEY_s, Gdk.KEY_S, Gdk.KEY_t, Gdk.KEY_T):
-            self._on_select_stream_clicked(None)
+            from showberry.services.settings import SettingsService
+            if SettingsService().torrent_enabled:
+                self._on_select_stream_clicked(None)
             return True
         elif keyval in (Gdk.KEY_Escape, Gdk.KEY_BackSpace):
             nav = self.get_ancestor(Adw.NavigationView)
@@ -371,6 +373,8 @@ class MoviePage(Adw.NavigationPage):
         self._select_stream_btn.add_css_class('flat')
         self._select_stream_btn.set_tooltip_text("Browse and select torrent stream")
         self._select_stream_btn.connect('clicked', self._on_select_stream_clicked)
+        from showberry.services.settings import SettingsService
+        self._select_stream_btn.set_visible(SettingsService().torrent_enabled)
         self._actions_row.append(self._select_stream_btn)
 
         self._details.append(self._actions_row)
@@ -1078,9 +1082,12 @@ class MoviePage(Adw.NavigationPage):
 
     def _setup_providers(self):
         from showberry.services.torrent import HAS_LIBTORRENT
-        providers = [p for p in get_all_providers() if 'torrent' not in p.name.lower() or HAS_LIBTORRENT]
         from showberry.services.settings import SettingsService
-        default_prov = SettingsService().default_provider or 'Vidy'
+        settings = SettingsService()
+        if hasattr(self, '_select_stream_btn'):
+            self._select_stream_btn.set_visible(settings.torrent_enabled)
+        providers = [p for p in get_all_providers() if 'torrent' not in p.name.lower() or (HAS_LIBTORRENT and settings.torrent_enabled)]
+        default_prov = settings.default_provider or 'Vidy'
         auto_label = f"Auto (Best • {default_prov})"
         self._provider_names = ['Auto (Best)'] + [p.name for p in providers]
         display_labels = [auto_label] + [p.name for p in providers]
@@ -1368,6 +1375,9 @@ class MoviePage(Adw.NavigationPage):
         self.emit('play-movie', stream_data)
 
     def _on_select_stream_clicked(self, button):
+        from showberry.services.settings import SettingsService
+        if not SettingsService().torrent_enabled:
+            return
         from showberry.ui.stream_dialogs import TorrentStreamChooserDialog
         window = self.get_root()
         season = None

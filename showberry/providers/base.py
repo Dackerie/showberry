@@ -92,12 +92,12 @@ class ProviderManager:
     """Manages providers and provides automatic fallback cascade resolution."""
 
     @staticmethod
-    def get_providers() -> List[BaseProvider]:
-        return get_all_providers()
+    def get_providers(include_torrent: Optional[bool] = None) -> List[BaseProvider]:
+        return get_all_providers(include_torrent=include_torrent)
 
     @staticmethod
-    def get_provider_by_name(name: str) -> Optional[BaseProvider]:
-        for p in get_all_providers():
+    def get_provider_by_name(name: str, include_torrent: Optional[bool] = None) -> Optional[BaseProvider]:
+        for p in get_all_providers(include_torrent=include_torrent):
             if p.name.lower() == name.lower():
                 return p
         return None
@@ -162,8 +162,15 @@ class ProviderManager:
         return None
 
 
-def get_all_providers():
+def get_all_providers(include_torrent: Optional[bool] = None):
     """Get all available providers ordered by reliability and priority."""
+    if include_torrent is None:
+        try:
+            from showberry.services.settings import SettingsService
+            include_torrent = SettingsService().torrent_enabled
+        except Exception:
+            include_torrent = True
+
     from showberry.providers.vidy import VidyProvider
     from showberry.providers.cinejoy import CinejoyProvider
     from showberry.providers.movy import MovyProvider
@@ -177,9 +184,8 @@ def get_all_providers():
     from showberry.providers.vidnest import VidNestProvider
     from showberry.providers.primewire import PrimeWireProvider
     from showberry.providers.vidsrc import VidSrcProvider
-    from showberry.providers.torrent import TorrentProvider
 
-    return [
+    providers = [
         VidyProvider(),
         CinejoyProvider(),
         MovyProvider(),
@@ -193,6 +199,9 @@ def get_all_providers():
         VidNestProvider(),
         PrimeWireProvider(),
         VidSrcProvider(),
-        TorrentProvider(),
     ]
+    if include_torrent:
+        from showberry.providers.torrent import TorrentProvider
+        providers.append(TorrentProvider())
+    return providers
 

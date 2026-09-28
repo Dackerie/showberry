@@ -63,27 +63,16 @@ class SettingsPage(Gtk.Box):
     def _setup_player_group(self):
         """Setup player settings group."""
         group = Adw.PreferencesGroup()
-        group.set_title('Playback & Behavior')
+        group.set_title('Playback and Behavior')
         group.set_description('Video player, providers, and auto-skip settings')
 
         # Default provider
-        providers = get_all_providers()
-        provider_names = [p.name for p in providers]
-
-        provider_row = Adw.ComboRow()
-        provider_row.set_title('Default Provider')
-        provider_row.set_subtitle('Initial provider prioritized when using Auto (Best)')
-        provider_row.set_model(Gtk.StringList.new(provider_names))
-
-        # Find current provider index
-        current_provider = self._settings.default_provider
-        for i, p in enumerate(providers):
-            if p.name.lower() == current_provider.lower():
-                provider_row.set_selected(i)
-                break
-
-        provider_row.connect('notify::selected', self._on_provider_changed)
-        group.add(provider_row)
+        self._provider_row = Adw.ComboRow()
+        self._provider_row.set_title('Default Provider')
+        self._provider_row.set_subtitle('Initial provider prioritized when using Auto (Best)')
+        self._refresh_provider_options()
+        self._provider_row.connect('notify::selected', self._on_provider_changed)
+        group.add(self._provider_row)
 
         # Auto-Skip Next Episode
         auto_skip_row = Adw.SwitchRow()
@@ -117,16 +106,40 @@ class SettingsPage(Gtk.Box):
 
         self._prefs_page.add(group)
 
+    def _refresh_provider_options(self):
+        """Refresh default provider dropdown based on enabled providers."""
+        if not hasattr(self, '_provider_row'):
+            return
+        self._current_providers = get_all_providers()
+        provider_names = [p.name for p in self._current_providers]
+        self._provider_row.set_model(Gtk.StringList.new(provider_names))
+
+        current_provider = self._settings.default_provider
+        selected_idx = 0
+        for i, p in enumerate(self._current_providers):
+            if p.name.lower() == current_provider.lower():
+                selected_idx = i
+                break
+        self._provider_row.set_selected(selected_idx)
 
     def _setup_torrent_group(self):
         """Setup torrent & P2P streaming settings group."""
         group = Adw.PreferencesGroup()
-        group.set_title('Torrent & P2P Streaming')
+        group.set_title('Torrent and P2P Streaming')
         group.set_description('Configure BitTorrent playback, bandwidth limits, and local cache')
 
+        # 0. Enable Torrent Streaming Switch
+        self._updating_torrent_switch = False
+        self._torrent_switch = Adw.SwitchRow()
+        self._torrent_switch.set_title('Enable Torrent Streaming (P2P)')
+        self._torrent_switch.set_subtitle('Stream media directly from peer-to-peer torrent swarms')
+        self._torrent_switch.set_active(self._settings.torrent_enabled)
+        self._torrent_switch.connect('notify::active', self._on_torrent_switch_toggled)
+        group.add(self._torrent_switch)
+
         # 1. Preferred Quality
-        quality_row = Adw.ComboRow()
-        quality_row.set_title('Preferred Torrent Quality')
+        self._quality_row = Adw.ComboRow()
+        self._quality_row.set_title('Preferred Torrent Quality')
         quality_labels = [
             '1080p (Full HD - Recommended)',
             '720p (HD - Data Saver)',
@@ -134,18 +147,18 @@ class SettingsPage(Gtk.Box):
             'Auto (Best Available / Highest Seeded)'
         ]
         self._quality_keys = ['1080p', '720p', '4k', 'auto']
-        quality_row.set_model(Gtk.StringList.new(quality_labels))
+        self._quality_row.set_model(Gtk.StringList.new(quality_labels))
 
         curr_q = self._settings.preferred_torrent_quality
         q_idx = self._quality_keys.index(curr_q) if curr_q in self._quality_keys else 0
-        quality_row.set_selected(q_idx)
-        quality_row.connect('notify::selected', self._on_torrent_quality_changed)
-        group.add(quality_row)
+        self._quality_row.set_selected(q_idx)
+        self._quality_row.connect('notify::selected', self._on_torrent_quality_changed)
+        group.add(self._quality_row)
 
         # 2. Maximum File Size Limit
-        size_row = Adw.ComboRow()
-        size_row.set_title('Max Torrent File Size')
-        size_row.set_subtitle('Filter out massive torrents to preserve laptop storage & network data')
+        self._size_row = Adw.ComboRow()
+        self._size_row.set_title('Max Torrent File Size')
+        self._size_row.set_subtitle('Filter out massive torrents to preserve laptop storage & network data')
         size_labels = [
             'Unlimited (Default)',
             '2 GB (Mobile / Highly Constrained)',
@@ -154,18 +167,18 @@ class SettingsPage(Gtk.Box):
             '15 GB'
         ]
         self._size_values = [0, 2, 4, 8, 15]
-        size_row.set_model(Gtk.StringList.new(size_labels))
+        self._size_row.set_model(Gtk.StringList.new(size_labels))
 
         curr_sz = self._settings.max_torrent_size_gb
         sz_idx = self._size_values.index(curr_sz) if curr_sz in self._size_values else 0
-        size_row.set_selected(sz_idx)
-        size_row.connect('notify::selected', self._on_torrent_size_changed)
-        group.add(size_row)
+        self._size_row.set_selected(sz_idx)
+        self._size_row.connect('notify::selected', self._on_torrent_size_changed)
+        group.add(self._size_row)
 
         # 3. Disk Cache Size Limit
-        cache_row = Adw.ComboRow()
-        cache_row.set_title('Torrent Disk Cache Limit')
-        cache_row.set_subtitle('Amount of disk space used to cache downloaded videos before LRU cleanup')
+        self._cache_row = Adw.ComboRow()
+        self._cache_row.set_title('Torrent Disk Cache Limit')
+        self._cache_row.set_subtitle('Amount of disk space used to cache downloaded videos before LRU cleanup')
         cache_labels = [
             '10 GB (Recommended)',
             '5 GB',
@@ -174,15 +187,94 @@ class SettingsPage(Gtk.Box):
             'Unlimited'
         ]
         self._cache_values = [10, 5, 20, 0, -1]
-        cache_row.set_model(Gtk.StringList.new(cache_labels))
+        self._cache_row.set_model(Gtk.StringList.new(cache_labels))
 
         curr_c = self._settings.torrent_cache_size_gb
         c_idx = self._cache_values.index(curr_c) if curr_c in self._cache_values else 0
-        cache_row.set_selected(c_idx)
-        cache_row.connect('notify::selected', self._on_torrent_cache_changed)
-        group.add(cache_row)
+        self._cache_row.set_selected(c_idx)
+        self._cache_row.connect('notify::selected', self._on_torrent_cache_changed)
+        group.add(self._cache_row)
+
+        self._set_torrent_subrows_visible(self._settings.torrent_enabled)
 
         self._prefs_page.add(group)
+
+    def _set_torrent_subrows_visible(self, visible: bool):
+        if hasattr(self, '_quality_row'):
+            self._quality_row.set_visible(visible)
+        if hasattr(self, '_size_row'):
+            self._size_row.set_visible(visible)
+        if hasattr(self, '_cache_row'):
+            self._cache_row.set_visible(visible)
+
+    def _on_torrent_switch_toggled(self, row, pspec):
+        if getattr(self, '_updating_torrent_switch', False):
+            return
+
+        is_active = row.get_active()
+        if not is_active:
+            self._settings.torrent_enabled = False
+            self._set_torrent_subrows_visible(False)
+            if self._settings.default_provider.lower() == 'torrent':
+                self._settings.default_provider = 'vidy'
+            self._refresh_provider_options()
+            return
+
+        warning_body = (
+            "Torrent streaming connects your device directly to a decentralized peer-to-peer network (BitTorrent swarms).\n\n"
+            "• Your public IP address is visible to peers in the swarm.\n"
+            "• Depending on your jurisdiction and local laws, downloading or sharing copyrighted content without authorization may carry legal consequences (such as DMCA notices or fines).\n"
+            "• Using a VPN is strongly recommended if you enable this feature.\n\n"
+            "Showberry does not host or distribute any torrent content. Do you want to enable torrent streaming?"
+        )
+
+        parent = self.get_root()
+        if parent is None or not isinstance(parent, Gtk.Widget):
+            app = Gtk.Application.get_default()
+            if app:
+                parent = app.get_active_window()
+
+        def _handle_response(confirmed: bool):
+            if confirmed:
+                self._settings.torrent_enabled = True
+                self._set_torrent_subrows_visible(True)
+                self._refresh_provider_options()
+            else:
+                self._updating_torrent_switch = True
+                self._torrent_switch.set_active(False)
+                self._updating_torrent_switch = False
+
+        if hasattr(Adw, 'AlertDialog'):
+            dialog = Adw.AlertDialog.new("Enable Torrent Streaming (P2P)?", warning_body)
+            dialog.add_response("cancel", "_Cancel")
+            dialog.add_response("enable", "_Enable Streaming")
+            dialog.set_response_appearance("enable", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.set_default_response("cancel")
+            dialog.set_close_response("cancel")
+
+            def _alert_callback(dlg, result):
+                try:
+                    resp = dlg.choose_finish(result)
+                except Exception:
+                    resp = "cancel"
+                _handle_response(resp == "enable")
+
+            dialog.choose(parent, None, _alert_callback)
+        elif hasattr(Adw, 'MessageDialog'):
+            dialog = Adw.MessageDialog(
+                heading="Enable Torrent Streaming (P2P)?",
+                body=warning_body,
+                transient_for=parent if isinstance(parent, Gtk.Window) else None,
+            )
+            dialog.add_response("cancel", "_Cancel")
+            dialog.add_response("enable", "_Enable Streaming")
+            dialog.set_response_appearance("enable", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.set_default_response("cancel")
+            dialog.set_close_response("cancel")
+            dialog.connect('response', lambda dlg, resp: _handle_response(resp == "enable"))
+            dialog.present()
+        else:
+            _handle_response(True)
 
     def _on_torrent_quality_changed(self, row, pspec):
         idx = row.get_selected()
@@ -248,9 +340,9 @@ class SettingsPage(Gtk.Box):
         self._apply_theme(theme)
 
     def _on_provider_changed(self, row, pspec):
-        providers = get_all_providers()
+        providers = getattr(self, '_current_providers', get_all_providers())
         index = row.get_selected()
-        if index < len(providers):
+        if 0 <= index < len(providers):
             self._settings.default_provider = providers[index].name
 
     def _on_auto_skip_changed(self, row, pspec):

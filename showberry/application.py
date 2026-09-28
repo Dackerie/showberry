@@ -25,12 +25,12 @@ class ShowberryApplication(Adw.Application):
 
         schema_source = Gio.SettingsSchemaSource.get_default()
         schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
-        if not schema:
+        if not schema or (hasattr(schema, 'has_key') and not schema.has_key('torrent-enabled')):
             import sys
             candidate_schema_dirs = [
-                Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas',
                 Path(__file__).parent.parent / 'data',
                 Path(__file__).parent / 'data',
+                Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas',
             ]
             if getattr(sys, 'frozen', False):
                 bundle_dir = getattr(sys, '_MEIPASS', Path(sys.executable).parent)
@@ -47,7 +47,7 @@ class ShowberryApplication(Adw.Application):
                         False
                     )
                     schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
-                    if schema:
+                    if schema and (not hasattr(schema, 'has_key') or schema.has_key('torrent-enabled')):
                         break
 
         if schema:

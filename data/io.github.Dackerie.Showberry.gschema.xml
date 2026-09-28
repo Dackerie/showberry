@@ -36,6 +36,11 @@
       <summary>Is Maximized</summary>
       <description>Whether the window is maximized</description>
     </key>
+    <key name="torrent-enabled" type="b">
+      <default>false</default>
+      <summary>Enable P2P torrent streaming</summary>
+      <description>Whether P2P torrent streaming and torrent provider options are enabled</description>
+    </key>
     <key name="preferred-torrent-quality" type="s">
       <default>'1080p'</default>
       <summary>Preferred Torrent Quality</summary>

@@ -15,7 +15,13 @@ class TestProviders(unittest.TestCase):
         self.assertIn('VidFast', names)
         self.assertIn('VidZee', names)
         self.assertIn('PrimeWire', names)
-        self.assertIn('Torrent (P2P)', names)
+        # By default torrenting is disabled, so Torrent (P2P) is excluded
+        self.assertNotIn('Torrent (P2P)', names)
+
+        # When include_torrent=True, Torrent (P2P) is included
+        all_providers = get_all_providers(include_torrent=True)
+        all_names = [p.name for p in all_providers]
+        self.assertIn('Torrent (P2P)', all_names)
 
     def test_stream_result_properties(self):
         sr = StreamResult(

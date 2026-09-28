@@ -23,12 +23,12 @@ class SettingsService:
     def __init__(self):
         schema_source = Gio.SettingsSchemaSource.get_default()
         schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
-        if not schema:
+        if not schema or (hasattr(schema, 'has_key') and not schema.has_key('torrent-enabled')):
             import sys
             candidate_schema_dirs = [
-                Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas',
                 Path(__file__).parent.parent.parent / 'data',
                 Path(__file__).parent.parent / 'data',
+                Path(GLib.get_user_data_dir()) / 'glib-2.0' / 'schemas',
             ]
             if getattr(sys, 'frozen', False):
                 bundle_dir = getattr(sys, '_MEIPASS', Path(sys.executable).parent)
@@ -46,7 +46,7 @@ class SettingsService:
                             False
                         )
                         schema = schema_source.lookup('io.github.Dackerie.Showberry', True) if schema_source else None
-                        if schema:
+                        if schema and (not hasattr(schema, 'has_key') or schema.has_key('torrent-enabled')):
                             break
                     except Exception as e:
                         logger.debug("Failed checking schema dir %s: %s", s_dir, e)
@@ -107,9 +107,14 @@ class SettingsService:
 
     @property
     def default_provider(self):
+        val = 'vidy'
         if self._has_schema_key('default-provider'):
-            return self._settings.get_string('default-provider')
-        return self._fallback_store.get('default-provider', 'vidy')
+            val = self._settings.get_string('default-provider')
+        else:
+            val = self._fallback_store.get('default-provider', 'vidy')
+        if val and val.lower() == 'torrent' and not self.torrent_enabled:
+            return 'vidy'
+        return val
 
     @default_provider.setter
     def default_provider(self, value):
@@ -117,6 +122,24 @@ class SettingsService:
             self._settings.set_string('default-provider', value)
         else:
             self._set_fallback('default-provider', value)
+
+    @property
+    def torrent_enabled(self) -> bool:
+        if self._has_schema_key('torrent-enabled'):
+            try:
+                return self._settings.get_boolean('torrent-enabled')
+            except Exception:
+                pass
+        return self._fallback_store.get('torrent-enabled', False)
+
+    @torrent_enabled.setter
+    def torrent_enabled(self, value: bool):
+        if self._has_schema_key('torrent-enabled'):
+            try:
+                self._settings.set_boolean('torrent-enabled', bool(value))
+            except Exception:
+                pass
+        self._set_fallback('torrent-enabled', bool(value))
 
     @property
     def theme_variant(self):

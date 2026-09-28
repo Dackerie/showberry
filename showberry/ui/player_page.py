@@ -65,6 +65,7 @@ from showberry.services.database import DatabaseService
 from showberry.services.subtitles import SubtitleService
 from showberry.services.tmdb import TMDBClient
 from showberry.services.torrent import get_torrent_streamer
+from showberry.services.settings import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -1671,10 +1672,12 @@ class ProviderPopover(Gtk.Popover):
         # Individual providers
         from showberry.providers import get_all_providers
         from showberry.services.torrent import HAS_LIBTORRENT
+        from showberry.services.settings import SettingsService
+        torrent_allowed = SettingsService().torrent_enabled and HAS_LIBTORRENT
         providers = get_all_providers()
         for p in providers:
             p_name = p.name
-            if 'torrent' in p_name.lower() and not HAS_LIBTORRENT:
+            if 'torrent' in p_name.lower() and not torrent_allowed:
                 continue
             btn = Gtk.Button()
             row_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
@@ -2163,6 +2166,7 @@ class PlayerPage(Adw.NavigationPage):
         self._db = DatabaseService()
         self._tmdb = TMDBClient()
         self._subtitles_service = SubtitleService()
+        self._settings = SettingsService()
 
         self._last_progress_saved = 0.0
         self._progress_timer_id = None
@@ -2217,7 +2221,10 @@ class PlayerPage(Adw.NavigationPage):
         self._spinner_box.append(self._spinner_label)
         self._overlay.add_overlay(self._spinner_box)
 
-        # Docked Top Bar (Back button, Media Title, Provider dropdown)
+        # Docked Top Bar (Back button, Media Title, Provider dropdown, and Window Drag Handle)
+        self._top_handle = Gtk.WindowHandle()
+        self._top_handle.set_valign(Gtk.Align.START)
+
         self._top_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self._top_bar.add_css_class('player-top-bar')
         self._top_bar.set_valign(Gtk.Align.START)
@@ -2238,10 +2245,12 @@ class PlayerPage(Adw.NavigationPage):
         self._title_label.set_ellipsize(Pango.EllipsizeMode.END)
         self._title_label.set_max_width_chars(50)
         self._title_label.set_xalign(0)
+        self._title_label.set_can_target(False)
         self._top_bar.append(self._title_label)
 
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
+        spacer.set_can_target(False)
         self._top_bar.append(spacer)
 
         self._provider_popover = ProviderPopover(on_provider_selected=lambda p: self._switch_provider(p))
@@ -2268,6 +2277,7 @@ class PlayerPage(Adw.NavigationPage):
         self._switch_stream_btn.set_tooltip_text("Switch stream / torrent")
         self._switch_stream_btn.set_focusable(False)
         self._switch_stream_btn.connect('clicked', self._on_open_stream_chooser)
+        self._switch_stream_btn.set_visible(self._settings.torrent_enabled)
         self._top_bar.append(self._switch_stream_btn)
 
         self._stream_info_btn = Gtk.Button.new_from_icon_name('info-symbolic')
@@ -2278,7 +2288,8 @@ class PlayerPage(Adw.NavigationPage):
         self._stream_info_btn.connect('clicked', self._on_open_stream_details)
         self._top_bar.append(self._stream_info_btn)
 
-        self._overlay.add_overlay(self._top_bar)
+        self._top_handle.set_child(self._top_bar)
+        self._overlay.add_overlay(self._top_handle)
 
         # Floating OSD pill for notifications (volume, seek, timing feedback)
         self._osd_pill = Gtk.Label(label="")
@@ -2512,7 +2523,10 @@ class PlayerPage(Adw.NavigationPage):
             self._controls._sub_popover.refresh_delay_label()
             return True
         elif keyname in ['t', 'T']:
-            self._on_open_stream_chooser(None)
+            if self._settings.torrent_enabled:
+                self._on_open_stream_chooser(None)
+            else:
+                self.show_osd_notification("Torrent streaming is disabled in Settings.")
             return True
         elif keyname in ['i', 'I']:
             self._on_open_stream_details(None)
@@ -3412,8 +3426,12 @@ class PlayerPage(Adw.NavigationPage):
     def _show_controls_briefly(self):
         if self._cursor_hidden:
             self._set_cursor_visible(True)
+        if hasattr(self, '_top_handle'):
+            self._top_handle.set_visible(True)
         if hasattr(self, '_top_bar'):
             self._top_bar.set_visible(True)
+        if hasattr(self, '_switch_stream_btn'):
+            self._switch_stream_btn.set_visible(self._settings.torrent_enabled)
         self._controls.set_visible(True)
         if self._hide_timeout:
             GLib.source_remove(self._hide_timeout)
@@ -3427,6 +3445,8 @@ class PlayerPage(Adw.NavigationPage):
             return True
 
         if not self._mpv_widget.is_paused():
+            if hasattr(self, '_top_handle'):
+                self._top_handle.set_visible(False)
             if hasattr(self, '_top_bar'):
                 self._top_bar.set_visible(False)
             self._controls.set_visible(False)
@@ -3444,6 +3464,9 @@ class PlayerPage(Adw.NavigationPage):
 
     def _on_open_stream_chooser(self, btn):
         """Open stream chooser to switch torrent streams on the fly."""
+        if not self._settings.torrent_enabled:
+            self.show_osd_notification("Torrent streaming is disabled in Settings.")
+            return
         from showberry.services.torrent import HAS_LIBTORRENT
         if not HAS_LIBTORRENT:
             self.show_osd_notification("Torrent streaming is unavailable (libtorrent not installed).")
