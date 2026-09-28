@@ -68,6 +68,18 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.4" date="2026-09-28">
+      <description>
+        <p>Player window repositioning and torrent privacy/legal preference control:</p>
+        <ul>
+          <li>Added native window repositioning via top on-screen controls (OSC) bar in player mode</li>
+          <li>Added torrent streaming master toggle in Preferences (disabled by default)</li>
+          <li>Added legal and privacy risk confirmation dialog prior to enabling peer-to-peer torrent streaming</li>
+          <li>Dynamically hide torrent stream selection menus, popovers, and keyboard shortcuts when torrenting is disabled</li>
+          <li>Improved default provider fallback behavior and settings schema discovery</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.3.2" date="2026-09-25">
       <description>
         <p>Windows stability fixes, video rendering improvements, and UI refinements:</p>
