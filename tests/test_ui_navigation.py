@@ -1145,6 +1145,8 @@ class TestUINavigation(unittest.TestCase):
             'max-torrent-size-gb',
             'torrent-cache-size-gb',
             'torrent-enabled',
+            'auto-check-updates',
+            'last-update-check',
         ]
         for key in required_keys:
             self.assertIn(key, keys, f"Missing required GSettings key: {key}")

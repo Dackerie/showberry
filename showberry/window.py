@@ -1,7 +1,9 @@
 """Main application window for Showberry using Komikku-style Adw.NavigationView."""
 
 import time
+import logging
 import warnings
+from typing import Optional
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -16,6 +18,10 @@ from showberry.ui.movie_page import MoviePage
 from showberry.ui.person_page import PersonPage
 from showberry.ui.settings_page import SettingsPage
 from showberry.ui.player_page import PlayerPage
+from showberry.ui.update_dialog import UpdateDialog
+from showberry.services.updater import UpdateService, UpdateInfo
+
+logger = logging.getLogger(__name__)
 
 
 class ShowberryWindow(Adw.ApplicationWindow):
@@ -29,11 +35,13 @@ class ShowberryWindow(Adw.ApplicationWindow):
         self._last_tab_cycle_time = 0.0
         self._last_nav_time = 0.0
         self._pending_tab_focus_id = None
+        self._latest_update_info: Optional[UpdateInfo] = None
 
         self._setup_ui()
         self._setup_actions()
 
         self.connect('close-request', self._on_close_request)
+        GLib.timeout_add_seconds(3, self._schedule_background_update_check)
 
     @property
     def _watchlist_page(self):
@@ -137,11 +145,20 @@ class ShowberryWindow(Adw.ApplicationWindow):
         menu.append("Preferences", "win.preferences")
         menu.append("Keyboard Shortcuts", "win.shortcuts")
         menu.append("Clear Watch History", "win.clear_history")
+        menu.append("Check for Updates…", "win.check_updates")
         menu.append("About Showberry", "win.about")
         menu_button.set_menu_model(menu)
         header_bar.pack_end(menu_button)
 
         toolbar_view.add_top_bar(header_bar)
+
+        # Update Notification Banner (libadwaita)
+        self._update_banner = Adw.Banner.new("A new version of Showberry is available!")
+        self._update_banner.set_button_label("Update Now")
+        self._update_banner.connect("button-clicked", self._on_update_banner_clicked)
+        self._update_banner.set_revealed(False)
+        toolbar_view.add_top_bar(self._update_banner)
+
         toolbar_view.set_content(self._view_stack)
 
         main_page = Adw.NavigationPage.new(toolbar_view, 'Showberry')
@@ -289,6 +306,10 @@ class ShowberryWindow(Adw.ApplicationWindow):
         clear_action = Gio.SimpleAction.new('clear_history', None)
         clear_action.connect('activate', self._on_clear_history_action)
         self.add_action(clear_action)
+
+        check_updates_action = Gio.SimpleAction.new('check_updates', None)
+        check_updates_action.connect('activate', self._on_check_updates_action)
+        self.add_action(check_updates_action)
 
         about_action = Gio.SimpleAction.new('about', None)
         about_action.connect('activate', self._on_about_action)
@@ -467,6 +488,52 @@ class ShowberryWindow(Adw.ApplicationWindow):
         dialog.set_application_icon("io.github.Dackerie.Showberry")
         dialog.set_license_type(Gtk.License.GPL_3_0)
         dialog.present(self)
+
+    def _schedule_background_update_check(self) -> bool:
+        """Run periodic/startup background check if enabled and debounced."""
+        try:
+            UpdateService.get_instance().check_for_updates(
+                force=False,
+                callback=self._on_background_update_check_finished
+            )
+        except Exception as e:
+            logger.debug("Background update check error: %s", e)
+        return False
+
+    def _on_background_update_check_finished(self, update_info: Optional[UpdateInfo], error: Optional[str]):
+        if update_info:
+            self._latest_update_info = update_info
+            self._update_banner.set_title(f"Showberry v{update_info.version} is available!")
+            self._update_banner.set_revealed(True)
+
+    def _on_update_banner_clicked(self, banner):
+        if self._latest_update_info:
+            self._show_update_dialog(self._latest_update_info)
+
+    def _on_check_updates_action(self, action, param):
+        self.show_toast("Checking for updates…", timeout=2)
+        try:
+            UpdateService.get_instance().check_for_updates(
+                force=True,
+                callback=self._on_manual_update_check_finished
+            )
+        except Exception as e:
+            self.show_toast(f"Update check error: {e}", timeout=3)
+
+    def _on_manual_update_check_finished(self, update_info: Optional[UpdateInfo], error: Optional[str]):
+        if error:
+            self.show_toast(f"Update check failed: {error}", timeout=4)
+        elif update_info:
+            self._latest_update_info = update_info
+            self._update_banner.set_title(f"Showberry v{update_info.version} is available!")
+            self._update_banner.set_revealed(True)
+            self._show_update_dialog(update_info)
+        else:
+            self.show_toast("Showberry is up to date!", timeout=3)
+
+    def _show_update_dialog(self, update_info: UpdateInfo):
+        dialog = UpdateDialog(self, update_info)
+        dialog.present()
 
     def _on_back_action(self, action, param):
         visible = self._nav_view.get_visible_page()

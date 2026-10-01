@@ -211,3 +211,9 @@ else
 fi
 
 echo "==> Successfully created ${DMG_NAME}!"
+
+echo "==> [7/7] Generating macOS Application ZIP (for in-place auto-updates)..."
+ZIP_NAME="Showberry-macOS-${ARCH}.zip"
+rm -f "${ZIP_NAME}"
+ditto -c -k --keepParent "${APP_DIR}" "${ZIP_NAME}"
+echo "==> Successfully created ${ZIP_NAME}!"

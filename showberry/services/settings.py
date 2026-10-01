@@ -272,6 +272,32 @@ class SettingsService:
         else:
             self._set_fallback('auto-skip-countdown', value)
 
+    @property
+    def auto_check_updates(self) -> bool:
+        if self._has_schema_key('auto-check-updates'):
+            return self._settings.get_boolean('auto-check-updates')
+        return self._fallback_store.get('auto-check-updates', True)
+
+    @auto_check_updates.setter
+    def auto_check_updates(self, value: bool):
+        if self._has_schema_key('auto-check-updates'):
+            self._settings.set_boolean('auto-check-updates', value)
+        else:
+            self._set_fallback('auto-check-updates', value)
+
+    @property
+    def last_update_check(self) -> int:
+        if self._has_schema_key('last-update-check'):
+            return self._settings.get_int64('last-update-check')
+        return self._fallback_store.get('last-update-check', 0)
+
+    @last_update_check.setter
+    def last_update_check(self, value: int):
+        if self._has_schema_key('last-update-check'):
+            self._settings.set_int64('last-update-check', int(value))
+        else:
+            self._set_fallback('last-update-check', int(value))
+
     def get_settings(self):
         """Get the underlying GSettings object."""
         return self._settings

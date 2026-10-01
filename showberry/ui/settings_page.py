@@ -1,14 +1,17 @@
 """Settings page - configure app preferences."""
 
+from typing import Optional
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Gtk, Adw, Gio
+from gi.repository import Gtk, Adw, Gio, GLib
 
 from showberry import __version__
 from showberry.services.settings import SettingsService
 from showberry.providers import get_all_providers
+from showberry.services.updater import UpdateService, UpdateInfo
+from showberry.ui.update_dialog import UpdateDialog
 
 
 class SettingsPage(Gtk.Box):
@@ -308,6 +311,26 @@ class SettingsPage(Gtk.Box):
         version_row.set_subtitle(__version__)
         group.add(version_row)
 
+        # Check for Updates row
+        self._update_row = Adw.ActionRow()
+        self._update_row.set_title('Check for Updates')
+        self._update_row.set_subtitle('Check GitHub for the latest release')
+
+        self._check_update_btn = Gtk.Button(label="Check Now")
+        self._check_update_btn.set_valign(Gtk.Align.CENTER)
+        self._check_update_btn.connect('clicked', self._on_check_updates_clicked)
+        self._update_row.add_suffix(self._check_update_btn)
+        self._update_row.set_activatable_widget(self._check_update_btn)
+        group.add(self._update_row)
+
+        # Auto-check updates switch
+        auto_update_row = Adw.SwitchRow()
+        auto_update_row.set_title('Automatically Check for Updates')
+        auto_update_row.set_subtitle('Check for updates in the background on startup')
+        auto_update_row.set_active(self._settings.auto_check_updates)
+        auto_update_row.connect('notify::active', self._on_auto_check_updates_changed)
+        group.add(auto_update_row)
+
         # Help row with API key link
         help_row = Adw.ActionRow()
         help_row.set_title('Get TMDB API Key')
@@ -383,3 +406,27 @@ class SettingsPage(Gtk.Box):
     def _on_open_logs_clicked(self, row):
         from showberry.services.logger import open_log_folder
         open_log_folder()
+
+    def _on_auto_check_updates_changed(self, row, pspec):
+        self._settings.auto_check_updates = row.get_active()
+
+    def _on_check_updates_clicked(self, btn):
+        self._check_update_btn.set_sensitive(False)
+        self._update_row.set_subtitle('Checking GitHub for updates…')
+        UpdateService.get_instance().check_for_updates(
+            force=True,
+            callback=self._on_update_check_callback
+        )
+
+    def _on_update_check_callback(self, update_info: Optional[UpdateInfo], error: Optional[str]):
+        self._check_update_btn.set_sensitive(True)
+        if error:
+            self._update_row.set_subtitle(f'Update check failed: {error}')
+        elif update_info:
+            self._update_row.set_subtitle(f'v{update_info.version} is available!')
+            root = self.get_root()
+            parent = root if isinstance(root, Gtk.Window) else None
+            dialog = UpdateDialog(parent, update_info)
+            dialog.present()
+        else:
+            self._update_row.set_subtitle('Showberry is up to date!')

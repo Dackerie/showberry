@@ -2,7 +2,7 @@
 ; Requires Inno Setup 6.0 or higher
 
 #define MyAppName "Showberry"
-#define MyAppVersion "0.3.4"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "Dackerie"
 #define MyAppURL "https://github.com/Dackerie/showberry"
 #define MyAppExeName "showberry.exe"
@@ -29,6 +29,9 @@ ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
 DisableDirPage=auto
 DisableProgramGroupPage=auto
+CloseApplications=yes
+RestartApplications=yes
+CloseApplicationsFilter=*.exe,*.dll
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -37,8 +40,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\..\dist\showberry\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\dist\showberry\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs restartreplace
+Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion restartreplace
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"

@@ -76,5 +76,15 @@
       <summary>Countdown Duration</summary>
       <description>Seconds to countdown before auto-skipping</description>
     </key>
+    <key name="auto-check-updates" type="b">
+      <default>true</default>
+      <summary>Automatically Check for Updates</summary>
+      <description>Whether to automatically check for application updates periodically</description>
+    </key>
+    <key name="last-update-check" type="x">
+      <default>0</default>
+      <summary>Last Update Check Timestamp</summary>
+      <description>Unix timestamp of the last update check</description>
+    </key>
   </schema>
 </schemalist>

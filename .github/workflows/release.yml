@@ -194,11 +194,13 @@ jobs:
         run: |
           bash ./packaging/macos/build.sh
 
-      - name: Upload macOS DMG artifact
+      - name: Upload macOS Artifacts (DMG & ZIP)
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg-arm64
-          path: Showberry-macOS-*.dmg
+          name: macos-bundle-arm64
+          path: |
+            Showberry-macOS-*.dmg
+            Showberry-macOS-*.zip
           if-no-files-found: error
 
   publish-release:

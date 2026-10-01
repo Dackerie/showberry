@@ -68,6 +68,21 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.4.0" date="2026-10-01">
+      <description>
+        <p>Comprehensive cross-platform auto-update system and release distribution:</p>
+        <ul>
+          <li>Added automatic background update checking against GitHub Releases with 24-hour rate limit debouncing</li>
+          <li>Added interactive in-app notification banner and dedicated update dialog with release notes</li>
+          <li>Added Windows non-destructive in-place installer upgrade using Windows Restart Manager and restartreplace</li>
+          <li>Added Linux AppImage atomic replacement update and seamless relaunch</li>
+          <li>Added macOS detached helper update and Gatekeeper quarantine stripping</li>
+          <li>Added direct Flatpak bundle downloads and package manager instructions for containerized distributions</li>
+          <li>Added manual "Check for Updates" button and "Automatically Check for Updates" toggle in Preferences</li>
+          <li>Integrated update checking directly into the main hamburger menu</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.3.4" date="2026-09-28">
       <description>
         <p>Player window repositioning and torrent privacy/legal preference control:</p>
