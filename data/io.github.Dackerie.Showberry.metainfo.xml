@@ -63,8 +63,12 @@
       <caption>Actor and director filmography page with biography and work credits</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/07-preferences.png</image>
-      <caption>Preferences dialog for custom TMDB keys, providers, and torrent caching</caption>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/07-player.png</image>
+      <caption>Hardware-accelerated player with frosted glass on-screen controls, resolution badge, and audio/subtitle selectors</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/Dackerie/showberry/master/data/screenshots/08-preferences.png</image>
+      <caption>Preferences dialog for custom TMDB keys, streaming providers, and auto-update settings</caption>
     </screenshot>
   </screenshots>
   <releases>
