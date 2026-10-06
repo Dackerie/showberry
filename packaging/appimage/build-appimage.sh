@@ -117,9 +117,13 @@ if [ -n "$MPV_SO" ] && [ -f "$MPV_SO" ]; then
     echo "    Found libmpv: $MPV_SO"
     bundle_lib "$MPV_SO"
     bundle_dependencies_of "$MPV_SO"
-    # Ensure libmpv.so symlink exists
+    # Ensure libmpv symlinks exist
     MPV_BASE="$(basename "$MPV_SO")"
-    (cd "${APP_DIR}/usr/lib" && ln -sf "$MPV_BASE" libmpv.so && ln -sf "$MPV_BASE" libmpv.so.2)
+    (
+        cd "${APP_DIR}/usr/lib"
+        [ "$MPV_BASE" != "libmpv.so" ] && ln -sf "$MPV_BASE" libmpv.so || true
+        [ "$MPV_BASE" != "libmpv.so.2" ] && ln -sf "$MPV_BASE" libmpv.so.2 || true
+    )
 fi
 
 # Locate and bundle libadwaita-1
@@ -138,7 +142,11 @@ if [ -n "$ADW_SO" ] && [ -f "$ADW_SO" ]; then
     bundle_lib "$ADW_SO"
     bundle_dependencies_of "$ADW_SO"
     ADW_BASE="$(basename "$ADW_SO")"
-    (cd "${APP_DIR}/usr/lib" && ln -sf "$ADW_BASE" libadwaita-1.so && ln -sf "$ADW_BASE" libadwaita-1.so.0)
+    (
+        cd "${APP_DIR}/usr/lib"
+        [ "$ADW_BASE" != "libadwaita-1.so" ] && ln -sf "$ADW_BASE" libadwaita-1.so || true
+        [ "$ADW_BASE" != "libadwaita-1.so.0" ] && ln -sf "$ADW_BASE" libadwaita-1.so.0 || true
+    )
 fi
 
 # 3. Bundle Typelibs for PyGObject
