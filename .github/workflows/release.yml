@@ -92,7 +92,10 @@ jobs:
             desktop-file-utils \
             libfuse2t64 \
             wget \
-            file
+            file \
+            meson \
+            ninja-build \
+            pkg-config
 
       - name: Build AppImage
         run: |

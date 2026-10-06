@@ -253,9 +253,9 @@ Showberry is built on a modular, decoupled architecture that pairs a high-level 
 
 Installers and packages for all major operating systems are available on the [Releases page](https://github.com/Dackerie/showberry/releases/latest).
 
-### Linux (Flatpak · Recommended)
+### Linux (Flatpak · Recommended · Zero Dependencies)
 
-The Flatpak bundle includes the full GNOME runtime, Libadwaita, `libmpv`, `libtorrent-rasterbar`, and all dependencies in an isolated sandbox:
+Flatpak is 100% self-contained and zero-dependency. The bundle runs in the GNOME 50 platform container with all GTK 4, Libadwaita, `libmpv`, `ffmpeg`, `libtorrent-rasterbar`, audio/graphics drivers, and Python runtimes fully pre-packaged:
 
 ```bash
 curl -LO https://github.com/Dackerie/showberry/releases/latest/download/io.github.Dackerie.Showberry.flatpak
@@ -269,9 +269,9 @@ flatpak run io.github.Dackerie.Showberry
 
 ---
 
-### Linux (Standalone AppImage)
+### Linux (Standalone AppImage · Zero Host Dependencies)
 
-For a portable single-binary executable on Linux:
+A portable single-file binary for any Linux distribution. Showberry's AppImage embeds its own standalone Python 3.12 runtime, PyGObject typelibs, and full `libmpv` media stack—requiring zero host Python or media packages installed:
 
 ```bash
 curl -LO https://github.com/Dackerie/showberry/releases/latest/download/Showberry-x86_64.AppImage

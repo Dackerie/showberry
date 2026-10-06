@@ -35,6 +35,36 @@ if sys.platform == 'win32':
                     pass
             if abs_p not in os.environ.get('PATH', ''):
                 os.environ['PATH'] = abs_p + os.pathsep + os.environ.get('PATH', '')
+else:
+    import ctypes.util
+    _orig_find_library = ctypes.util.find_library
+    def _find_library_with_fallback(name):
+        res = _orig_find_library(name)
+        if res:
+            return res
+        if name in ('mpv', 'libmpv'):
+            appdir = os.environ.get('APPDIR')
+            candidates = []
+            if appdir:
+                candidates.extend([
+                    os.path.join(appdir, 'usr', 'lib', 'libmpv.so'),
+                    os.path.join(appdir, 'usr', 'lib', 'libmpv.so.2'),
+                    os.path.join(appdir, 'usr', 'lib', 'libmpv.so.1'),
+                    os.path.join(appdir, 'usr', 'lib', 'x86_64-linux-gnu', 'libmpv.so'),
+                    os.path.join(appdir, 'usr', 'lib', 'x86_64-linux-gnu', 'libmpv.so.2'),
+                    os.path.join(appdir, 'usr', 'lib', 'x86_64-linux-gnu', 'libmpv.so.1'),
+                ])
+            exe_dir = os.path.dirname(sys.executable)
+            candidates.extend([
+                os.path.join(exe_dir, '..', 'lib', 'libmpv.so'),
+                os.path.join(exe_dir, '..', 'lib', 'libmpv.so.2'),
+                os.path.join(exe_dir, '..', 'lib', 'libmpv.so.1'),
+            ])
+            for c in candidates:
+                if os.path.exists(c):
+                    return c
+        return None
+    ctypes.util.find_library = _find_library_with_fallback
 
 try:
     import mpv
