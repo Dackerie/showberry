@@ -31,10 +31,25 @@ PY="${APP_DIR}/usr/python/bin/python3"
 echo "==> Upgrading pip in bundled Python..."
 "$PY" -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
+echo "==> Bundling PyGObject and Cairo..."
+BUNDLED_GI=false
+for d in /usr/lib/python3/dist-packages /usr/lib/python3.12/dist-packages /usr/local/lib/python3/dist-packages; do
+    if [ -d "$d/gi" ]; then
+        echo "    Copying pre-compiled PyGObject from $d..."
+        cp -r "$d/gi" "${APP_DIR}/usr/python/lib/python3.12/site-packages/" 2>/dev/null || true
+        cp -a "$d"/_gi*.so "${APP_DIR}/usr/python/lib/python3.12/site-packages/" 2>/dev/null || true
+        if [ -d "$d/cairo" ]; then
+            cp -r "$d/cairo" "${APP_DIR}/usr/python/lib/python3.12/site-packages/" 2>/dev/null || true
+            cp -a "$d"/_cairo*.so "${APP_DIR}/usr/python/lib/python3.12/site-packages/" 2>/dev/null || true
+        fi
+        BUNDLED_GI=true
+        break
+    fi
+done
+
 echo "==> Installing Python dependencies into bundled Python..."
 "$PY" -m pip install --no-cache-dir \
     pycairo \
-    PyGObject \
     python-mpv \
     requests \
     pillow \
@@ -42,6 +57,14 @@ echo "==> Installing Python dependencies into bundled Python..."
     pycryptodome \
     cryptography \
     PyOpenGL
+
+if ! "$PY" -c "import gi" &>/dev/null; then
+    echo "    Installing PyGObject<3.50 via pip..."
+    "$PY" -m pip install --no-cache-dir "PyGObject<3.50"
+fi
+
+"$PY" -c "import gi; gi.require_version('Gtk', '4.0'); gi.require_version('Adw', '1'); from gi.repository import Gtk, Adw"
+echo "    PyGObject verified successfully in bundled Python!"
 
 echo "==> Installing Showberry package into bundled Python..."
 "$PY" -m pip install --no-cache-dir --no-deps .
