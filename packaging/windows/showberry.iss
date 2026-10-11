@@ -2,7 +2,7 @@
 ; Requires Inno Setup 6.0 or higher
 
 #define MyAppName "Showberry"
-#define MyAppVersion "0.4.2"
+#define MyAppVersion "0.4.1"
 #define MyAppPublisher "Dackerie"
 #define MyAppURL "https://github.com/Dackerie/showberry"
 #define MyAppExeName "showberry.exe"
