@@ -72,6 +72,17 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.4.2" date="2026-10-11">
+      <description>
+        <p>Reliable background auto-updating across Linux AppImage and Windows:</p>
+        <ul>
+          <li>Fixed Linux AppImage cross-device link failure ([Errno 18] EXDEV) when downloading to temporary filesystems via staged atomic replacement</li>
+          <li>Implemented fully automated and silent background updates on Windows with automatic app relaunch</li>
+          <li>Added immediate desktop toast notifications and in-app banners upon detecting available updates</li>
+          <li>Optimized update checking interval with cached discovery to ensure instant notification on app launch</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-10-11">
       <description>
         <p>Cross-platform screen awake and sleep inhibition during media playback:</p>

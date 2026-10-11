@@ -298,6 +298,23 @@ class SettingsService:
         else:
             self._set_fallback('last-update-check', int(value))
 
+    @property
+    def pending_update_data(self) -> Optional[dict]:
+        return self._fallback_store.get('pending-update-data')
+
+    @pending_update_data.setter
+    def pending_update_data(self, value: Optional[dict]):
+        if value is None:
+            self._fallback_store.pop('pending-update-data', None)
+            try:
+                self._config_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self._config_file, 'w', encoding='utf-8') as f:
+                    json.dump(self._fallback_store, f, indent=2)
+            except Exception as e:
+                logger.debug("Could not write fallback settings JSON: %s", e)
+        else:
+            self._set_fallback('pending-update-data', value)
+
     def get_settings(self):
         """Get the underlying GSettings object."""
         return self._settings
