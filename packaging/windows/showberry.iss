@@ -2,7 +2,7 @@
 ; Requires Inno Setup 6.0 or higher
 
 #define MyAppName "Showberry"
-#define MyAppVersion "0.4.1"
+#define MyAppVersion "0.4.2"
 #define MyAppPublisher "Dackerie"
 #define MyAppURL "https://github.com/Dackerie/showberry"
 #define MyAppExeName "showberry.exe"
@@ -50,6 +50,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardIsSilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\showberry"

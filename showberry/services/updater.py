@@ -11,6 +11,7 @@ import sys
 import re
 import json
 import time
+import errno
 import shutil
 import hashlib
 import logging
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 GITHUB_REPO = "Dackerie/showberry"
 GITHUB_LATEST_RELEASE_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-UPDATE_CHECK_INTERVAL_SECONDS = 86400  # 24 hours
+UPDATE_CHECK_INTERVAL_SECONDS = 1800  # 30 minutes
 
 
 def parse_version(version_str: str) -> tuple:
@@ -214,6 +215,59 @@ class UpdateService:
 
         return None, None, 0
 
+    def get_cached_update_info(self) -> Optional[UpdateInfo]:
+        """Return cached UpdateInfo if a newer release was previously discovered."""
+        raw = self._settings.pending_update_data
+        if not raw or not isinstance(raw, dict):
+            return None
+        version = raw.get('version', '')
+        if not version or not is_newer_version(version, __version__):
+            # Outdated or already installed
+            self._settings.pending_update_data = None
+            return None
+        try:
+            return UpdateInfo(
+                version=version,
+                tag_name=raw.get('tag_name', f'v{version}'),
+                name=raw.get('name', f'Showberry v{version}'),
+                body=raw.get('body', ''),
+                html_url=raw.get('html_url', ''),
+                published_at=raw.get('published_at', ''),
+                installation_type=self._installation_type,
+                asset_name=raw.get('asset_name'),
+                download_url=raw.get('download_url'),
+                asset_size=int(raw.get('asset_size', 0)),
+                sha256=raw.get('sha256'),
+                all_assets=raw.get('all_assets', {}),
+            )
+        except Exception as e:
+            logger.debug("Failed parsing cached update info: %s", e)
+            return None
+
+    def _cache_update_info(self, info: UpdateInfo):
+        """Persist pending UpdateInfo so reopening the app immediately remembers it."""
+        try:
+            data = {
+                'version': info.version,
+                'tag_name': info.tag_name,
+                'name': info.name,
+                'body': info.body,
+                'html_url': info.html_url,
+                'published_at': info.published_at,
+                'asset_name': info.asset_name,
+                'download_url': info.download_url,
+                'asset_size': info.asset_size,
+                'sha256': info.sha256,
+                'all_assets': info.all_assets,
+            }
+            self._settings.pending_update_data = data
+        except Exception as e:
+            logger.debug("Failed caching update info: %s", e)
+
+    def _clear_cached_update(self):
+        """Clear cached update info once current version matches or exceeds it."""
+        self._settings.pending_update_data = None
+
     def check_for_updates(
         self,
         force: bool = False,
@@ -228,13 +282,15 @@ class UpdateService:
                 GLib.idle_add(callback, None, None)
             return
 
-        # Check debounce (once per 24h unless force=True)
+        # Check debounce (once per 30m unless force=True)
         if not force:
             last_checked = self._settings.last_update_check
             if time.time() - last_checked < UPDATE_CHECK_INTERVAL_SECONDS:
                 logger.debug("Skipping update check; checked %d seconds ago", time.time() - last_checked)
+                # Deliver any previously discovered pending update immediately
+                cached = self.get_cached_update_info()
                 if callback:
-                    GLib.idle_add(callback, None, None)
+                    GLib.idle_add(callback, cached, None)
                 return
 
         self._is_checking = True
@@ -262,6 +318,7 @@ class UpdateService:
 
                 if not is_newer_version(tag_name, __version__):
                     logger.info("Showberry is up-to-date (installed: %s, latest: %s)", __version__, version)
+                    self._clear_cached_update()
                     if callback:
                         GLib.idle_add(callback, None, None)
                     return
@@ -306,6 +363,7 @@ class UpdateService:
                 )
 
                 logger.info("New version available: %s (Asset: %s)", version, asset_name)
+                self._cache_update_info(info)
                 if callback:
                     GLib.idle_add(callback, info, None)
 
@@ -423,15 +481,35 @@ class UpdateService:
             # 1. Windows Installer Upgrade
             if install_type in (InstallationType.WINDOWS_INSTALLED, InstallationType.WINDOWS_PORTABLE):
                 if local_file.endswith('.exe'):
-                    # Launch Inno Setup with silent close & restart flags
-                    cmd = [
-                        local_file,
-                        "/CLOSEAPPLICATIONS",
-                        "/RESTARTAPPLICATIONS",
+                    # Launch Inno Setup in silent mode with force close and automatic restart
+                    flags = [
+                        "/VERYSILENT",
+                        "/SUPPRESSMSGBOXES",
                         "/SP-",
+                        "/CLOSEAPPLICATIONS",
+                        "/FORCECLOSEAPPLICATIONS",
                     ]
-                    logger.info("Spawning Windows Inno Setup installer: %s", cmd)
-                    subprocess.Popen(cmd, shell=False)
+                    flags_str = " ".join(flags)
+                    logger.info("Spawning Windows Inno Setup installer silently: %s %s", local_file, flags_str)
+
+                    # Use ShellExecuteW if available for native UAC elevation handling
+                    launched = False
+                    if sys.platform == 'win32':
+                        try:
+                            import ctypes
+                            ret = ctypes.windll.shell32.ShellExecuteW(
+                                None, "open", local_file, flags_str, None, 1
+                            )
+                            if ret > 32:
+                                launched = True
+                            else:
+                                logger.warning("ShellExecuteW returned error code %d, falling back to subprocess", ret)
+                        except Exception as e:
+                            logger.warning("ShellExecuteW failed (%s), falling back to subprocess", e)
+
+                    if not launched:
+                        subprocess.Popen([local_file] + flags, shell=False)
+
                     return True, None
                 elif local_file.endswith('.zip'):
                     # Open folder containing the zip
@@ -445,8 +523,34 @@ class UpdateService:
                     return False, "Could not determine host AppImage location from $APPIMAGE environment variable."
 
                 os.chmod(local_file, 0o755)
-                # Atomically replace running binary path
-                os.replace(local_file, current_appimage)
+                target_dir = os.path.dirname(os.path.abspath(current_appimage))
+                temp_staged = os.path.join(target_dir, f".{os.path.basename(current_appimage)}.update_tmp")
+
+                try:
+                    try:
+                        # Atomically replace running binary path if on the same filesystem
+                        os.replace(local_file, current_appimage)
+                    except OSError as e:
+                        if e.errno == errno.EXDEV:
+                            # Cross-device link (e.g. /tmp on tmpfs while target is on /home disk).
+                            # Directly copying over a running binary fails with ETXTBSY ("Text file busy"),
+                            # so copy to a staging file on the target filesystem first, then atomically replace.
+                            shutil.copy2(local_file, temp_staged)
+                            os.chmod(temp_staged, 0o755)
+                            os.replace(temp_staged, current_appimage)
+                            try:
+                                os.unlink(local_file)
+                            except OSError:
+                                pass
+                        else:
+                            raise
+                finally:
+                    if os.path.exists(temp_staged):
+                        try:
+                            os.unlink(temp_staged)
+                        except OSError:
+                            pass
+
                 logger.info("Replaced AppImage binary at %s", current_appimage)
 
                 # Spawn new AppImage process and exit

@@ -213,7 +213,7 @@ class UpdateDialog(Adw.Window):
             self._action_btn.connect('clicked', lambda b: self._updater.apply_update(self._update_info, local_path))
             return
 
-        self._progress_status.set_label("Download complete! Applying update and restarting...")
+        self._progress_status.set_label("Download complete! Installing update in background and restarting...")
         GLib.timeout_add(800, self._trigger_restart)
 
     def _trigger_restart(self):

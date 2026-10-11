@@ -492,7 +492,14 @@ class ShowberryWindow(Adw.ApplicationWindow):
     def _schedule_background_update_check(self) -> bool:
         """Run periodic/startup background check if enabled and debounced."""
         try:
-            UpdateService.get_instance().check_for_updates(
+            updater = UpdateService.get_instance()
+            # 1. Immediately check for cached pending update to display without network latency
+            cached = updater.get_cached_update_info()
+            if cached:
+                self._on_background_update_check_finished(cached, None)
+
+            # 2. Check for fresh updates in background
+            updater.check_for_updates(
                 force=False,
                 callback=self._on_background_update_check_finished
             )
@@ -505,6 +512,12 @@ class ShowberryWindow(Adw.ApplicationWindow):
             self._latest_update_info = update_info
             self._update_banner.set_title(f"Showberry v{update_info.version} is available!")
             self._update_banner.set_revealed(True)
+            self.show_toast(
+                f"Showberry v{update_info.version} is available!",
+                timeout=6,
+                button_label="Update Now",
+                action_name="win.check_updates"
+            )
 
     def _on_update_banner_clicked(self, banner):
         if self._latest_update_info:

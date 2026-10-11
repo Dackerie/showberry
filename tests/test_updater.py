@@ -2,6 +2,7 @@
 
 import os
 import sys
+import errno
 import json
 import time
 import unittest
@@ -149,6 +150,159 @@ class TestUpdaterService(unittest.TestCase):
         self.assertTrue(win._update_banner.get_revealed())
         self.assertIn("0.4.0", win._update_banner.get_title())
 
+    def test_update_debounce_interval(self):
+        from showberry.services.updater import UPDATE_CHECK_INTERVAL_SECONDS
+        self.assertEqual(UPDATE_CHECK_INTERVAL_SECONDS, 1800)
+
+    def test_cached_update_info_lifecycle(self):
+        updater = UpdateService.get_instance()
+        info = UpdateInfo(
+            version="99.0.0",
+            tag_name="v99.0.0",
+            name="Showberry v99.0.0",
+            body="Future version",
+            html_url="https://example.com",
+            published_at="",
+            installation_type=InstallationType.WINDOWS_INSTALLED,
+            asset_name="Showberry-Windows-Setup-x86_64.exe",
+            download_url="https://example.com/setup.exe",
+            asset_size=50000000,
+        )
+        # Cache it
+        updater._cache_update_info(info)
+        cached = updater.get_cached_update_info()
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached.version, "99.0.0")
+
+        # Clear it
+        updater._clear_cached_update()
+        self.assertIsNone(updater.get_cached_update_info())
+
+    def test_windows_apply_update_silent_flags(self):
+        updater = UpdateService.get_instance()
+        updater._installation_type = InstallationType.WINDOWS_INSTALLED
+
+        with patch('os.path.exists', return_value=True), \
+             patch('subprocess.Popen') as mock_popen, \
+             patch('sys.platform', 'win32'):
+            success, err = updater.apply_update(
+                UpdateInfo(
+                    version="0.4.1",
+                    tag_name="v0.4.1",
+                    name="Showberry v0.4.1",
+                    body="",
+                    html_url="",
+                    published_at="",
+                    installation_type=InstallationType.WINDOWS_INSTALLED,
+                ),
+                "C:\\temp\\Showberry-Windows-Setup-x86_64.exe"
+            )
+            self.assertTrue(success)
+            self.assertIsNone(err)
+
+    def test_background_check_shows_toast_and_banner(self):
+        win = ShowberryWindow()
+        info = UpdateInfo(
+            version="0.4.2",
+            tag_name="v0.4.2",
+            name="Showberry v0.4.2",
+            body="Notes",
+            html_url="",
+            published_at="",
+            installation_type=InstallationType.LINUX_APPIMAGE,
+        )
+        with patch.object(win, 'show_toast') as mock_show_toast:
+            win._on_background_update_check_finished(info, None)
+            self.assertTrue(win._update_banner.get_revealed())
+            self.assertIn("0.4.2", win._update_banner.get_title())
+            mock_show_toast.assert_called_once()
+            self.assertIn("0.4.2", mock_show_toast.call_args[0][0])
+
+    def test_appimage_apply_update_normal(self):
+        updater = UpdateService.get_instance()
+        updater._installation_type = InstallationType.LINUX_APPIMAGE
+
+        with patch.dict(os.environ, {'APPIMAGE': '/home/user/Showberry-x86_64.AppImage'}), \
+             patch('os.path.exists', return_value=True), \
+             patch('os.chmod') as mock_chmod, \
+             patch('os.replace') as mock_replace, \
+             patch('subprocess.Popen') as mock_popen:
+            info = UpdateInfo(
+                version="0.4.2",
+                tag_name="v0.4.2",
+                name="Showberry v0.4.2",
+                body="",
+                html_url="",
+                published_at="",
+                installation_type=InstallationType.LINUX_APPIMAGE,
+            )
+            success, err = updater.apply_update(info, "/tmp/showberry_download.AppImage")
+            self.assertTrue(success)
+            self.assertIsNone(err)
+            mock_chmod.assert_called_with("/tmp/showberry_download.AppImage", 0o755)
+            mock_replace.assert_called_once_with("/tmp/showberry_download.AppImage", "/home/user/Showberry-x86_64.AppImage")
+            mock_popen.assert_called_once_with(["/home/user/Showberry-x86_64.AppImage"], start_new_session=True)
+
+    def test_appimage_apply_update_exdev_fallback(self):
+        updater = UpdateService.get_instance()
+        updater._installation_type = InstallationType.LINUX_APPIMAGE
+
+        # First os.replace raises EXDEV, second os.replace succeeds
+        replace_calls = []
+        def fake_replace(src, dst):
+            replace_calls.append((src, dst))
+            if len(replace_calls) == 1:
+                raise OSError(errno.EXDEV, "Invalid cross-device link")
+            return None
+
+        with patch.dict(os.environ, {'APPIMAGE': '/home/user/Showberry-x86_64.AppImage'}), \
+             patch('os.path.exists', return_value=True), \
+             patch('os.chmod') as mock_chmod, \
+             patch('os.replace', side_effect=fake_replace), \
+             patch('shutil.copy2') as mock_copy2, \
+             patch('os.unlink') as mock_unlink, \
+             patch('subprocess.Popen') as mock_popen:
+            info = UpdateInfo(
+                version="0.4.2",
+                tag_name="v0.4.2",
+                name="Showberry v0.4.2",
+                body="",
+                html_url="",
+                published_at="",
+                installation_type=InstallationType.LINUX_APPIMAGE,
+            )
+            success, err = updater.apply_update(info, "/tmp/showberry_download.AppImage")
+            self.assertTrue(success)
+            self.assertIsNone(err)
+            # Verify staging copy happened on target dir
+            mock_copy2.assert_called_once_with("/tmp/showberry_download.AppImage", "/home/user/.Showberry-x86_64.AppImage.update_tmp")
+            # Verify second replace was from staging file to target
+            self.assertEqual(len(replace_calls), 2)
+            self.assertEqual(replace_calls[1], ("/home/user/.Showberry-x86_64.AppImage.update_tmp", "/home/user/Showberry-x86_64.AppImage"))
+            # Verify unlinks cleaned up local temp file and temp staged
+            mock_unlink.assert_any_call("/tmp/showberry_download.AppImage")
+            mock_popen.assert_called_once_with(["/home/user/Showberry-x86_64.AppImage"], start_new_session=True)
+
+    def test_appimage_apply_update_missing_env(self):
+        updater = UpdateService.get_instance()
+        updater._installation_type = InstallationType.LINUX_APPIMAGE
+
+        with patch.dict(os.environ, {}, clear=True), \
+             patch('os.path.exists', side_effect=lambda p: p == "/tmp/test.AppImage"):
+            info = UpdateInfo(
+                version="0.4.2",
+                tag_name="v0.4.2",
+                name="Showberry v0.4.2",
+                body="",
+                html_url="",
+                published_at="",
+                installation_type=InstallationType.LINUX_APPIMAGE,
+            )
+            success, err = updater.apply_update(info, "/tmp/test.AppImage")
+            self.assertFalse(success)
+            self.assertIn("Could not determine host AppImage location", err)
+
 
 if __name__ == '__main__':
     unittest.main()
+
