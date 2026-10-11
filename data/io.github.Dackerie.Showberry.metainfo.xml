@@ -72,6 +72,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.4.1" date="2026-10-11">
+      <description>
+        <p>Cross-platform screen awake and sleep inhibition during media playback:</p>
+        <ul>
+          <li>Prevent display and system sleep during video playback across Windows, macOS, and Linux</li>
+          <li>Implemented Windows Win32 SetThreadExecutionState display and system sleep prevention with periodic heartbeat</li>
+          <li>Implemented macOS native caffeinate display sleep prevention</li>
+          <li>Implemented Linux session and screen idle inhibition via Gtk.Application and FreeDesktop portal</li>
+          <li>Automatically restore display sleep when playback is paused, completed, or closed to prevent OLED burn-in and conserve battery</li>
+          <li>Added dedicated test suite verifying cross-platform sleep inhibition and player lifecycle integration</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-01">
       <description>
         <p>Comprehensive cross-platform auto-update system and release distribution:</p>

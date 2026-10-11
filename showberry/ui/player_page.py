@@ -96,6 +96,7 @@ from showberry.services.subtitles import SubtitleService
 from showberry.services.tmdb import TMDBClient
 from showberry.services.torrent import get_torrent_streamer
 from showberry.services.settings import SettingsService
+from showberry.services.sleep_inhibitor import SleepInhibitor
 
 logger = logging.getLogger(__name__)
 
@@ -295,6 +296,7 @@ class MpvWidget(Gtk.GLArea):
         'stream-ready': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'buffering': (GObject.SignalFlags.RUN_FIRST, None, (bool,)),
         'playback-ended': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        'pause-changed': (GObject.SignalFlags.RUN_FIRST, None, (bool,)),
     }
 
     def __init__(self, **properties):
@@ -403,6 +405,7 @@ class MpvWidget(Gtk.GLArea):
             'sub_margin_y': 36,
             'log_handler': _on_mpv_log,
             'loglevel': mpv_loglevel,
+            'stop_screensaver': 'yes',
         }
         if sys.platform == 'win32':
             mpv_opts['gpu_api'] = 'opengl'
@@ -421,6 +424,11 @@ class MpvWidget(Gtk.GLArea):
                 pass
 
         self._mpv = MPV(**mpv_opts)
+
+        @self._mpv.property_observer('pause')
+        def _on_pause_prop_change(name, value):
+            if getattr(self, '_is_active', False):
+                GLib.idle_add(self.emit, 'pause-changed', bool(value))
 
         @self._mpv.property_observer('paused-for-cache')
         def _on_paused_for_cache(name, value):
@@ -2197,6 +2205,7 @@ class PlayerPage(Adw.NavigationPage):
         self._tmdb = TMDBClient()
         self._subtitles_service = SubtitleService()
         self._settings = SettingsService()
+        self._sleep_inhibitor = SleepInhibitor(window_getter=lambda: self.get_root())
 
         self._last_progress_saved = 0.0
         self._progress_timer_id = None
@@ -2218,7 +2227,7 @@ class PlayerPage(Adw.NavigationPage):
 
         self._setup_ui()
         self._setup_keybindings()
-        self.connect('unrealize', lambda w: self._set_cursor_visible(True))
+        self.connect('unrealize', lambda w: (self._set_cursor_visible(True), self._sleep_inhibitor.uninhibit()))
 
         # Setup dynamic theme synchronization
         style_mgr = Adw.StyleManager.get_default()
@@ -2236,6 +2245,7 @@ class PlayerPage(Adw.NavigationPage):
         self._mpv_widget.connect('stream-ready', self._on_stream_ready)
         self._mpv_widget.connect('buffering', self._on_buffering)
         self._mpv_widget.connect('playback-ended', self._on_playback_ended)
+        self._mpv_widget.connect('pause-changed', self._on_pause_changed)
         self._overlay.set_child(self._mpv_widget)
 
         # Loading spinner
@@ -2892,10 +2902,21 @@ class PlayerPage(Adw.NavigationPage):
             self.show_osd_notification(f"Subtitle: {label}")
         self._controls.refresh_subtitles()
 
+    def _on_pause_changed(self, widget, is_paused: bool):
+        """React to playback pausing or unpausing by toggling sleep inhibition."""
+        if is_paused:
+            self._sleep_inhibitor.uninhibit()
+        else:
+            self._sleep_inhibitor.inhibit()
+
     def _on_stream_ready(self, widget):
         """Called when the first frame has rendered to GLArea."""
         self._spinner.stop()
         self._spinner_box.set_visible(False)
+
+        # Inhibit screen and system sleep during active playback
+        if self._mpv_widget and not self._mpv_widget.is_paused():
+            self._sleep_inhibitor.inhibit()
 
         # Refresh audio tracks and playback speed in controls
         GLib.timeout_add(1000, lambda: self._controls.refresh_audio_tracks())
@@ -3175,6 +3196,7 @@ class PlayerPage(Adw.NavigationPage):
     def _on_playback_ended(self, widget=None):
         """Triggered strictly when MPV finishes playback (EOF reached)."""
         logger.info("Playback ended (EOF reached).")
+        self._sleep_inhibitor.uninhibit()
         if not self._stream_data or not self._mpv_widget:
             return
 
@@ -3262,6 +3284,7 @@ class PlayerPage(Adw.NavigationPage):
         self.load_stream(new_data)
 
     def _on_stream_error(self, err_msg: str, session_id: int = 0):
+        self._sleep_inhibitor.uninhibit()
         if session_id and session_id != self._session_id:
             return False
         self._spinner.stop()
@@ -3271,6 +3294,7 @@ class PlayerPage(Adw.NavigationPage):
 
     def _on_close(self, controls):
         """Close playback safely, saving final progress and stopping services."""
+        self._sleep_inhibitor.uninhibit()
         self._session_id += 1  # Invalidate any in-flight resolver or subtitle worker threads
         self._pending_sub_query = None
         self._available_subtitles = []
