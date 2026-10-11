@@ -1,9 +1,11 @@
 """Settings service wrapper for GSettings with persistent fallback."""
 
+from __future__ import annotations
+
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional, Dict
 
 from gi.repository import Gio, GLib
 
