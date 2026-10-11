@@ -9,6 +9,7 @@ __all__ = [
     'ImageCache',
     'SettingsService',
     'SubtitleService',
+    'SleepInhibitor',
     'setup_logging',
     'get_log_dir',
     'get_log_file',
@@ -32,6 +33,9 @@ def __getattr__(name: str) -> Any:
     elif name == 'SubtitleService':
         from showberry.services.subtitles import SubtitleService
         return SubtitleService
+    elif name == 'SleepInhibitor':
+        from showberry.services.sleep_inhibitor import SleepInhibitor
+        return SleepInhibitor
     elif name in ('setup_logging', 'get_log_dir', 'get_log_file', 'open_log_folder'):
         import showberry.services.logger as _logger
         return getattr(_logger, name)

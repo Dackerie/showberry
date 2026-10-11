@@ -16,11 +16,11 @@
   <img alt="macOS · Windows · Linux" src="https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-native-2f7bf5?style=flat-square">
   <img alt="MPV Hardware Acceleration" src="https://img.shields.io/badge/MPV-OpenGL%20%7C%20VA--API-e01b24?style=flat-square">
   <img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-3a3a3a?style=flat-square">
-  <img alt="Release: v0.4.0" src="https://img.shields.io/badge/release-v0.4.0-brightgreen?style=flat-square">
+  <img alt="Release: v0.4.1" src="https://img.shields.io/badge/release-v0.4.1-brightgreen?style=flat-square">
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dackerie/showberry/releases/latest"><b>Download Showberry v0.4.0</b></a> ·
+  <a href="https://github.com/Dackerie/showberry/releases/latest"><b>Download Showberry v0.4.1</b></a> ·
   <a href="#features">Features</a> ·
   <a href="#everything-in-the-box">Everything in the box</a> ·
   <a href="#keyboard-shortcuts">Shortcuts</a> ·
@@ -283,14 +283,14 @@ chmod +x Showberry-x86_64.AppImage
 
 ### Windows
 
-1. Download the Windows installer (`Showberry-Setup-v0.4.0.exe`) or portable archive (`Showberry-v0.4.0-windows-x64.zip`) from [GitHub Releases](https://github.com/Dackerie/showberry/releases/latest).
+1. Download the Windows installer (`Showberry-Setup-v0.4.1.exe`) or portable archive (`Showberry-v0.4.1-windows-x64.zip`) from [GitHub Releases](https://github.com/Dackerie/showberry/releases/latest).
 2. Run the setup wizard to install Showberry with start menu shortcuts, or unpack the portable zip to run anywhere.
 
 ---
 
 ### macOS
 
-1. Download the macOS disk image (`Showberry-v0.4.0.dmg`) from [GitHub Releases](https://github.com/Dackerie/showberry/releases/latest).
+1. Download the macOS disk image (`Showberry-v0.4.1.dmg`) from [GitHub Releases](https://github.com/Dackerie/showberry/releases/latest).
 2. Open the DMG and drag **Showberry.app** to your `/Applications` folder.
 3. Native builds are packaged for both Apple Silicon (M1/M2/M3/M4) and Intel architectures.
 
