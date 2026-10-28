@@ -183,7 +183,10 @@ jobs:
       - name: Install build dependencies
         run: |
           brew install gtk4 libadwaita adwaita-icon-theme python3 pygobject3 gobject-introspection mpv create-dmg libtorrent-rasterbar dylibbundler || true
-          python3 -m pip install --break-system-packages \
+          python3 -m venv --system-site-packages /tmp/showberry-venv
+          echo "/tmp/showberry-venv/bin" >> $GITHUB_PATH
+          /tmp/showberry-venv/bin/pip install --upgrade pip
+          /tmp/showberry-venv/bin/pip install \
             requests \
             pillow \
             curl_cffi \

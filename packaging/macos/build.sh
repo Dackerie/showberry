@@ -19,15 +19,30 @@ if command -v brew &>/dev/null; then
 fi
 
 echo "==> [2/6] Installing Python dependencies..."
-python3 -m pip install --break-system-packages \
-    requests \
-    pillow \
-    curl_cffi \
-    pycryptodome \
-    cryptography \
-    PyOpenGL \
-    python-mpv \
-    pyinstaller 2>/dev/null || true
+if [ ! -d "/tmp/showberry-venv" ]; then
+    python3 -m venv --system-site-packages /tmp/showberry-venv 2>/dev/null || true
+fi
+if [ -x "/tmp/showberry-venv/bin/pip" ]; then
+    /tmp/showberry-venv/bin/pip install \
+        requests \
+        pillow \
+        curl_cffi \
+        pycryptodome \
+        cryptography \
+        PyOpenGL \
+        python-mpv \
+        pyinstaller 2>/dev/null || true
+else
+    python3 -m pip install --break-system-packages --ignore-installed \
+        requests \
+        pillow \
+        curl_cffi \
+        pycryptodome \
+        cryptography \
+        PyOpenGL \
+        python-mpv \
+        pyinstaller 2>/dev/null || true
+fi
 
 echo "==> [3/6] Compiling local GSettings schemas..."
 glib-compile-schemas data/ 2>/dev/null || true
