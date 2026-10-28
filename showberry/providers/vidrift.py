@@ -52,16 +52,19 @@ class VidRiftProvider(BaseProvider):
                 return None
 
             # Parse subtitleTracks JSON array if present
-            subtitles = []
-            sub_match = re.search(r'var subtitleTracks\s*=\s*(\[.*?\]);', html)
+            subtitles: List[Dict[str, str]] = []
+            sub_match = re.search(r'var subtitleTracks\s*=\s*(\[.*?\]);', html, re.DOTALL)
             if sub_match:
                 try:
                     sub_data = json.loads(sub_match.group(1))
                     for item in sub_data:
                         if item.get('url'):
+                            lang = item.get('code') or item.get('label') or 'en'
                             subtitles.append({
-                                'lang': item.get('label') or item.get('code', 'en'),
+                                'lang': lang,
                                 'url': item['url'],
+                                'label': item.get('label') or lang.upper(),
+                                'referer': f'{self.base_url}/',
                             })
                 except Exception as e:
                     logger.debug(f"VidRift subtitle parse error: {e}")

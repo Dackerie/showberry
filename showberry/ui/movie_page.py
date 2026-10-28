@@ -1328,17 +1328,19 @@ class MoviePage(Adw.NavigationPage):
         self._start_playback(start_pos=0)
 
     def _on_resume_clicked(self, button):
+        from showberry.services.settings import SettingsService
         start_pos = getattr(self, '_resume_pos', 0)
         season = getattr(self, '_resume_season', None)
         episode = getattr(self, '_resume_episode', None)
         info_hash = getattr(self, '_resume_info_hash', None)
         file_idx = getattr(self, '_resume_file_idx', None)
         chosen_stream = None
-        if info_hash:
+        if info_hash and SettingsService().torrent_enabled:
             chosen_stream = {'infoHash': info_hash, 'fileIdx': file_idx}
         self._start_playback(season=season, episode=episode, start_pos=start_pos, chosen_stream=chosen_stream)
 
     def _start_playback(self, season=None, episode=None, start_pos=0, chosen_stream=None):
+        from showberry.services.settings import SettingsService
         selected = self._provider_dropdown.get_selected()
         pref_name = None
         if hasattr(self, '_provider_names') and 0 < selected < len(self._provider_names):
@@ -1369,7 +1371,7 @@ class MoviePage(Adw.NavigationPage):
             'episode': episode,
             'start_position': start_pos,
         }
-        if chosen_stream:
+        if chosen_stream and SettingsService().torrent_enabled:
             stream_data['chosen_stream'] = chosen_stream
             stream_data['provider'] = 'torrent'
         self.emit('play-movie', stream_data)

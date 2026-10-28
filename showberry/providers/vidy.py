@@ -169,7 +169,17 @@ class VidyProvider(BaseProvider):
                     decrypted_text = _decrypt_vidy(res.text, seed, tmdb_id)
                     data = json.loads(decrypted_text)
                     sources = data.get('sources') or []
-                    subtitles = data.get('subtitles') or []
+                    subtitles: List[Dict[str, str]] = []
+                    for s in (data.get('subtitles') or []):
+                        if s.get('url'):
+                            lang = s.get('lang') or s.get('language') or 'eng'
+                            subtitles.append({
+                                'url': s['url'],
+                                'lang': lang,
+                                'label': s.get('label') or s.get('language') or lang.upper(),
+                                'referer': 'https://www.vidy.st/',
+                                'headers': dict(self.headers),
+                            })
 
                     if not sources and not data.get('playlist'):
                         continue

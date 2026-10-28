@@ -156,15 +156,18 @@ class VidLinkProvider(BaseProvider):
             referer = stream_headers.get('referer', 'https://filmboom.top/')
             origin = stream_headers.get('origin', 'https://filmboom.top')
 
-            # Extract captions/subtitles
-            subtitles = []
+            subtitles: List[Dict[str, str]] = []
             captions = data.get('captions', [])
             for c in captions:
                 if c.get('url'):
+                    lang = c.get('language') or 'en'
+                    label = c.get('label') or c.get('language') or 'English'
                     subtitles.append({
                         'url': c['url'],
-                        'lang': c.get('language', 'en'),
-                        'label': c.get('label', c.get('language', 'English')),
+                        'lang': lang,
+                        'label': label,
+                        'referer': referer,
+                        'headers': {'Referer': referer, 'Origin': origin},
                     })
 
             media_format = 'mp4' if stream_type == 'file' or '.mp4' in stream_url else 'hls'

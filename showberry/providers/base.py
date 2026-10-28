@@ -138,6 +138,13 @@ class ProviderManager:
             if p not in ordered_providers:
                 ordered_providers.append(p)
 
+        try:
+            from showberry.services.settings import SettingsService
+            if not SettingsService().torrent_enabled:
+                ordered_providers = [p for p in ordered_providers if 'torrent' not in p.name.lower()]
+        except Exception:
+            pass
+
         for provider in ordered_providers:
             try:
                 logger.info(f"Attempting stream resolution with {provider.name} for TMDB {tmdb_id}")
@@ -169,7 +176,7 @@ def get_all_providers(include_torrent: Optional[bool] = None):
             from showberry.services.settings import SettingsService
             include_torrent = SettingsService().torrent_enabled
         except Exception:
-            include_torrent = True
+            include_torrent = False
 
     from showberry.providers.vidy import VidyProvider
     from showberry.providers.cinejoy import CinejoyProvider

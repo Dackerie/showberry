@@ -72,6 +72,20 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.4.2" date="2026-10-29">
+      <description>
+        <p>Comprehensive subtitle system overhaul and streaming enhancements:</p>
+        <ul>
+          <li>Pure-Python automatic subtitle synchronization using speech onset correlation (Hough transform and tent-kernel onset matching) to resolve timing offsets and delays</li>
+          <li>Expanded multilingual subtitle support listing built-in provider subtitles and OpenSubtitles in all popular languages (Spanish, French, German, Italian, Portuguese, Hindi, Chinese, Japanese, etc.)</li>
+          <li>Instant subtitle availability on stream playback without needing to open external search</li>
+          <li>Added comprehensive subtitle appearance customization controls for font family, font size, margins, colors, opacity, and text outlines</li>
+          <li>Eliminated popover bottom negative space and enhanced subtitle track active state indicators</li>
+          <li>Release quality heuristic scoring to penalize partial or mismatched CD1/CD2 subtitles</li>
+          <li>Respect disabled torrent provider setting during stream resolution</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-10-11">
       <description>
         <p>Cross-platform screen awake sleep inhibition and auto-updater fixes:</p>

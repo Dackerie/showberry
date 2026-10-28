@@ -1250,6 +1250,7 @@ class TestUINavigation(unittest.TestCase):
 
         # 3. PlayerPage stream switching halts previous playback and resolves chosen_stream in worker
         pp = PlayerPage()
+        pp._settings.torrent_enabled = True
         pp._mpv_widget.stop = MagicMock()
         pp._mpv_widget._is_stream_active = True
 
@@ -1350,24 +1351,39 @@ class TestUINavigation(unittest.TestCase):
             self.assertEqual(prog['file_idx'], 2)
             self.assertEqual(prog['stream_provider'], "torrent")
 
-            # 2. MoviePage resume preserves chosen_stream
-            movie = {'id': 88888, 'title': 'Continuous Stream Movie'}
-            mp = MoviePage(movie=movie)
-            mp._db = db
-            mp._resume_pos = 120
-            mp._resume_info_hash = "deadbeef1234567890"
-            mp._resume_file_idx = 2
+            # 2. MoviePage resume preserves chosen_stream when torrenting is enabled
+            from showberry.services.settings import SettingsService
+            orig_torrent = SettingsService().torrent_enabled
+            SettingsService().torrent_enabled = True
+            try:
+                movie = {'id': 88888, 'title': 'Continuous Stream Movie'}
+                mp = MoviePage(movie=movie)
+                mp._db = db
+                mp._resume_pos = 120
+                mp._resume_info_hash = "deadbeef1234567890"
+                mp._resume_file_idx = 2
 
-            signals = []
-            mp.connect('play-movie', lambda emitter, data: signals.append(data))
-            mp._on_resume_clicked(None)
+                signals = []
+                mp.connect('play-movie', lambda emitter, data: signals.append(data))
+                mp._on_resume_clicked(None)
 
-            self.assertEqual(len(signals), 1)
-            self.assertEqual(signals[0]['provider'], 'torrent')
-            self.assertEqual(signals[0]['start_position'], 120)
-            self.assertIn('chosen_stream', signals[0])
-            self.assertEqual(signals[0]['chosen_stream']['infoHash'], "deadbeef1234567890")
-            self.assertEqual(signals[0]['chosen_stream']['fileIdx'], 2)
+                self.assertEqual(len(signals), 1)
+                self.assertEqual(signals[0]['provider'], 'torrent')
+                self.assertEqual(signals[0]['start_position'], 120)
+                self.assertIn('chosen_stream', signals[0])
+                self.assertEqual(signals[0]['chosen_stream']['infoHash'], "deadbeef1234567890")
+                self.assertEqual(signals[0]['chosen_stream']['fileIdx'], 2)
+
+                # 2b. When torrenting is disabled, resume falls back and does not resume torrent
+                SettingsService().torrent_enabled = False
+                signals_disabled = []
+                mp.connect('play-movie', lambda emitter, data: signals_disabled.append(data))
+                mp._on_resume_clicked(None)
+                self.assertEqual(len(signals_disabled), 1)
+                self.assertIsNone(signals_disabled[0].get('chosen_stream'))
+                self.assertNotEqual(signals_disabled[0].get('provider'), 'torrent')
+            finally:
+                SettingsService().torrent_enabled = orig_torrent
 
             # 3. StreamDetailsDialog progress bar calculation
             pp = MagicMock()

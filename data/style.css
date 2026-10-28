@@ -766,3 +766,70 @@ menubutton.provider-pill-btn > button:active {
     border-color: rgba(255, 255, 255, 0.55);
 }
 
+/* Vidy-Style Subtitles Popover Minimal Styling */
+.sub-popover {
+    padding: 0;
+}
+
+.sub-upload-btn {
+    border: 1px dashed rgba(255, 255, 255, 0.28);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 150ms ease;
+}
+
+.sub-upload-btn:hover {
+    border-color: rgba(255, 255, 255, 0.6);
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sub-nav-btn {
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    transition: background-color 150ms ease;
+}
+
+.sub-nav-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sub-badge {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    padding: 2px 7px;
+    font-size: 11px;
+    font-weight: bold;
+    min-width: 36px;
+    text-align: center;
+}
+
+.sub-stepper-btn {
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 120ms ease;
+}
+
+.sub-stepper-btn:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.sub-result-btn {
+    padding: 6px 10px;
+    border-radius: 8px;
+    transition: background-color 120ms ease;
+}
+
+.sub-result-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+

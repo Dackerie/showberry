@@ -313,6 +313,7 @@ class MpvWidget(Gtk.GLArea):
         self._gl_context_ref = None
         self._redraw_pending = False
         self._pending_subtitles = []
+        self._pending_local_subs: List[Tuple[str, str, str, bool]] = []
         self._wait_first_frame = False  # set True while A/V sync wait is active
         self._is_active = True
         self._has_drawn_first_frame = False
@@ -328,7 +329,8 @@ class MpvWidget(Gtk.GLArea):
         from showberry.services.settings import SettingsService
         settings = SettingsService()
         initial_sub_pos = settings.sub_pos
-        initial_sub_scale = settings.sub_scale
+        initial_sub_scale = 1.0
+        initial_sub_font_size = getattr(settings, 'sub_font_size', 28)
 
         def _on_mpv_log(level, component, message):
             msg = message.rstrip()
@@ -399,10 +401,10 @@ class MpvWidget(Gtk.GLArea):
             'dscale': 'bilinear',
             'slang': 'eng,en,enUS,en-US',
             'sub_scale_with_window': 'yes',
-            'sub_font_size': 55,
+            'sub_font_size': initial_sub_font_size,
             'sub_pos': initial_sub_pos,
-            'sub_scale': initial_sub_scale,
-            'sub_margin_y': 36,
+            'sub_scale': 1.0,
+            'sub_margin_y': 10,
             'log_handler': _on_mpv_log,
             'loglevel': mpv_loglevel,
             'stop_screensaver': 'yes',
@@ -445,6 +447,11 @@ class MpvWidget(Gtk.GLArea):
             if getattr(self, '_is_active', False):
                 GLib.idle_add(self._on_mpv_playback_restarted)
 
+        @self._mpv.event_callback('file-loaded')
+        def _on_file_loaded(event):
+            if getattr(self, '_is_active', False):
+                GLib.idle_add(self._flush_pending_local_subs)
+
         self._current_sub_path = None
 
     def _on_mpv_playback_restarted(self):
@@ -457,6 +464,7 @@ class MpvWidget(Gtk.GLArea):
             self._unpause_watchdog_id = None
         self.emit('stream-ready')
         self.queue_render()
+        self._flush_pending_local_subs()
 
     def activate(self):
         """Re-enable rendering and event handling."""
@@ -834,7 +842,7 @@ class MpvWidget(Gtk.GLArea):
         so MPV's demuxer never blocks on remote sockets during playback.
         """
         try:
-            if not self._mpv or not self._mpv.filename:
+            if not self._mpv:
                 return
             if url_or_path.startswith(('http://', 'https://')):
                 def _bg_dl():
@@ -845,7 +853,7 @@ class MpvWidget(Gtk.GLArea):
                             headers=headers,
                             referer=referer
                         )
-                        if local_path and self._mpv and self._mpv.filename:
+                        if local_path and self._mpv:
                             GLib.idle_add(self._add_local_subtitle, local_path, label, lang)
                     except Exception as err:
                         logger.warning(f"Failed downloading subtitle from {url_or_path}: {err}")
@@ -855,15 +863,82 @@ class MpvWidget(Gtk.GLArea):
         except Exception as e:
             logger.debug(f"Could not load subtitle {url_or_path}: {e}")
 
-    def _add_local_subtitle(self, path: str, label: str = 'Subtitle', lang: str = 'eng'):
+    def _remove_existing_sub_track(self, label: str, lang: str):
+        """Remove any existing external subtitle track in MPV with the same title or language to prevent duplicates."""
         try:
-            if not self._mpv or not self._mpv.filename:
+            if not self._mpv:
                 return
+            track_list = self._mpv.track_list or []
+            norm_label = (label or '').strip().lower()
+            norm_lang = (lang or '').strip().lower()
+            for t in list(track_list):
+                if t.get('type') != 'sub' or not t.get('external', False):
+                    continue
+                t_id = t.get('id')
+                t_title = (t.get('title') or '').strip().lower()
+                t_lang = (t.get('lang') or '').strip().lower()
+                if t_id is not None and (
+                    (norm_label and t_title == norm_label)
+                    or (norm_lang and norm_lang != 'und' and t_lang == norm_lang)
+                ):
+                    try:
+                        self._mpv.command('sub-remove', t_id)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    def _add_local_subtitle(self, path: str, label: str = 'Subtitle', lang: str = 'eng', select: bool = True):
+        try:
+            if not self._mpv:
+                return
+            file_loaded = False
+            try:
+                file_loaded = bool(self._mpv.filename)
+            except Exception:
+                file_loaded = False
+
+            if not file_loaded:
+                # Replace any existing pending entry for the same label/lang
+                self._pending_local_subs = [
+                    item for item in self._pending_local_subs
+                    if item[1] != label and (not lang or item[2] != lang)
+                ]
+                self._pending_local_subs.append((path, label, lang, select))
+                logger.info(f"Queued local subtitle track (waiting for video load): {label} ({path})")
+                return
+
+            self._remove_existing_sub_track(label, lang)
             self._current_sub_path = path
-            self._mpv.command('sub-add', path, 'auto', label, lang)
-            logger.info(f"Added local subtitle track: {label} ({path})")
+            mode = 'select' if select else 'auto'
+            self._mpv.command('sub-add', path, mode, label, lang)
+            if select:
+                try:
+                    tracks = self.get_sub_tracks()
+                    if tracks:
+                        self._mpv['sid'] = tracks[-1]['id']
+                except Exception:
+                    pass
+            logger.info(f"Added local subtitle track: {label} ({path}) mode={mode}")
+            if hasattr(self, '_on_sub_loaded') and callable(self._on_sub_loaded):
+                self._on_sub_loaded(path, label, lang)
         except Exception as e:
             logger.debug(f"Could not add local subtitle {path}: {e}")
+
+    def _flush_pending_local_subs(self):
+        if not getattr(self, '_pending_local_subs', None) or not self._mpv:
+            return
+        try:
+            if not self._mpv.filename:
+                return
+        except Exception:
+            return
+
+        logger.info(f"Flushing {len(self._pending_local_subs)} pending local subtitles")
+        pending = list(self._pending_local_subs)
+        self._pending_local_subs.clear()
+        for path, label, lang, select in pending:
+            self._add_local_subtitle(path, label, lang, select=select)
 
 
     def get_sub_tracks(self) -> List[Dict[str, Any]]:
@@ -1028,6 +1103,29 @@ class MpvWidget(Gtk.GLArea):
         self.set_sub_scale(new_val)
         return new_val
 
+    def set_sub_font_size(self, size: int):
+        try:
+            clamped = max(12, min(int(size), 72))
+            self._mpv.sub_scale = 1.0
+            self._mpv.sub_font_size = clamped
+            from showberry.services.settings import SettingsService
+            SettingsService().sub_scale = 1.0
+            SettingsService().sub_font_size = clamped
+        except Exception:
+            pass
+
+    def get_sub_font_size(self) -> int:
+        try:
+            return int(self._mpv.sub_font_size or 28)
+        except Exception:
+            return 28
+
+    def adjust_sub_font_size(self, delta: int) -> int:
+        current = self.get_sub_font_size()
+        new_val = max(12, min(current + delta, 72))
+        self.set_sub_font_size(new_val)
+        return new_val
+
     def get_audio_tracks(self) -> List[Dict[str, Any]]:
         """Get list of all available audio tracks."""
         tracks = []
@@ -1158,179 +1256,771 @@ class MpvWidget(Gtk.GLArea):
 
 
 class SubtitlePopover(Gtk.Popover):
-    """Popover menu for selecting subtitle tracks and adjusting timing."""
+    """Vidy-style popover menu for selecting subtitles, searching OpenSubtitles, and appearance controls."""
 
-    def __init__(self, player: Optional[MpvWidget] = None, on_timing_changed=None, on_auto_sync=None):
+    def __init__(
+        self,
+        player: Optional[MpvWidget] = None,
+        on_timing_changed=None,
+        on_upload_requested=None,
+        on_refresh_requested=None,
+        on_auto_sync=None,
+        on_select_builtin=None,
+    ):
         super().__init__()
         self.add_css_class('player-popover')
+        self.add_css_class('sub-popover')
         self._player = player
         self._on_timing_changed = on_timing_changed
+        self._on_upload_requested = on_upload_requested
+        self._on_refresh_requested = on_refresh_requested
         self._on_auto_sync = on_auto_sync
+        self._on_select_builtin = on_select_builtin
         self._available_subtitles: List[Dict[str, Any]] = []
+        self._provider_subtitles: List[Dict[str, Any]] = []
+        self._language_subtitles: List[Dict[str, Any]] = []
         self._on_select_external = None
 
-        self._box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self._box.set_margin_top(12)
-        self._box.set_margin_bottom(12)
-        self._box.set_margin_start(14)
-        self._box.set_margin_end(14)
-        self._box.set_size_request(280, -1)
+        self._is_searching = False
+        self._search_error: Optional[str] = None
+        self._search_attempted = False
 
-        # Header with Title and Refresh button
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        title_label = Gtk.Label(label="Subtitles")
-        title_label.add_css_class('heading')
-        title_label.set_xalign(0)
-        title_label.set_hexpand(True)
-        header_box.append(title_label)
+        self._updating_size = False
+        self._updating_pos = False
 
-        refresh_btn = Gtk.Button.new_from_icon_name('view-refresh-symbolic')
-        refresh_btn.add_css_class('flat')
-        refresh_btn.set_tooltip_text("Reload available subtitles")
-        refresh_btn.connect('clicked', lambda b: self.refresh_tracks())
-        header_box.append(refresh_btn)
-        self._box.append(header_box)
+        # Stack to hold Main, Search, and Appearance views
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.SLIDE_LEFT_RIGHT)
+        self._stack.set_transition_duration(200)
+        self._stack.set_vhomogeneous(False)
+        self._stack.set_hhomogeneous(False)
+        self._stack.set_interpolate_size(True)
+
+        # Build views
+        self._main_view = self._build_main_view()
+        self._search_view = self._build_search_view()
+        self._appearance_view = self._build_appearance_view()
+
+        # Aliases for backward compatibility with existing tests/callers
+        self._delay_label = self._delay_val_label
+        self._pos_label = self._pos_val_label
+        self._scale_label = self._size_val_label
+
+        self._stack.add_named(self._main_view, 'main')
+        self._stack.add_named(self._search_view, 'search')
+        self._stack.add_named(self._appearance_view, 'appearance')
+
+        self.set_child(self._stack)
+        self.connect('map', self._on_show)
+
+    def _build_main_view(self) -> Gtk.Box:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(14)
+        box.set_margin_end(14)
+        box.set_size_request(300, -1)
+
+        # Header
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        title = Gtk.Label(label="Subtitles")
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        title.set_hexpand(True)
+        header.append(title)
+        box.append(header)
 
         # Tracks list inside scrolled window
         self._scroll = Gtk.ScrolledWindow()
         self._scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self._scroll.set_max_content_height(160)
+        self._scroll.set_max_content_height(190)
         self._scroll.set_propagate_natural_height(True)
 
         self._tracks_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self._scroll.set_child(self._tracks_box)
-        self._box.append(self._scroll)
+        box.append(self._scroll)
 
-        self._box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        # Upload Subtitles button
+        upload_btn = Gtk.Button()
+        upload_btn.add_css_class('flat')
+        upload_btn.add_css_class('sub-upload-btn')
+        upload_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        upload_box.set_halign(Gtk.Align.CENTER)
+        up_icon = Gtk.Image.new_from_icon_name('document-open-symbolic')
+        up_label = Gtk.Label(label="Upload Subtitles")
+        upload_box.append(up_icon)
+        upload_box.append(up_label)
+        upload_btn.set_child(upload_box)
+        upload_btn.connect('clicked', self._on_upload_clicked)
+        box.append(upload_btn)
 
-        # Timing Delay section
-        timing_hdr = Gtk.Label(label="Subtitle Delay")
-        timing_hdr.add_css_class('heading')
-        timing_hdr.set_xalign(0)
-        self._box.append(timing_hdr)
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
 
-        self._delay_label = Gtk.Label(label="Delay: 0.0 s")
-        self._delay_label.add_css_class('dim-label')
-        self._box.append(self._delay_label)
+        # Navigation row 1: Search OpenSubtitles
+        nav_search_btn = Gtk.Button()
+        nav_search_btn.add_css_class('flat')
+        nav_search_btn.add_css_class('sub-nav-btn')
+        search_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+
+        search_icon = Gtk.Image.new_from_icon_name('system-search-symbolic')
+        search_lbl = Gtk.Label(label="Search OpenSubtitles")
+        search_lbl.set_xalign(0)
+        search_lbl.set_hexpand(True)
+
+        self._nav_search_badge = Gtk.Label(label="")
+        self._nav_search_badge.add_css_class('sub-badge')
+        self._nav_search_badge.set_visible(False)
+
+        search_arrow = Gtk.Image.new_from_icon_name('go-next-symbolic')
+
+        search_row.append(search_icon)
+        search_row.append(search_lbl)
+        search_row.append(self._nav_search_badge)
+        search_row.append(search_arrow)
+        nav_search_btn.set_child(search_row)
+        nav_search_btn.connect('clicked', lambda b: self._go_to_search())
+        box.append(nav_search_btn)
+
+        # Navigation row 2: Customize Appearance
+        nav_app_btn = Gtk.Button()
+        nav_app_btn.add_css_class('flat')
+        nav_app_btn.add_css_class('sub-nav-btn')
+        app_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+
+        app_icon = Gtk.Image.new_from_icon_name('preferences-system-symbolic')
+        app_lbl = Gtk.Label(label="Customize Appearance")
+        app_lbl.set_xalign(0)
+        app_lbl.set_hexpand(True)
+
+        app_arrow = Gtk.Image.new_from_icon_name('go-next-symbolic')
+
+        app_row.append(app_icon)
+        app_row.append(app_lbl)
+        app_row.append(app_arrow)
+        nav_app_btn.set_child(app_row)
+        nav_app_btn.connect('clicked', lambda b: self._go_to_appearance())
+        box.append(nav_app_btn)
+
+        return box
+
+    def _build_search_view(self) -> Gtk.Box:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(14)
+        box.set_margin_end(14)
+        box.set_size_request(300, -1)
+
+        # Header with Back button, Title, and Reload button
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        back_btn = Gtk.Button.new_from_icon_name('go-previous-symbolic')
+        back_btn.add_css_class('flat')
+        back_btn.set_tooltip_text("Back to Subtitles")
+        back_btn.connect('clicked', lambda b: self._stack.set_visible_child_name('main'))
+        header.append(back_btn)
+
+        title = Gtk.Label(label="OpenSubtitles")
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        title.set_hexpand(True)
+        header.append(title)
+
+        reload_btn = Gtk.Button.new_from_icon_name('view-refresh-symbolic')
+        reload_btn.add_css_class('flat')
+        reload_btn.set_tooltip_text("Refresh OpenSubtitles")
+        reload_btn.connect('clicked', lambda b: self._on_reload_search())
+        header.append(reload_btn)
+
+        box.append(header)
+
+        # Search Entry
+        self._search_entry = Gtk.SearchEntry()
+        self._search_entry.set_placeholder_text("Search language or release...")
+        self._search_entry.connect('search-changed', lambda e: self._populate_search_results())
+        box.append(self._search_entry)
+
+        # Scrolled Results List
+        self._search_scroll = Gtk.ScrolledWindow()
+        self._search_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self._search_scroll.set_max_content_height(220)
+        self._search_scroll.set_propagate_natural_height(True)
+
+        self._search_results_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self._search_scroll.set_child(self._search_results_box)
+        box.append(self._search_scroll)
+
+        return box
+
+    def _build_appearance_view(self) -> Gtk.Box:
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.set_margin_top(12)
+        box.set_margin_bottom(12)
+        box.set_margin_start(14)
+        box.set_margin_end(14)
+        box.set_size_request(300, -1)
+
+        # Header with Back button, Title, and Reset button
+        header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        back_btn = Gtk.Button.new_from_icon_name('go-previous-symbolic')
+        back_btn.add_css_class('flat')
+        back_btn.set_tooltip_text("Back to Subtitles")
+        back_btn.connect('clicked', lambda b: self._stack.set_visible_child_name('main'))
+        header.append(back_btn)
+
+        title = Gtk.Label(label="Appearance")
+        title.add_css_class('heading')
+        title.set_xalign(0)
+        title.set_hexpand(True)
+        header.append(title)
+
+        reset_btn = Gtk.Button.new_from_icon_name('edit-undo-symbolic')
+        reset_btn.add_css_class('flat')
+        reset_btn.set_tooltip_text("Reset Subtitle Appearance")
+        reset_btn.connect('clicked', lambda b: self._reset_appearance())
+        header.append(reset_btn)
+        box.append(header)
+
+        # Section 1: Font Size
+        size_hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        size_lbl = Gtk.Label(label="Font Size")
+        size_lbl.set_xalign(0)
+        size_lbl.set_hexpand(True)
+        size_lbl.add_css_class('dim-label')
+        size_lbl.add_css_class('caption')
+
+        self._size_val_label = Gtk.Label(label="28px")
+        self._size_val_label.add_css_class('sub-badge')
+
+        size_hdr_box.append(size_lbl)
+        size_hdr_box.append(self._size_val_label)
+        box.append(size_hdr_box)
+
+        size_ctrl_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        sc_dn_btn = Gtk.Button(label="A⁻")
+        sc_dn_btn.add_css_class('flat')
+        sc_dn_btn.add_css_class('sub-stepper-btn')
+        sc_dn_btn.set_tooltip_text("Smaller Subtitles")
+        sc_dn_btn.connect('clicked', lambda b: self._adjust_font_size(-2))
+        size_ctrl_box.append(sc_dn_btn)
+
+        self._size_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 12, 60, 2)
+        self._size_scale.set_hexpand(True)
+        self._size_scale.set_draw_value(False)
+        self._size_scale.set_value(28)
+        self._size_scale.connect('value-changed', self._on_size_scale_changed)
+        size_ctrl_box.append(self._size_scale)
+
+        sc_up_btn = Gtk.Button(label="A⁺")
+        sc_up_btn.add_css_class('flat')
+        sc_up_btn.add_css_class('sub-stepper-btn')
+        sc_up_btn.set_tooltip_text("Larger Subtitles")
+        sc_up_btn.connect('clicked', lambda b: self._adjust_font_size(2))
+        size_ctrl_box.append(sc_up_btn)
+        box.append(size_ctrl_box)
+
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # Section 2: Position (Vertical Alignment)
+        pos_hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pos_lbl = Gtk.Label(label="Position")
+        pos_lbl.set_xalign(0)
+        pos_lbl.set_hexpand(True)
+        pos_lbl.add_css_class('dim-label')
+        pos_lbl.add_css_class('caption')
+
+        self._pos_val_label = Gtk.Label(label="94%")
+        self._pos_val_label.add_css_class('sub-badge')
+
+        pos_hdr_box.append(pos_lbl)
+        pos_hdr_box.append(self._pos_val_label)
+        box.append(pos_hdr_box)
+
+        pos_ctrl_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        pos_up_btn = Gtk.Button(label="⤒")
+        pos_up_btn.add_css_class('flat')
+        pos_up_btn.add_css_class('sub-stepper-btn')
+        pos_up_btn.set_tooltip_text("Raise Subtitles")
+        pos_up_btn.connect('clicked', lambda b: self._adjust_pos(-2))
+        pos_ctrl_box.append(pos_up_btn)
+
+        self._pos_scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 60, 100, 1)
+        self._pos_scale.set_hexpand(True)
+        self._pos_scale.set_draw_value(False)
+        self._pos_scale.set_value(94)
+        self._pos_scale.connect('value-changed', self._on_pos_scale_changed)
+        pos_ctrl_box.append(self._pos_scale)
+
+        pos_dn_btn = Gtk.Button(label="⤓")
+        pos_dn_btn.add_css_class('flat')
+        pos_dn_btn.add_css_class('sub-stepper-btn')
+        pos_dn_btn.set_tooltip_text("Lower Subtitles")
+        pos_dn_btn.connect('clicked', lambda b: self._adjust_pos(2))
+        pos_ctrl_box.append(pos_dn_btn)
+        box.append(pos_ctrl_box)
+
+        box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        # Section 3: Delay
+        delay_hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        delay_lbl = Gtk.Label(label="Delay")
+        delay_lbl.set_xalign(0)
+        delay_lbl.set_hexpand(True)
+        delay_lbl.add_css_class('dim-label')
+        delay_lbl.add_css_class('caption')
+
+        self._delay_val_label = Gtk.Label(label="0.0s")
+        self._delay_val_label.add_css_class('sub-badge')
+
+        delay_hdr_box.append(delay_lbl)
+        delay_hdr_box.append(self._delay_val_label)
+        box.append(delay_hdr_box)
 
         timing_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         timing_btn_box.set_halign(Gtk.Align.CENTER)
 
-        m500_btn = Gtk.Button(label="-0.5s")
-        m500_btn.add_css_class('flat')
-        m500_btn.connect('clicked', lambda b: self._adjust_timing(-0.5))
-        timing_btn_box.append(m500_btn)
+        for btn_label, delta in [("−0.5s", -0.5), ("−0.1s", -0.1), ("0.0s", 0.0), ("+0.1s", 0.1), ("+0.5s", 0.5)]:
+            t_btn = Gtk.Button(label=btn_label)
+            t_btn.add_css_class('flat')
+            t_btn.add_css_class('sub-stepper-btn')
+            if delta == 0.0:
+                t_btn.connect('clicked', lambda b: self._set_timing(0.0))
+            else:
+                t_btn.connect('clicked', lambda b, d=delta: self._adjust_timing(d))
+            timing_btn_box.append(t_btn)
+        box.append(timing_btn_box)
 
-        m100_btn = Gtk.Button(label="-0.1s")
-        m100_btn.add_css_class('flat')
-        m100_btn.connect('clicked', lambda b: self._adjust_timing(-0.1))
-        timing_btn_box.append(m100_btn)
-
-        reset_btn = Gtk.Button(label="Reset")
-        reset_btn.add_css_class('flat')
-        reset_btn.connect('clicked', lambda b: self._set_timing(0.0))
-        timing_btn_box.append(reset_btn)
-
-        p100_btn = Gtk.Button(label="+0.1s")
-        p100_btn.add_css_class('flat')
-        p100_btn.connect('clicked', lambda b: self._adjust_timing(0.1))
-        timing_btn_box.append(p100_btn)
-
-        p500_btn = Gtk.Button(label="+0.5s")
-        p500_btn.add_css_class('flat')
-        p500_btn.connect('clicked', lambda b: self._adjust_timing(0.5))
-        timing_btn_box.append(p500_btn)
-
-        self._box.append(timing_btn_box)
-
-        self._box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
-
-        # Position & Size Section
-        pos_size_hdr = Gtk.Label(label="Position & Size")
-        pos_size_hdr.add_css_class('heading')
-        pos_size_hdr.set_xalign(0)
-        self._box.append(pos_size_hdr)
-
-        self._pos_label = Gtk.Label(label="Vertical Position: 94%")
-        self._pos_label.add_css_class('dim-label')
-        self._box.append(self._pos_label)
-
-        pos_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        pos_btn_box.set_halign(Gtk.Align.CENTER)
-
-        pos_up_btn = Gtk.Button(label="▲ Higher")
-        pos_up_btn.add_css_class('flat')
-        pos_up_btn.connect('clicked', lambda b: self._adjust_pos(-2))
-        pos_btn_box.append(pos_up_btn)
-
-        pos_rst_btn = Gtk.Button(label="Reset")
-        pos_rst_btn.add_css_class('flat')
-        pos_rst_btn.connect('clicked', lambda b: self._set_pos(94))
-        pos_btn_box.append(pos_rst_btn)
-
-        pos_dn_btn = Gtk.Button(label="▼ Lower")
-        pos_dn_btn.add_css_class('flat')
-        pos_dn_btn.connect('clicked', lambda b: self._adjust_pos(2))
-        pos_btn_box.append(pos_dn_btn)
-
-        self._box.append(pos_btn_box)
-
-        self._scale_label = Gtk.Label(label="Font Size: 1.0x")
-        self._scale_label.add_css_class('dim-label')
-        self._box.append(self._scale_label)
-
-        scale_btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        scale_btn_box.set_halign(Gtk.Align.CENTER)
-
-        sc_dn_btn = Gtk.Button(label="A- Smaller")
-        sc_dn_btn.add_css_class('flat')
-        sc_dn_btn.connect('clicked', lambda b: self._adjust_scale(-0.1))
-        scale_btn_box.append(sc_dn_btn)
-
-        sc_rst_btn = Gtk.Button(label="Reset")
-        sc_rst_btn.add_css_class('flat')
-        sc_rst_btn.connect('clicked', lambda b: self._set_scale(1.0))
-        scale_btn_box.append(sc_rst_btn)
-
-        sc_up_btn = Gtk.Button(label="A+ Larger")
-        sc_up_btn.add_css_class('flat')
-        sc_up_btn.connect('clicked', lambda b: self._adjust_scale(0.1))
-        scale_btn_box.append(sc_up_btn)
-
-        self._box.append(scale_btn_box)
-
-        self.set_child(self._box)
-        self.connect('map', self._on_show)
+        return box
 
     def set_player(self, player: MpvWidget):
         self._player = player
 
-    def set_available_subtitles(self, subs: List[Dict[str, Any]], on_select_external=None):
-        self._available_subtitles = subs or []
-        self._on_select_external = on_select_external
+    def set_searching(self, is_searching: bool = True):
+        self._is_searching = is_searching
+        if is_searching:
+            self._search_error = None
+            self._search_attempted = True
+        self._populate_search_results()
+
+    def set_search_error(self, error: Optional[str] = None):
+        self._is_searching = False
+        self._search_error = error
+        self._search_attempted = True
+        self._populate_search_results()
+
+    def set_provider_subtitles(self, subs: List[Dict[str, Any]], on_select_builtin=None):
+        self._provider_subtitles = list(subs or [])
+        if on_select_builtin:
+            self._on_select_builtin = on_select_builtin
         self.refresh_tracks()
+
+    def set_language_subtitles(self, subs: List[Dict[str, Any]], on_select_external=None):
+        self._language_subtitles = list(subs or [])
+        if on_select_external:
+            self._on_select_external = on_select_external
+        self.refresh_tracks()
+
+    def set_available_subtitles(self, subs: List[Dict[str, Any]], on_select_external=None):
+        self._is_searching = False
+        self._search_error = None
+        self._search_attempted = True
+        self._available_subtitles = subs or []
+        if on_select_external:
+            self._on_select_external = on_select_external
+        if hasattr(self, '_nav_search_badge'):
+            count = len(self._available_subtitles)
+            self._nav_search_badge.set_visible(count > 0)
+            self._nav_search_badge.set_text(str(count))
+        self._populate_search_results()
 
     def _on_show(self, *_):
+        self._stack.set_visible_child_name('main')
         self.refresh_tracks()
-        self.refresh_delay_label()
-        self.refresh_pos_label()
-        self.refresh_scale_label()
+        self.refresh_appearance()
 
-    def refresh_delay_label(self):
-        if self._player:
-            delay = self._player.get_sub_delay()
-            sign = "+" if delay > 0 else ""
-            self._delay_label.set_text(f"Delay: {sign}{delay:.1f} s ({sign}{int(delay * 1000)} ms)")
+    def _go_to_search(self):
+        if not self._available_subtitles and not getattr(self, '_is_searching', False) and not getattr(self, '_search_attempted', False):
+            self._on_reload_search()
+        else:
+            self._populate_search_results()
+        self._stack.set_visible_child_name('search')
+        self._search_entry.grab_focus()
 
-    def refresh_pos_label(self):
-        if self._player:
-            pos = self._player.get_sub_pos()
-            self._pos_label.set_text(f"Vertical Position: {pos}%")
+    def _on_reload_search(self):
+        self.set_searching(True)
+        if self._on_refresh_requested:
+            self._on_refresh_requested()
 
-    def refresh_scale_label(self):
+    def _go_to_appearance(self):
+        self.refresh_appearance()
+        self._stack.set_visible_child_name('appearance')
+
+    def _on_upload_clicked(self, _):
+        self.popdown()
+        if self._on_upload_requested:
+            self._on_upload_requested()
+
+    def refresh_tracks(self):
+        self._refreshing_tracks = True
+        try:
+            while True:
+                child = self._tracks_box.get_first_child()
+                if child is None:
+                    break
+                self._tracks_box.remove(child)
+
+            tracks = self._player.get_sub_tracks() if self._player else []
+            current_sid = self._player.get_sub_track() if self._player else 'no'
+            pending_lbl = getattr(self, '_pending_selected_label', None)
+            is_off = (current_sid in ('no', False, None, 0)) and not pending_lbl
+
+            # "Off" button
+            off_btn = Gtk.CheckButton(label="Off")
+            off_btn.set_active(is_off)
+            off_btn.connect('toggled', self._on_track_toggled, 'no')
+            self._tracks_box.append(off_btn)
+            group = off_btn
+
+            from showberry.services.subtitles import LANG_FLAGS, LANG_NAMES
+            loaded_langs = set()
+            loaded_titles = set()
+
+            has_named_subs = (
+                any(
+                    bool((tr.get('title') or '').strip())
+                    and not (tr.get('title') or '').strip().lower().startswith('track ')
+                    for tr in tracks
+                )
+                or bool(getattr(self, '_provider_subtitles', []))
+                or bool(getattr(self, '_language_subtitles', []))
+            )
+
+            # Deduplicate tracks so if MPV briefly holds two tracks for the same title/lang, the newest/selected one wins
+            deduped_tracks = []
+            seen_track_keys = set()
+            for t in reversed(tracks):
+                raw_t = (t.get('title') or '').replace('(Built-in)', '').strip().lower()
+                l_code = (t.get('lang') or '').strip().lower()
+                key = l_code if (l_code and l_code != 'und') else raw_t
+                if key and key in seen_track_keys:
+                    continue
+                if key:
+                    seen_track_keys.add(key)
+                deduped_tracks.append(t)
+            deduped_tracks.reverse()
+
+            for t in deduped_tracks:
+                tid = t['id']
+                raw_title = (t.get('title') or '').replace('(Built-in)', '').strip()
+                lang_code = (t.get('lang') or '').lower()
+
+                if not raw_title or raw_title.lower().startswith('track '):
+                    if lang_code and lang_code in LANG_NAMES:
+                        flag = LANG_FLAGS.get(lang_code, '🌐')
+                        title = f"{flag} {LANG_NAMES[lang_code]}"
+                    else:
+                        if has_named_subs:
+                            continue
+                        title = f"Track {tid}"
+                elif lang_code and lang_code in LANG_NAMES:
+                    flag = LANG_FLAGS.get(lang_code, '')
+                    if flag and flag not in raw_title:
+                        title = f"{flag} {raw_title}"
+                    else:
+                        title = raw_title
+                else:
+                    title = raw_title
+
+                clean_title = title.strip().lower()
+                if clean_title in loaded_titles or (lang_code and lang_code != 'und' and lang_code in loaded_langs):
+                    continue
+
+                if lang_code and lang_code != 'und':
+                    loaded_langs.add(lang_code)
+                loaded_titles.add(clean_title)
+                if raw_title:
+                    loaded_titles.add(raw_title.strip().lower())
+
+                btn = Gtk.CheckButton(label=title)
+                btn.set_group(group)
+                is_track_selected = not is_off and (t.get('selected') or str(current_sid) == str(tid))
+                if pending_lbl:
+                    if clean_title == pending_lbl:
+                        btn.set_active(True)
+                        if is_track_selected:
+                            self._pending_selected_label = None
+                elif is_track_selected:
+                    btn.set_active(True)
+                btn.connect('toggled', self._on_track_toggled, tid)
+                self._tracks_box.append(btn)
+
+            # Provider built-in subtitles not yet loaded into MPV
+            for ps in getattr(self, '_provider_subtitles', []):
+                lang = (ps.get('lang') or '').lower()
+                lang_name = ps.get('lang_name') or LANG_NAMES.get(lang, lang.capitalize())
+                flag = ps.get('flag') or LANG_FLAGS.get(lang, '🌐')
+                display_label = f"{flag} {lang_name}".strip()
+
+                clean_disp = display_label.lower()
+                clean_name = lang_name.lower()
+                if lang in loaded_langs or any(clean_name in lt or clean_disp in lt for lt in loaded_titles):
+                    continue
+
+                loaded_langs.add(lang)
+                loaded_titles.add(clean_disp)
+
+                btn = Gtk.CheckButton(label=display_label)
+                btn.set_group(group)
+                if pending_lbl and clean_disp == pending_lbl:
+                    btn.set_active(True)
+                btn.connect('toggled', self._on_builtin_track_toggled, ps)
+                self._tracks_box.append(btn)
+
+            # Unique language subtitles from OpenSubtitles for quick language selection
+            for ls in getattr(self, '_language_subtitles', []):
+                lang = (ls.get('lang') or '').lower()
+                lang_name = ls.get('lang_name') or LANG_NAMES.get(lang, lang.capitalize())
+                flag = ls.get('flag') or LANG_FLAGS.get(lang, '🌐')
+                display_label = f"{flag} {lang_name}".strip()
+
+                clean_disp = display_label.lower()
+                clean_name = lang_name.lower()
+                if lang in loaded_langs or any(clean_name in lt or clean_disp in lt for lt in loaded_titles):
+                    continue
+
+                loaded_langs.add(lang)
+                loaded_titles.add(clean_disp)
+
+                btn = Gtk.CheckButton(label=display_label)
+                btn.set_group(group)
+                if pending_lbl and clean_disp == pending_lbl:
+                    btn.set_active(True)
+                btn.connect('toggled', self._on_language_track_toggled, ls)
+                self._tracks_box.append(btn)
+
+            has_any_subs = bool(tracks or getattr(self, '_provider_subtitles', []) or getattr(self, '_language_subtitles', []))
+            if not has_any_subs:
+                if self._player and getattr(self._player, '_pending_local_subs', None):
+                    loading_lbl = Gtk.Label(label="Loading subtitle...")
+                    loading_lbl.add_css_class('dim-label')
+                    loading_lbl.add_css_class('caption')
+                    loading_lbl.set_margin_top(4)
+                    loading_lbl.set_margin_bottom(4)
+                    self._tracks_box.append(loading_lbl)
+                else:
+                    no_subs = Gtk.Label(label="No subtitles loaded yet")
+                    no_subs.add_css_class('dim-label')
+                    no_subs.add_css_class('caption')
+                    no_subs.set_margin_top(4)
+                    no_subs.set_margin_bottom(4)
+                    self._tracks_box.append(no_subs)
+        finally:
+            self._refreshing_tracks = False
+
+    def _on_builtin_track_toggled(self, button, sub_data):
+        if getattr(self, '_refreshing_tracks', False):
+            return
+        if button.get_active() and self._on_select_builtin:
+            label_text = (button.get_label() or "Subtitle").strip()
+            self._pending_selected_label = label_text.lower()
+            self._on_select_builtin(sub_data)
+            if self._on_timing_changed:
+                self._on_timing_changed(None, f"Subtitle: {label_text}")
+
+    def _on_language_track_toggled(self, button, sub_data):
+        if getattr(self, '_refreshing_tracks', False):
+            return
+        if button.get_active() and self._on_select_external:
+            label_text = (button.get_label() or "Subtitle").strip()
+            self._pending_selected_label = label_text.lower()
+            self._on_select_external(sub_data)
+            if self._on_timing_changed:
+                self._on_timing_changed(None, f"Subtitle: {label_text}")
+
+    def _on_track_toggled(self, button, track_id):
+        if getattr(self, '_refreshing_tracks', False):
+            return
+        if button.get_active() and self._player:
+            self._pending_selected_label = None
+            self._player.set_sub_track(track_id)
+            if self._on_timing_changed:
+                label_text = button.get_label() or "Subtitle"
+                self._on_timing_changed(None, f"Subtitle: {label_text}")
+
+    def _populate_search_results(self):
+        while True:
+            child = self._search_results_box.get_first_child()
+            if child is None:
+                break
+            self._search_results_box.remove(child)
+
+        query = self._search_entry.get_text() if hasattr(self, '_search_entry') else ""
+        from showberry.services.subtitles import SubtitleService
+        filtered = SubtitleService().filter_subtitles(self._available_subtitles, query)
+
+        # 1. Active searching state
+        if getattr(self, '_is_searching', False):
+            search_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+            search_box.set_halign(Gtk.Align.CENTER)
+            search_box.set_margin_top(24)
+            search_box.set_margin_bottom(24)
+
+            spinner = Gtk.Spinner()
+            spinner.start()
+            search_box.append(spinner)
+
+            search_lbl = Gtk.Label(label="Searching OpenSubtitles...")
+            search_lbl.add_css_class('dim-label')
+            search_lbl.add_css_class('caption')
+            search_box.append(search_lbl)
+
+            self._search_results_box.append(search_box)
+            return
+
+        # 2. Error state
+        if getattr(self, '_search_error', None):
+            err_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            err_box.set_halign(Gtk.Align.CENTER)
+            err_box.set_margin_top(20)
+            err_box.set_margin_bottom(20)
+
+            err_lbl = Gtk.Label(label=self._search_error)
+            err_lbl.add_css_class('dim-label')
+            err_lbl.add_css_class('caption')
+            err_box.append(err_lbl)
+
+            retry_btn = Gtk.Button(label="↻ Retry")
+            retry_btn.add_css_class('flat')
+            retry_btn.add_css_class('pill')
+            retry_btn.connect('clicked', lambda b: self._on_reload_search())
+            err_box.append(retry_btn)
+
+            self._search_results_box.append(err_box)
+            return
+
+        # 3. Empty results (no subtitles found)
+        if not self._available_subtitles:
+            empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+            empty_box.set_halign(Gtk.Align.CENTER)
+            empty_box.set_margin_top(20)
+            empty_box.set_margin_bottom(20)
+
+            empty_lbl = Gtk.Label(label="No subtitles found on OpenSubtitles")
+            empty_lbl.add_css_class('dim-label')
+            empty_lbl.add_css_class('caption')
+            empty_box.append(empty_lbl)
+
+            retry_btn = Gtk.Button(label="↻ Search Again")
+            retry_btn.add_css_class('flat')
+            retry_btn.add_css_class('pill')
+            retry_btn.connect('clicked', lambda b: self._on_reload_search())
+            empty_box.append(retry_btn)
+
+            self._search_results_box.append(empty_box)
+            return
+
+        # 4. Search query produced no matches
+        if not filtered:
+            no_match = Gtk.Label(label=f"No subtitles matching '{query}'" if query else "No matching subtitles")
+            no_match.add_css_class('dim-label')
+            no_match.add_css_class('caption')
+            no_match.set_margin_top(20)
+            no_match.set_margin_bottom(20)
+            self._search_results_box.append(no_match)
+            return
+
+        # 5. Render results
+        for sub in filtered[:50]:
+            btn = Gtk.Button()
+            btn.add_css_class('flat')
+            btn.add_css_class('sub-result-btn')
+
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            row.set_hexpand(True)
+
+            flag = sub.get('flag', '🌐')
+            flag_lbl = Gtk.Label(label=flag)
+
+            text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            text_box.set_hexpand(True)
+
+            lang_lbl = Gtk.Label(label=sub.get('lang_name') or sub.get('lang', 'Unknown'))
+            lang_lbl.set_xalign(0)
+            lang_lbl.add_css_class('bold')
+            text_box.append(lang_lbl)
+
+            release_str = sub.get('release_name') or sub.get('label', '')
+            if release_str:
+                rel_lbl = Gtk.Label(label=release_str)
+                rel_lbl.set_xalign(0)
+                rel_lbl.add_css_class('dim-label')
+                rel_lbl.add_css_class('caption')
+                rel_lbl.set_ellipsize(Pango.EllipsizeMode.END)
+                text_box.append(rel_lbl)
+
+            row.append(flag_lbl)
+            row.append(text_box)
+            btn.set_child(row)
+            btn.connect('clicked', self._on_external_clicked, sub)
+            self._search_results_box.append(btn)
+
+    def _on_external_clicked(self, button, sub):
+        button.set_sensitive(False)
+        from showberry.services.subtitles import LANG_FLAGS, LANG_NAMES
+        lang = (sub.get('lang') or 'eng').lower()
+        lang_name = sub.get('lang_name') or LANG_NAMES.get(lang, lang.upper())
+        flag = sub.get('flag') or LANG_FLAGS.get(lang, '🌐')
+        self._pending_selected_label = f"{flag} {lang_name}".strip().lower()
+        if self._on_select_external:
+            self._on_select_external(sub)
+        self.refresh_tracks()
+        GLib.timeout_add(150, lambda: self._stack.set_visible_child_name('main'))
+
+    def _reset_appearance(self):
         if self._player:
-            scale = self._player.get_sub_scale()
-            self._scale_label.set_text(f"Font Size: {scale:.1f}x")
+            self._player.set_sub_font_size(28)
+            self._player.set_sub_pos(96)
+            self._player.set_sub_delay(0.0)
+            self.refresh_appearance()
+            if self._on_timing_changed:
+                self._on_timing_changed(0.0, "Subtitles Appearance Reset")
+
+    def _on_size_scale_changed(self, scale):
+        if getattr(self, '_updating_size', False):
+            return
+        val = int(scale.get_value())
+        if self._player:
+            self._player.set_sub_font_size(val)
+        if hasattr(self, '_size_val_label'):
+            self._size_val_label.set_text(f"{val}px")
+
+    def _adjust_font_size(self, delta: int):
+        if self._player:
+            new_val = self._player.adjust_sub_font_size(delta)
+            self._updating_size = True
+            if hasattr(self, '_size_scale'):
+                self._size_scale.set_value(new_val)
+            self._updating_size = False
+            if hasattr(self, '_size_val_label'):
+                self._size_val_label.set_text(f"{new_val}px")
+
+    def _on_pos_scale_changed(self, scale):
+        if getattr(self, '_updating_pos', False):
+            return
+        val = int(scale.get_value())
+        if self._player:
+            self._player.set_sub_pos(val)
+        if hasattr(self, '_pos_val_label'):
+            self._pos_val_label.set_text(f"{val}%")
+
+    def _adjust_pos(self, delta: int):
+        if self._player:
+            new_val = self._player.adjust_sub_pos(delta)
+            self._updating_pos = True
+            if hasattr(self, '_pos_scale'):
+                self._pos_scale.set_value(new_val)
+            self._updating_pos = False
+            if hasattr(self, '_pos_val_label'):
+                self._pos_val_label.set_text(f"{new_val}%")
 
     def _adjust_timing(self, delta: float):
         if self._player:
@@ -1346,118 +2036,34 @@ class SubtitlePopover(Gtk.Popover):
             if self._on_timing_changed:
                 self._on_timing_changed(val)
 
-    def _adjust_pos(self, delta: int):
-        if self._player:
-            new_pos = self._player.adjust_sub_pos(delta)
-            self.refresh_pos_label()
-            if self._on_timing_changed:
-                self._on_timing_changed(None, f"Subtitle Position: {new_pos}%")
+    def refresh_delay_label(self):
+        if self._player and hasattr(self, '_delay_val_label'):
+            delay = self._player.get_sub_delay()
+            sign = "+" if delay > 0 else ""
+            self._delay_val_label.set_text(f"{sign}{delay:.1f}s")
 
-    def _set_pos(self, val: int):
-        if self._player:
-            self._player.set_sub_pos(val)
-            self.refresh_pos_label()
-            if self._on_timing_changed:
-                self._on_timing_changed(None, f"Subtitle Position: {val}%")
+    def refresh_pos_label(self):
+        if self._player and hasattr(self, '_pos_val_label'):
+            pos = self._player.get_sub_pos()
+            self._pos_val_label.set_text(f"{pos}%")
+            if hasattr(self, '_pos_scale') and not self._updating_pos:
+                self._updating_pos = True
+                self._pos_scale.set_value(pos)
+                self._updating_pos = False
 
-    def _adjust_scale(self, delta: float):
-        if self._player:
-            new_scale = self._player.adjust_sub_scale(delta)
-            self.refresh_scale_label()
-            if self._on_timing_changed:
-                self._on_timing_changed(None, f"Subtitle Size: {new_scale:.1f}x")
+    def refresh_scale_label(self):
+        if self._player and hasattr(self, '_size_val_label'):
+            size = self._player.get_sub_font_size()
+            self._size_val_label.set_text(f"{size}px")
+            if hasattr(self, '_size_scale') and not self._updating_size:
+                self._updating_size = True
+                self._size_scale.set_value(size)
+                self._updating_size = False
 
-    def _set_scale(self, val: float):
-        if self._player:
-            self._player.set_sub_scale(val)
-            self.refresh_scale_label()
-            if self._on_timing_changed:
-                self._on_timing_changed(None, f"Subtitle Size: {val:.1f}x")
-
-    def refresh_tracks(self):
-        # Clear track buttons
-        while True:
-            child = self._tracks_box.get_first_child()
-            if child is None:
-                break
-            self._tracks_box.remove(child)
-
-        if not self._player:
-            return
-
-        tracks = self._player.get_sub_tracks()
-        current_sid = self._player.get_sub_track()
-        is_off = (current_sid in ('no', False, None, 0))
-
-        # "Off" button
-        off_btn = Gtk.CheckButton(label="Off")
-        off_btn.set_active(is_off)
-        off_btn.connect('toggled', self._on_track_toggled, 'no')
-        self._tracks_box.append(off_btn)
-        group = off_btn
-
-        loaded_titles = set()
-        for t in tracks:
-            tid = t['id']
-            title = t.get('title') or f"Track {tid}"
-            loaded_titles.add(title.strip().lower())
-            btn = Gtk.CheckButton(label=title)
-            btn.set_group(group)
-            if not is_off and (t.get('selected') or str(current_sid) == str(tid)):
-                btn.set_active(True)
-            btn.connect('toggled', self._on_track_toggled, tid)
-            self._tracks_box.append(btn)
-
-        # External / online subtitles that haven't been loaded yet
-        unloaded = [
-            s for s in self._available_subtitles
-            if s.get('label', '').strip().lower() not in loaded_titles
-        ]
-        if unloaded:
-            sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-            sep.set_margin_top(6)
-            sep.set_margin_bottom(4)
-            self._tracks_box.append(sep)
-
-            hdr = Gtk.Label(label="Available Online")
-            hdr.add_css_class('dim-label')
-            hdr.add_css_class('caption')
-            hdr.set_xalign(0)
-            self._tracks_box.append(hdr)
-
-            for sub in unloaded[:12]:
-                btn = Gtk.Button()
-                lbl = Gtk.Label(label=sub.get('label', 'Subtitle'))
-                lbl.set_xalign(0)
-                lbl.set_hexpand(True)
-                btn.set_child(lbl)
-                btn.add_css_class('flat')
-                btn.connect('clicked', self._on_external_clicked, sub)
-                self._tracks_box.append(btn)
-
-        if not tracks and not unloaded:
-            no_subs = Gtk.Label(label="No subtitles loaded yet")
-            no_subs.add_css_class('dim-label')
-            no_subs.add_css_class('caption')
-            no_subs.set_margin_top(4)
-            no_subs.set_margin_bottom(4)
-            self._tracks_box.append(no_subs)
-
-    def _on_external_clicked(self, button, sub):
-        button.set_sensitive(False)
-        child = button.get_child()
-        if isinstance(child, Gtk.Label):
-            child.set_text(f"Loading {sub.get('label', 'subtitle')}...")
-        elif hasattr(button, 'set_label'):
-            button.set_label(f"Loading {sub.get('label', 'subtitle')}...")
-        if self._on_select_external:
-            self._on_select_external(sub)
-
-    def _on_track_toggled(self, button, track_id):
-        if button.get_active() and self._player:
-            self._player.set_sub_track(track_id)
-            if self._on_timing_changed and track_id != 'no':
-                self._on_timing_changed(None, f"Subtitle: {button.get_label()}")
+    def refresh_appearance(self):
+        self.refresh_delay_label()
+        self.refresh_pos_label()
+        self.refresh_scale_label()
 
 
 class AudioPopover(Gtk.Popover):
@@ -1745,6 +2351,8 @@ class PlayerControls(Gtk.Box):
         'fullscreen-toggle': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'timing-notification': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
         'next-episode': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        'upload-subtitles': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        'refresh-subtitles': (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
     def __init__(self):
@@ -1877,7 +2485,9 @@ class PlayerControls(Gtk.Box):
 
         # Subtitle Menu Button with Popover
         self._sub_popover = SubtitlePopover(
-            on_timing_changed=self._on_sub_timing_adjusted
+            on_timing_changed=self._on_sub_timing_adjusted,
+            on_upload_requested=lambda: self.emit('upload-subtitles'),
+            on_refresh_requested=lambda: self.emit('refresh-subtitles')
         )
         self._sub_btn = Gtk.MenuButton()
         self._sub_btn.set_icon_name('media-view-subtitles-symbolic')
@@ -1957,9 +2567,25 @@ class PlayerControls(Gtk.Box):
         if hasattr(self, '_speed_popover'):
             self._speed_popover.set_player(player)
 
+    def set_provider_subtitles(self, subs: List[Dict[str, Any]], on_select_cb=None):
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.set_provider_subtitles(subs, on_select_cb)
+
+    def set_language_subtitles(self, subs: List[Dict[str, Any]], on_select_cb=None):
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.set_language_subtitles(subs, on_select_cb)
+
     def set_available_subtitles(self, subs: List[Dict[str, Any]], on_select_cb=None):
         if hasattr(self, '_sub_popover'):
             self._sub_popover.set_available_subtitles(subs, on_select_cb)
+
+    def set_subtitles_searching(self, is_searching: bool = True):
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.set_searching(is_searching)
+
+    def set_subtitles_error(self, error: Optional[str] = None):
+        if hasattr(self, '_sub_popover'):
+            self._sub_popover.set_search_error(error)
 
     def refresh_subtitles(self):
         if hasattr(self, '_sub_popover'):
@@ -1989,14 +2615,17 @@ class PlayerControls(Gtk.Box):
         self._curr_time_label.set_text(self._format_time(start_pos))
         self._total_time_label.set_text(self._format_time(total_duration))
         self._play_button.set_icon_name('media-playback-start-symbolic')
+        self._sub_popover.set_provider_subtitles([])
+        self._sub_popover.set_language_subtitles([])
+        self._sub_popover.set_available_subtitles([])
         self._zero_pos_ticks = 0
-        if hasattr(self, '_sub_popover'):
-            self._sub_popover.set_available_subtitles([])
 
     def start_update_timer(self, player: MpvWidget):
         """Start periodic updates of seek bar and time."""
         self.set_player(player)
-        self.stop_update_timer()
+        if self._update_id:
+            GLib.source_remove(self._update_id)
+            self._update_id = None
         self._update_id = GLib.timeout_add(250, self._update_position)
 
     def stop_update_timer(self):
@@ -2215,12 +2844,16 @@ class PlayerPage(Adw.NavigationPage):
         self._session_id = 0
         self._pending_sub_query = None
         self._available_subtitles = []
+        self._provider_subtitles = []
+        self._reference_sub_path = None
+        self._active_external_sub = None
         self._next_stream_data = None
         self._next_ep_dismissed = False
         self._next_ep_triggered = False
         self._countdown_timer_id = None
         self._countdown_seconds = 10
         self._active_sub_path = None
+        self._start_pos = 0
 
         self.set_focusable(True)
         self.connect('map', lambda w: self.grab_focus())
@@ -2235,6 +2868,11 @@ class PlayerPage(Adw.NavigationPage):
             style_mgr.connect('notify::dark', lambda *_: self._update_theme_classes())
         self._update_theme_classes()
 
+    def _on_sub_loaded(self, path: str, label: str, lang: str):
+        if not getattr(self, '_reference_sub_path', None) and path:
+            self._reference_sub_path = path
+            logger.info(f"Set reference subtitle for timing sync: {path}")
+        self._controls.refresh_subtitles()
 
     def _setup_ui(self):
         self._overlay = Gtk.Overlay()
@@ -2242,6 +2880,7 @@ class PlayerPage(Adw.NavigationPage):
         self._overlay.set_vexpand(True)
 
         self._mpv_widget = MpvWidget()
+        self._mpv_widget._on_sub_loaded = self._on_sub_loaded
         self._mpv_widget.connect('stream-ready', self._on_stream_ready)
         self._mpv_widget.connect('buffering', self._on_buffering)
         self._mpv_widget.connect('playback-ended', self._on_playback_ended)
@@ -2386,6 +3025,8 @@ class PlayerPage(Adw.NavigationPage):
         self._controls.connect('fullscreen-toggle', self._on_fullscreen_toggle)
         self._controls.connect('timing-notification', lambda c, msg: self.show_osd_notification(msg))
         self._controls.connect('next-episode', lambda b: self._play_next_episode())
+        self._controls.connect('upload-subtitles', lambda _: self._open_subtitle_file_dialog())
+        self._controls.connect('refresh-subtitles', lambda _: self._refresh_subtitles())
         self._overlay.add_overlay(self._controls)
 
         # Next episode card overlay added AFTER controls so it renders on top
@@ -2691,7 +3332,18 @@ class PlayerPage(Adw.NavigationPage):
         self._start_pos = stream_data.get('start_position', 0)
         self._controls.reset(self._start_pos, 0.0)
         self._available_subtitles = []
+        self._provider_subtitles = []
+        self._opensubtitles_results = []
+        self._opensubtitles_done = False
+        self._stream_resolving = True
+        self._has_provider_subtitles = False
+        self._reference_sub_path = None
+        self._active_external_sub = None
+        self._active_sub_path = None
+        self._controls.set_provider_subtitles([])
+        self._controls.set_language_subtitles([])
         self._controls.set_available_subtitles([])
+        self._controls.set_subtitles_searching(True)
         self._update_theme_classes()
 
 
@@ -2720,6 +3372,8 @@ class PlayerPage(Adw.NavigationPage):
 
         if hasattr(self, '_mpv_widget') and self._mpv_widget:
             self._mpv_widget.stop()
+            if hasattr(self._mpv_widget, '_pending_local_subs'):
+                self._mpv_widget._pending_local_subs.clear()
             self._mpv_widget._is_stream_active = False
             self._mpv_widget._has_drawn_first_frame = False
             self._mpv_widget._wait_first_frame = True
@@ -2763,7 +3417,14 @@ class PlayerPage(Adw.NavigationPage):
     def _resolve_thread(self, tmdb_id, season, episode, provider_name, movie, session_id: int, chosen_stream=None):
         """Background thread: resolve stream first, start playback ASAP, then fetch subs in parallel."""
         try:
-            if chosen_stream:
+            # Immediately launch background subtitle fetch in parallel with stream resolution
+            threading.Thread(
+                target=self._fetch_subtitles_background,
+                args=(tmdb_id, season, episode, movie, session_id),
+                daemon=True
+            ).start()
+
+            if chosen_stream and self._settings.torrent_enabled:
                 from showberry.services.torrent import get_torrent_streamer
                 from showberry.providers.base import StreamResult
                 info_hash = chosen_stream.get('infoHash')
@@ -2814,12 +3475,6 @@ class PlayerPage(Adw.NavigationPage):
             if session_id != self._session_id:
                 return
 
-            if result and result.url:
-                # Save query params to fetch OpenSubtitles AFTER video visibly begins rendering
-                self._pending_sub_query = (tmdb_id, season, episode, movie, session_id)
-            else:
-                self._pending_sub_query = None
-
             # Start playback immediately
             GLib.idle_add(self._on_stream_resolved, result, [], session_id)
 
@@ -2828,53 +3483,174 @@ class PlayerPage(Adw.NavigationPage):
                 return
             GLib.idle_add(self._on_stream_error, str(e), session_id)
 
+    def _open_subtitle_file_dialog(self):
+        """Open a file dialog allowing user to load custom local subtitle files."""
+        root_window = self.get_root()
+        parent = root_window if isinstance(root_window, Gtk.Window) else None
+        dialog = Gtk.FileChooserNative.new(
+            "Open Subtitle File",
+            parent,
+            Gtk.FileChooserAction.OPEN,
+            "_Open",
+            "_Cancel"
+        )
+        filter_sub = Gtk.FileFilter()
+        filter_sub.set_name("Subtitle Files (*.srt, *.vtt, *.ass, *.sub)")
+        for ext in ("*.srt", "*.vtt", "*.ass", "*.sub", "*.SRT", "*.VTT", "*.ASS", "*.SUB"):
+            filter_sub.add_pattern(ext)
+        dialog.add_filter(filter_sub)
+
+        filter_all = Gtk.FileFilter()
+        filter_all.set_name("All Files")
+        filter_all.add_pattern("*")
+        dialog.add_filter(filter_all)
+
+        def _on_response(d, response_id):
+            if response_id == Gtk.ResponseType.ACCEPT:
+                gfile = d.get_file()
+                if gfile:
+                    path = gfile.get_path()
+                    if path:
+                        filename = os.path.basename(path)
+                        def _bg_upload():
+                            act_path = path
+                            ref = getattr(self, '_reference_sub_path', None)
+                            if ref and os.path.exists(ref):
+                                synced = self._subtitles_service.sync_subtitle_with_reference(ref, path)
+                                if synced:
+                                    act_path = synced
+                            GLib.idle_add(self._activate_external_subtitle, act_path, f"📁 {filename}", "und")
+                        threading.Thread(target=_bg_upload, daemon=True).start()
+            d.destroy()
+
+        dialog.connect('response', _on_response)
+        dialog.show()
+
+    def _sync_subtitle_popover_lists(self, session_id: int):
+        """Merge provider built-in subtitles and OpenSubtitles on the main GTK thread without races."""
+        if session_id != self._session_id:
+            return False
+
+        provider_subs = list(getattr(self, '_provider_subtitles', []))
+        opensubs = list(getattr(self, '_opensubtitles_results', []))
+        self._available_subtitles = provider_subs + opensubs
+
+        self._controls.set_provider_subtitles(
+            provider_subs,
+            self._on_download_and_select_builtin_sub
+        )
+
+        # Extract top unique subtitle per language from OpenSubtitles for quick language selection
+        seen_langs = set()
+        for ps in provider_subs:
+            p_lang = (ps.get('lang') or '').lower()
+            if p_lang:
+                seen_langs.add(p_lang)
+
+        unique_lang_subs = []
+        for s in opensubs:
+            lang = (s.get('lang') or '').lower()
+            if not lang or lang in seen_langs:
+                continue
+            seen_langs.add(lang)
+            s_copy = dict(s)
+            s_copy['_is_quick_lang'] = True
+            unique_lang_subs.append(s_copy)
+
+        POPULAR_ORDER = ['eng', 'spa', 'fre', 'ger', 'ita', 'por', 'hin', 'chi', 'jpn', 'kor', 'rus', 'ara']
+        def _lang_sort_key(item):
+            l = (item.get('lang') or '').lower()
+            if l in POPULAR_ORDER:
+                return (0, POPULAR_ORDER.index(l))
+            return (1, item.get('lang_name', ''))
+
+        unique_lang_subs.sort(key=_lang_sort_key)
+
+        self._controls.set_language_subtitles(
+            unique_lang_subs,
+            self._on_download_and_select_external_sub
+        )
+
+        if getattr(self, '_opensubtitles_done', False) or opensubs:
+            self._controls.set_available_subtitles(
+                self._available_subtitles,
+                self._on_download_and_select_external_sub
+            )
+
+        # Auto-download primary OpenSubtitle ONLY after stream resolution finished with NO built-in subtitles
+        if not getattr(self, '_stream_resolving', False) and not provider_subs and opensubs:
+            current_sid = self._mpv_widget.get_sub_track() if self._mpv_widget else 'no'
+            tracks = self._mpv_widget.get_sub_tracks() if self._mpv_widget else []
+            has_active_sub = bool(
+                getattr(self, '_active_external_sub', None)
+                or getattr(self, '_reference_sub_path', None)
+                or (tracks and current_sid not in ('no', False, None, 0))
+                or (self._mpv_widget and getattr(self._mpv_widget, '_pending_local_subs', None))
+            )
+            if not has_active_sub:
+                eng_subs = [s for s in opensubs if s.get('lang', '').lower() in ('eng', 'en')]
+                primary_sub = eng_subs[0] if eng_subs else opensubs[0]
+                self._on_download_and_select_external_sub(primary_sub)
+
+        return False
+
     def _fetch_subtitles_background(self, tmdb_id, season, episode, movie, session_id: int):
-        """Fetch OpenSubtitles in background and add to available subtitles."""
+        """Fetch OpenSubtitles in background and populate subtitles list."""
         try:
             if session_id != self._session_id:
                 return
+
             imdb_id = movie.get('imdb_id')
             if not imdb_id:
                 imdb_id = self._tmdb.get_imdb_id(tmdb_id, is_tv=(season is not None))
+                if imdb_id and movie is not None:
+                    movie['imdb_id'] = imdb_id
 
-            if not imdb_id or session_id != self._session_id:
+            if session_id != self._session_id:
+                return
+
+            if not imdb_id:
+                logger.info(f"No IMDB ID found for TMDB {tmdb_id}; cannot fetch OpenSubtitles")
+                GLib.idle_add(self._controls.set_subtitles_error, "No IMDb ID found for this title")
                 return
 
             subs = self._subtitles_service.get_subtitles(imdb_id, season=season, episode=episode)
             if session_id != self._session_id:
                 return
 
-            # Combine OpenSubtitles with existing provider subtitles
-            existing_labels = {s.get('label', '').strip().lower() for s in self._available_subtitles}
-            for s in subs:
-                if s.get('label', '').strip().lower() not in existing_labels:
-                    self._available_subtitles.append(s)
-
-            GLib.idle_add(
-                self._controls.set_available_subtitles,
-                self._available_subtitles,
-                self._on_download_and_select_external_sub
-            )
-
-            # Auto-download and add primary OpenSubtitle ONLY if NO provider subtitle was loaded
-            has_loaded = bool(self._mpv_widget and self._mpv_widget.get_sub_tracks())
-            if not has_loaded and subs and session_id == self._session_id:
-                primary_sub = subs[0]
-                sub_url = primary_sub.get('url')
-                if sub_url and session_id == self._session_id:
-                    label = primary_sub.get('label', primary_sub.get('lang', 'Subtitle'))
-                    lang = primary_sub.get('lang', 'eng')
-                    local_path = self._subtitles_service.download_subtitle(sub_url, filename_hint=label)
-                    if local_path and session_id == self._session_id:
-                        GLib.idle_add(self._mpv_widget.add_subtitle, local_path, label, lang)
+            self._opensubtitles_results = list(subs or [])
+            self._opensubtitles_done = True
+            GLib.idle_add(self._sync_subtitle_popover_lists, session_id)
         except Exception as ex:
             logger.warning(f"Background subtitle fetch failed: {ex}")
+            if session_id == self._session_id:
+                GLib.idle_add(self._controls.set_subtitles_error, "Failed to connect to OpenSubtitles")
 
-    def _on_download_and_select_external_sub(self, sub: Dict[str, Any]):
-        """User selected an available online subtitle from the popover."""
+    def _refresh_subtitles(self):
+        """User requested manual refresh of subtitles from the UI."""
+        if not self._stream_data:
+            return
+        movie = self._stream_data.get('movie', {})
+        tmdb_id = movie.get('id') or movie.get('tmdb_id')
+        if not tmdb_id:
+            return
+        season = self._stream_data.get('season')
+        episode = self._stream_data.get('episode')
+        self._controls.set_subtitles_searching(True)
+        threading.Thread(
+            target=self._fetch_subtitles_background,
+            args=(int(tmdb_id), season, episode, movie, self._session_id),
+            daemon=True
+        ).start()
+
+    def _on_download_and_select_builtin_sub(self, sub: Dict[str, Any]):
+        """User selected a built-in provider subtitle (e.g. Spanish, French, Hindi) from the popover."""
         sub_url = sub.get('url')
-        label = sub.get('label', sub.get('lang', 'Subtitle'))
         lang = sub.get('lang', 'eng')
+        from showberry.services.subtitles import LANG_FLAGS, LANG_NAMES
+        lang_name = sub.get('lang_name') or LANG_NAMES.get(lang.lower(), lang.upper())
+        flag = sub.get('flag') or LANG_FLAGS.get(lang.lower(), '')
+        display_label = f"{flag} {lang_name}".strip()
         headers = sub.get('headers')
         referer = sub.get('referer')
         current_session = self._session_id
@@ -2882,24 +3658,96 @@ class PlayerPage(Adw.NavigationPage):
         def _bg():
             local_path = self._subtitles_service.download_subtitle(
                 sub_url,
-                filename_hint=label,
+                filename_hint=f"{lang_name}.vtt",
                 headers=headers,
                 referer=referer
             )
             if local_path and current_session == self._session_id:
-                GLib.idle_add(self._activate_external_subtitle, local_path, label, lang)
+                self._reference_sub_path = local_path
+                GLib.idle_add(self._activate_external_subtitle, local_path, display_label, lang)
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _on_download_and_select_external_sub(self, sub: Dict[str, Any]):
+        """User selected an available online subtitle from the popover."""
+        sub_url = sub.get('url')
+        lang = (sub.get('lang') or 'eng').lower()
+        from showberry.services.subtitles import LANG_FLAGS, LANG_NAMES
+        lang_name = sub.get('lang_name') or LANG_NAMES.get(lang, lang.upper())
+        flag = sub.get('flag') or LANG_FLAGS.get(lang, '')
+        label = sub.get('label', '')
+        display_label = f"{flag} {lang_name}".strip()
+        headers = sub.get('headers')
+        referer = sub.get('referer')
+        is_builtin = sub.get('is_builtin', False) or 'built-in' in label.lower()
+        current_session = self._session_id
+
+        # Gather fallback candidates of the same language in case top release is broken or partial (CD1)
+        candidates = [sub]
+        if not is_builtin:
+            for s in getattr(self, '_available_subtitles', []):
+                if (s.get('lang') or '').lower() == lang and s.get('url') != sub_url and not s.get('is_builtin'):
+                    candidates.append(s)
+                    if len(candidates) >= 4:
+                        break
+
+        def _bg():
+            ref = getattr(self, '_reference_sub_path', None)
+            chosen_path = None
+            for idx, cand in enumerate(candidates):
+                if current_session != self._session_id:
+                    return
+                c_url = cand.get('url')
+                if not c_url:
+                    continue
+                p = self._subtitles_service.download_subtitle(
+                    c_url,
+                    filename_hint=f"{lang_name}_{idx}.srt",
+                    headers=cand.get('headers') or headers,
+                    referer=cand.get('referer') or referer
+                )
+                if not p:
+                    continue
+                if chosen_path is None:
+                    chosen_path = p
+                # Verify it is not a partial (CD1) subtitle when we have a full reference subtitle
+                if not is_builtin and ref and os.path.exists(ref) and len(candidates) > 1:
+                    if self._subtitles_service.is_partial_subtitle(ref, p):
+                        logger.info(f"Candidate {idx} for {lang_name} is partial; trying next candidate...")
+                        continue
+                chosen_path = p
+                break
+
+            if chosen_path and current_session == self._session_id:
+                local_path = chosen_path
+                if not is_builtin and ref and os.path.exists(ref):
+                    logger.info(f"Auto-aligning external subtitle ({lang_name}) against reference: {ref}")
+                    synced_path = self._subtitles_service.sync_subtitle_with_reference(ref, local_path)
+                    if synced_path:
+                        local_path = synced_path
+                        logger.info(f"Using synced subtitle: {local_path}")
+                elif is_builtin:
+                    self._reference_sub_path = local_path
+                GLib.idle_add(self._activate_external_subtitle, local_path, display_label, lang)
 
         threading.Thread(target=_bg, daemon=True).start()
 
     def _activate_external_subtitle(self, local_path: str, label: str, lang: str):
         if not self._mpv_widget:
             return
-        self._mpv_widget._add_local_subtitle(local_path, label, lang)
+        clean_label = label.replace("(Built-in)", "").strip()
+        if not getattr(self, '_reference_sub_path', None):
+            self._reference_sub_path = local_path
+        self._active_external_sub = (local_path, clean_label, lang)
+        if hasattr(self, '_controls') and hasattr(self._controls, '_sub_popover'):
+            self._controls._sub_popover._pending_selected_label = None
+        self._mpv_widget.set_sub_delay(0.0)
+        self._mpv_widget._add_local_subtitle(local_path, clean_label, lang, select=True)
         tracks = self._mpv_widget.get_sub_tracks()
         if tracks:
             new_id = tracks[-1]['id']
             self._mpv_widget.set_sub_track(new_id)
-            self.show_osd_notification(f"Subtitle: {label}")
+            self.show_osd_notification(f"Subtitle: {clean_label}")
         self._controls.refresh_subtitles()
 
     def _on_pause_changed(self, widget, is_paused: bool):
@@ -2914,6 +3762,13 @@ class PlayerPage(Adw.NavigationPage):
         self._spinner.stop()
         self._spinner_box.set_visible(False)
 
+        # Flush any queued subtitles and update subtitle tracks in controls
+        if self._mpv_widget:
+            self._mpv_widget._flush_pending_local_subs()
+        if getattr(self, '_active_external_sub', None):
+            self.show_osd_notification(f"Subtitle: {self._active_external_sub[1]}")
+        self._controls.refresh_subtitles()
+
         # Inhibit screen and system sleep during active playback
         if self._mpv_widget and not self._mpv_widget.is_paused():
             self._sleep_inhibitor.inhibit()
@@ -2922,24 +3777,6 @@ class PlayerPage(Adw.NavigationPage):
         GLib.timeout_add(1000, lambda: self._controls.refresh_audio_tracks())
         if self._mpv_widget:
             self._controls.set_speed_label(self._mpv_widget.get_speed())
-
-        # Defer subtitle fetch until stream is visibly rolling (3s delay, zero bandwidth/CPU competition during buffer)
-        if self._pending_sub_query:
-            query = self._pending_sub_query
-            self._pending_sub_query = None
-            current_session = self._session_id
-
-            def _delayed_fetch():
-                if current_session == self._session_id:
-                    tmdb_id, season, episode, movie, sid = query
-                    threading.Thread(
-                        target=self._fetch_subtitles_background,
-                        args=(tmdb_id, season, episode, movie, sid),
-                        daemon=True
-                    ).start()
-                return False
-
-            GLib.timeout_add_seconds(3, _delayed_fetch)
 
     def _on_buffering(self, widget, is_buffering: bool):
         """Called when MPV paused-for-cache property changes."""
@@ -2979,36 +3816,60 @@ class PlayerPage(Adw.NavigationPage):
                 self._provider_popover.set_current_provider(result.provider_name)
             self._provider_menu_btn.set_visible(True)
 
-        # Attach stream referer and headers to provider subtitles
+        # Format and attach stream referer and headers to provider subtitles
         provider_subs = list(result.subtitles or [])
         for s in provider_subs:
             if 'referer' not in s and result.referer:
                 s['referer'] = result.referer
             if 'headers' not in s and result.headers:
                 s['headers'] = result.headers
+            lang = s.get('lang', 'eng').lower()
+            from showberry.services.subtitles import LANG_FLAGS, LANG_NAMES
+            flag = LANG_FLAGS.get(lang, '🌐')
+            lang_name = LANG_NAMES.get(lang, lang.upper())
+            s['flag'] = flag
+            s['lang_name'] = lang_name
+            s['label'] = f"{flag} {lang_name}".strip()
+            s['is_builtin'] = True
 
-        # Keep all provider subtitles in self._available_subtitles for on-demand selection
-        self._available_subtitles = list(provider_subs)
-        self._controls.set_available_subtitles(
-            self._available_subtitles,
-            self._on_download_and_select_external_sub
-        )
-
-        # Auto-download ONLY the primary English (or first) subtitle to avoid parallel thread flood
-        initial_subs = []
-        if provider_subs:
-            eng_subs = [s for s in provider_subs if s.get('lang', '').lower() in ('eng', 'en')]
-            primary_sub = eng_subs[0] if eng_subs else provider_subs[0]
-            initial_subs = [primary_sub]
+        self._stream_resolving = False
+        self._provider_subtitles = list(provider_subs)
+        self._has_provider_subtitles = bool(provider_subs)
+        self._sync_subtitle_popover_lists(self._session_id)
 
         self._mpv_widget.play(
             url=result.url,
             referer=result.referer,
             origin=result.origin,
             headers=result.headers,
-            subtitles=initial_subs,
+            subtitles=[],
             start_pos=self._start_pos
         )
+
+        # Auto-download ONLY the primary English (or first) subtitle once and set it as reference + active track
+        if provider_subs:
+            eng_subs = [s for s in provider_subs if s.get('lang', '').lower() in ('eng', 'en')]
+            primary_sub = eng_subs[0] if eng_subs else provider_subs[0]
+
+            current_sess = self._session_id
+            def _fetch_ref(sub=primary_sub, sess=current_sess):
+                p = self._subtitles_service.download_subtitle(
+                    sub['url'],
+                    filename_hint=sub.get('label', 'ref.srt'),
+                    referer=sub.get('referer'),
+                    headers=sub.get('headers')
+                )
+                if p and sess == self._session_id:
+                    self._reference_sub_path = p
+                    logger.info(f"Verified built-in reference subtitle set: {p}")
+                    if not getattr(self, '_active_external_sub', None):
+                        GLib.idle_add(
+                            self._activate_external_subtitle,
+                            p,
+                            sub.get('label', '🇺🇸 English'),
+                            sub.get('lang', 'eng')
+                        )
+            threading.Thread(target=_fetch_ref, daemon=True).start()
         self._controls.start_update_timer(self._mpv_widget)
         self._show_controls_briefly()
 
@@ -3298,6 +4159,7 @@ class PlayerPage(Adw.NavigationPage):
         self._session_id += 1  # Invalidate any in-flight resolver or subtitle worker threads
         self._pending_sub_query = None
         self._available_subtitles = []
+        self._active_external_sub = None
         self._cancel_next_ep_countdown()
         if hasattr(self, '_next_ep_card'):
             self._next_ep_card.set_visible(False)

@@ -96,6 +96,10 @@ class TorrentProvider(BaseProvider):
         duration_secs: float = 0.0,
         **kwargs
     ) -> Optional[StreamResult]:
+        from showberry.services.settings import SettingsService
+        if not SettingsService().torrent_enabled:
+            logger.info("Torrent provider called but torrenting is disabled in settings.")
+            return None
         if not HAS_LIBTORRENT:
             logger.warning("libtorrent is not installed; Torrent provider cannot stream.")
             return None

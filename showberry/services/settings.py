@@ -67,13 +67,23 @@ class SettingsService:
         self._fallback_store = self._load_fallback_store()
 
     def _load_fallback_store(self) -> dict:
+        data = {}
         if self._config_file.is_file():
             try:
                 with open(self._config_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    data = json.load(f)
             except Exception as e:
                 logger.debug("Could not read fallback settings JSON: %s", e)
-        return {}
+        # Migrate legacy sub-scale multiplier to 1.0 so sub-font-size strictly dictates font size
+        if data.get('sub-scale', 1.0) != 1.0:
+            data['sub-scale'] = 1.0
+            try:
+                self._config_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(self._config_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, indent=2)
+            except Exception:
+                pass
+        return data
 
     def _set_fallback(self, key: str, value: Any):
         self._fallback_store[key] = value
@@ -237,16 +247,27 @@ class SettingsService:
 
     @property
     def sub_scale(self) -> float:
-        if self._has_schema_key('sub-scale'):
-            return self._settings.get_double('sub-scale')
-        return self._fallback_store.get('sub-scale', 1.0)
+        return 1.0
 
     @sub_scale.setter
     def sub_scale(self, value: float):
         if self._has_schema_key('sub-scale'):
-            self._settings.set_double('sub-scale', value)
+            self._settings.set_double('sub-scale', 1.0)
         else:
-            self._set_fallback('sub-scale', value)
+            self._set_fallback('sub-scale', 1.0)
+
+    @property
+    def sub_font_size(self) -> int:
+        if self._has_schema_key('sub-font-size'):
+            return self._settings.get_int('sub-font-size')
+        return self._fallback_store.get('sub-font-size', 28)
+
+    @sub_font_size.setter
+    def sub_font_size(self, value: int):
+        if self._has_schema_key('sub-font-size'):
+            self._settings.set_int('sub-font-size', value)
+        else:
+            self._set_fallback('sub-font-size', value)
 
     @property
     def auto_skip_enabled(self) -> bool:
